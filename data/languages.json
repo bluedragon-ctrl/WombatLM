@@ -1,4 +1,6 @@
 [
   { "code": "cs", "name": { "cs": "čeština", "en": "Czech" } },
-  { "code": "en", "name": { "cs": "angličtina", "en": "English" } }
+  { "code": "en", "name": { "cs": "angličtina", "en": "English" } },
+  { "code": "sk", "name": { "cs": "slovenština", "en": "Slovak" } },
+  { "code": "de", "name": { "cs": "němčina", "en": "German" } }
 ]

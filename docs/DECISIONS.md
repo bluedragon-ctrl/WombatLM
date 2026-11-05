@@ -248,3 +248,33 @@ The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–
 - Not done (proposal D): "what one training step did" (the same trace before and after a step); it can reuse `explain`.
 - "Follow the signal" (expert): decoder rows are labelled with the letter going in and the letter it is used to guess ("b→u"), since row `b` produces `u`.
 - `Block.forward` records more trace points (volume-knob outputs, what each step adds, the thinking units); `Translator.inspect` keeps only the `*.in` / `*.out` ones for "follow the signal".
+
+## Slovak and German (user request: "what would adding Slovak and German need, should the model be bigger?")
+- **Data, first draft (needs a fluent reviewer):** `data/animals.sk.json` (pack `base-sk`) and `data/animals.de.json` (pack `base-de`) add a name in each language for all 151 base animals and the male / female / young words where a solid word exists: Slovak 43 animals / 107 forms, German 52 / 128. They merge into the base animals by id (`LANGUAGE_PACKS` in `src/data/bundle.ts`), so never-seen marks come from the base pack: never-seen forms sk 19, de 26, every kind in both. Kept out when unsure, so the model invents them: Slovak female dog (*suka* is also an insult; *fenka* is colloquial), *myšiak* (it means buzzard), camel, mouflon, stork, capercaillie and snake forms. German: nouns lower-cased; for big animals the real compounds (*elefantenkuh*, *zebrafohlen*, *kamelhengst*) like English bull / cow / calf, but no *-junges* / *-baby* phrases (generic, like *baby tiger*).
+- **Vocabulary:** 8 new letters `ä ĺ ľ ô ŕ ö ü ß` (`ŕ` is not used by any word yet; kept so typed Slovak is not `<unk>`) and 8 target tokens: 71 tokens, 25 255 numbers (+528). Tests that used `ä` / `ö` as an example of an unknown letter now use `ø`.
+- **Validator:** the "trained and never-seen animals" check counts only animals a pack *adds*, so a pack that only adds languages keeps the earlier split (test added). The summary lists only a pack's own languages.
+- **No other code changes:** language pickers, the scoreboard, the Learning data counts and the Test tab are built from the data and show four languages.
+- **Training data doubles:** 439 word forms + 560 copy-the-name examples (was 249 + 280).
+
+**Model size, measured** (`scripts/experiments/languages.ts`, Node, batch 16, LR 3e-3, known / never-seen %, ffn = 2 × d_model; 4 runs in parallel, so steps/s are lower than alone):
+
+| run | steps | cs | en | sk | de | steps/s |
+|---|---|---|---|---|---|---|
+| cs+en, d 32 (before) | 5 000 | 94 / 27 | 92 / 11 | | | 43 |
+| cs+en, d 32 (before) | 10 000 | 98 / 35 | 97 / 15 | | | 43 |
+| 4 languages, d 32, seed 1 | 5 000 | 77 / 38 | 39 / 19 | 75 / 21 | 57 / 4 | 38 |
+| 4 languages, d 32, seed 2 | 5 000 | 75 / 35 | 48 / 19 | 75 / 32 | 63 / 4 | 38 |
+| 4 languages, d 32, seed 1 | 10 000 | 85 / 42 | 64 / 15 | 91 / 21 | 72 / 4 | 38 |
+| 4 languages, d 32, seed 2 | 10 000 | 88 / 12 | 68 / 19 | 91 / 26 | 84 / 4 | 38 |
+| 4 languages, d 32, seed 1 | 15 000 | 99 / 35 | 78 / 15 | 94 / 21 | 82 / 4 | 38 |
+| 4 languages, d 32, seed 1 | 22 500 | 96 / 42 | 83 / 19 | 95 / 32 | 95 / 4 | 39 |
+| 4 languages, d 32, seed 1 | **30 000** | **98 / 31** | **95 / 19** | **99 / 26** | **97 / 8** | 39 |
+| 4 languages, d 32, batch 64, LR 6e-3 | 5 000 (= 20 000 × 16) | 93 / 23 | 75 / 11 | 95 / 21 | 92 / 8 | 8 |
+| 4 languages, d 48, seed 1 | 10 000 | 96 / 23 | 91 / 19 | 94 / 32 | 91 / 4 | 20 |
+| 4 languages, d 48, seed 2 | 10 000 | 95 / 27 | 76 / 7 | 99 / 21 | 90 / 4 | 20 |
+| 4 languages, d 48, seed 2 | 20 000 | 100 / 31 | 90 / 7 | 100 / 26 | 96 / 8 | 20 |
+
+- **d_model 32 is big enough.** With enough steps it learns all four languages (30 000 steps: 95–99 % known), as well as d 48 does. d 48 (53 207 numbers) needs fewer steps but each step costs twice as much, so per second of learning it is no better (d 32 at 22 500 steps ≈ d 48 at 10 000 steps in time). **Decision: keep d 32**, as DESIGN §15 planned ("raise to 48 if accuracy drops noticeably"): accuracy drops only for lack of steps, not for lack of numbers.
+- **The real cost is learning time:** about 4× the steps for the same quality (≈ 30 000 instead of ≈ 7 500), because the data doubled and each language gets a quarter of each batch instead of half. English, which is all memorising, is the slowest. A bigger batch does not help on a CPU (same examples, same time).
+- **Never-seen:** Slovak behaves like Czech (21–32 %, patterns carry over). German stays at 4–8 %: most of its never-seen forms keep the name (*giraffe → giraffenkuh*), but which ending (*-bulle/-kuh/-kalb* or *-hengst/-stute/-fohlen*) depends on the kind of animal, not on the letters, so the model cannot guess it. A good example for the memorise-vs-generalise lesson.
+- **Not decided (user):** the default "Learn until" goal (5 000) and its options (up to 10 000) were set for two languages; with four, known English is ~40–50 % at 5 000 steps.

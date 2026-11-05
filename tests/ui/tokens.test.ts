@@ -11,10 +11,10 @@ const langName = (c: string) => ({ cs: 'Czech', en: 'English' }[c] ?? c);
 
 describe('tokens on screen', () => {
   it('cuts a word into the same token ids as the model', () => {
-    for (const word of ['tygřice', 'Lion Cub', 'mořské prase', 'zebra-x', 'äb5']) {
+    for (const word of ['tygřice', 'Lion Cub', 'mořské prase', 'zebra-x', 'øb5']) {
       expect(tokenizeWord(word, index).map((t) => t.id)).toEqual(vocab.encodeWord(word));
     }
-    expect(tokenizeWord('äb', index).map((t) => t.token)).toEqual(['<unk>', 'b']);
+    expect(tokenizeWord('øb', index).map((t) => t.token)).toEqual(['<unk>', 'b']);
   });
 
   it('shows a learning example as reads / shown so far / guess next, shifted by one', () => {
