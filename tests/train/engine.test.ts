@@ -192,6 +192,66 @@ describe('Engine', () => {
     expect(m.coords.every(Number.isFinite)).toBe(true);
   });
 
+  it('ticks carry the latest practice batch once per new step', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    expect((h.of('tick').at(-1) as TickMsg).practice).toBeUndefined();
+    e.handle({ type: 'step', n: 2 });
+    const p = (h.of('tick').at(-1) as TickMsg).practice!;
+    expect(p.step).toBe(2);
+    expect(p.examples.length).toBe(16); // the whole batch (default batch size 16)
+    expect(p.examples[0].target.length).toBeGreaterThan(0);
+    e.handle({ type: 'pause' });
+    expect((h.of('tick').at(-1) as TickMsg).practice).toBeUndefined();
+  });
+
+  it('answers before each step while paused or slow; at max speed only for the open Practice tab', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3, speed: 'max' });
+    e.handle({ type: 'step', n: 1 });
+    const stepped = (h.of('tick').at(-1) as TickMsg).practice!;
+    expect(stepped.examples.every((x) => typeof x.answer === 'string')).toBe(true);
+    expect(stepped.rightCount).toBeDefined();
+    // Max speed, Practice tab closed: no answering (full speed).
+    e.handle({ type: 'play' });
+    h.runDue(2);
+    expect(h.of('tick').filter((t) => (t as TickMsg).practice?.step! > 1).every((t) => (t as TickMsg).practice!.rightCount === undefined)).toBe(true);
+    // Practice tab open: only answered batches are sent.
+    e.handle({ type: 'watchPractice', on: true });
+    const from = h.sent.length;
+    h.runDue(6);
+    const ticks = h.sent.slice(from).filter((m) => m.type === 'tick' && m.practice) as TickMsg[];
+    expect(ticks.length).toBeGreaterThan(0);
+    expect(ticks.every((t) => t.practice!.rightCount !== undefined)).toBe(true);
+    e.handle({ type: 'pause' });
+  });
+
+  it('answering and evaluating never change the brain', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    const twin = new Engine(fakeHost().host, ds);
+    e.handle({ type: 'init', seed: 5 });
+    twin.handle({ type: 'init', seed: 5 });
+    e.handle({ type: 'step', n: 20 });
+    twin.handle({ type: 'step', n: 20 });
+    const bits = () => e.trainer.model.params.list.map((p) => Array.from(new Uint32Array(p.data.slice().buffer)));
+    const before = bits();
+    const lang = ds.languageCodes[0];
+    for (let i = 0; i < 5; i++) e.handle({ type: 'ask', id: i, text: ['tygr', 'kočka', 'qqq', 'buvol', 'x'][i], lang, form: 'female' });
+    e.handle({ type: 'evaluate', inventions: true });
+    e.handle({ type: 'inspect', id: 9, matrixIds: ['tokEmb'], mode: 'delta', letterMap: true });
+    expect(h.of('answer').length).toBe(5);
+    expect(bits()).toEqual(before);
+    expect(e.trainer.step).toBe(20);
+    // …and nothing hidden changed either (optimiser, random numbers): the next step is identical.
+    e.handle({ type: 'step', n: 1 });
+    twin.handle({ type: 'step', n: 1 });
+    expect(e.trainer.lastLoss).toBe(twin.trainer.lastLoss);
+    expect(bits()).toEqual(twin.trainer.model.params.list.map((p) => Array.from(new Uint32Array(p.data.slice().buffer))));
+  });
+
   it('reports errors instead of throwing', () => {
     const h = fakeHost();
     const e = new Engine(h.host, ds);

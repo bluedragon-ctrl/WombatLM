@@ -263,11 +263,13 @@ Built (M2):
 - `answer`: the output word, whether it finished, the input tokens, **per letter the top-5 candidates with probabilities and the write-vs-copy share**, the confidence, **all attention maps** (transferred buffers), the badge and, for real/hidden, the accepted answers and status.
 - `error`.
 
+Built (learning vs answering): `tick.practice` — the latest training batch: step, batch size, batch loss and up to 32 examples of **learning data** (source, form, language, right answer) and, when the brain answered them **before** the step, its answers with ✓/≈/✗ and how many were right. Answering first costs one greedy pass, so the engine does it on Step and at slow speeds (≤ 5 steps/s) always, and at higher speeds only while the Practice tab is open (`watchPractice{on}`, main → worker), at most every 500 ms.
+
 Built (M3): `weights` (requested matrices as transferable `Float32Array`s: the weights, their change since the previous request, or the latest gradient), `letterMap` (PCA coordinates of characters, end-of-word and task tokens), `ready.matrices` (shapes and axis meanings), `answer.activations`.
 
 Planned: `snapshotIndex` in M4.
 
-The UI re-asks its current question after each tick while training (at most one request in flight). Only visible panels request data.
+**Learning and answering are separate.** Only `play` / `step` change the weights; `ask`, `evaluate` and `inspect` only read them (tested bit for bit). While training runs, the UI does **not** re-ask its question: the answer stays, marked out of date, until the user pauses, presses "Ask again" or turns on "keep answering while it learns" (then it re-asks after each tick, at most one request in flight). When paused it re-asks after every step. Only visible panels request data.
 
 ### 7.3 Snapshots and time travel (M4)
 - Save a full weight snapshot at steps 0, 1, 2, 4, 8, … (log-spaced) and every 100 steps after that, capped at 300 (≈ 27k × 4 B ≈ 110 KB each; drop every other old one when full).
@@ -300,6 +302,9 @@ Desktop layout, ≥ 1280 wide. Top bar: logo · tabs **Forms · Inside the brain
 │ TIMELINE ◀━━━━━━━●━━━━━▶ (M4)        │ known / pattern / partly / irregular│
 └──────────────────────────────────────┴───────────────────────────────────┘
 ```
+- **Two numbered phases** (user feedback: "not clear when it learns and when it answers"): **① Build the brain: learning** (left: controls, a "learning: N numbers nudged" badge, the one-step cycle *pick 16 examples → it answers them → measure the mistake (loss) → nudge the numbers*, animated stage by stage after Step ×1 while paused, and a link to the **Practice** tab) and **② Ask the brain: answering** (centre). Under the answer: "🔒 Answer from the brain at step N. Answering never changes the brain", flashing when the brain changed under the same question; while training: "⏳ learned N more steps since this answer" + Ask again, answer greyed.
+- **Practice tab** (between Forms and Inside the brain): **what it's practising now**, the whole latest batch (up to 32) as a simple table: example · **right answer (learning data)** · **what it answered** (before learning from it, ✓ ≈ ✗), plus "it answered 10 of 16 right · mistake 0.36". Its own Play / Step ×1, the learning badge and the cycle; the columns are revealed with the cycle stages. Moved off the Forms tab at the user's request so the animal list stays high.
+- **Write it slowly:** replays the current answer letter by letter (400 ms/letter): guess-bar columns and the linked attention rows appear one at a time, caption "reading the animal → writing letter 3 of 7".
 - **Question box:** text input, **language picker** and **form picker** (both built from the data files). Typing a name from another language switches the language (forms stay within one language) and the hint says "looks like Czech" or "not an animal from the data".
 - **Answer:** the generated word, the badge (section 6.4), the confidence meter. **A hidden answer is shown uncoloured until Reveal**, because a green or red word would give it away.
 - **Guess bars:** the main visual. For each output letter, the top-5 candidates (including "end of word") with bars; the chosen one highlighted; under each column a strip showing **copied vs wrote**. M3: hovering a column highlights the matching attention row.

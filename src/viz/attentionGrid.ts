@@ -31,7 +31,8 @@ export function attentionCellAt(spec: GridSpec, x: number, y: number): { row: nu
   return { row, col: col >= 0 && col < spec.cols.length ? col : null };
 }
 
-export function drawAttentionGrid(canvas: HTMLCanvasElement, spec: GridSpec, highlightRow: number | null): void {
+/** `shownRows`: rows from this one on are drawn empty (not written yet, "write it slowly"). */
+export function drawAttentionGrid(canvas: HTMLCanvasElement, spec: GridSpec, highlightRow: number | null, shownRows = spec.rows.length): void {
   const { width, height } = attentionGridSize(spec);
   const ctx = prepare(canvas, width, height);
   ctx.textAlign = 'center';
@@ -41,6 +42,14 @@ export function drawAttentionGrid(canvas: HTMLCanvasElement, spec: GridSpec, hig
   spec.cols.forEach((c, j) => ctx.fillText(c, LEFT + j * ATT_CELL + ATT_CELL / 2, TOP / 2));
   spec.rows.forEach((r, i) => {
     const y = TOP + i * ATT_CELL;
+    if (i >= shownRows) {
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '14px system-ui, sans-serif';
+      ctx.fillText('·', LEFT / 2, y + ATT_CELL / 2);
+      ctx.fillStyle = '#f8fafc';
+      spec.cols.forEach((_, j) => ctx.fillRect(LEFT + j * ATT_CELL, y, ATT_CELL - 1, ATT_CELL - 1));
+      return;
+    }
     if (i === highlightRow) {
       ctx.fillStyle = '#fde68a';
       ctx.fillRect(0, y, LEFT - 2, ATT_CELL);

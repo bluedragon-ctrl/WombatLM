@@ -74,6 +74,12 @@ export class InsideTab {
     this.renderModeButtons();
   }
 
+  /** Switch what the heatmaps show (e.g. "Change" from the learning-cycle link on the Forms tab). */
+  setMode(mode: InspectMode): void {
+    this.mode = mode;
+    this.renderModeButtons();
+  }
+
   setReady(ready: ReadyMsg): void {
     this.ready = ready;
     this.el.querySelector('.intro')!.textContent = t('inside.intro', { n: ready.params.toLocaleString(uiLang()) });

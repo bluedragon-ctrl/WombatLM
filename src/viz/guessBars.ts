@@ -26,13 +26,29 @@ export function guessBarsWidth(steps: number): number {
   return Math.max(COL, steps * COL) + 4;
 }
 
-/** `highlight`: the column linked to the attention grid (hovered there or here). */
-export function drawGuessBars(canvas: HTMLCanvasElement, steps: StepGuess[], labels: GuessBarLabels, highlight: number | null = null): void {
+/**
+ * `highlight`: the column linked to the attention grid (hovered there or here).
+ * `shown`: only the first `shown` columns are drawn, the rest are empty
+ * placeholders ("write it slowly").
+ */
+export function drawGuessBars(canvas: HTMLCanvasElement, steps: StepGuess[], labels: GuessBarLabels, highlight: number | null = null, shown = steps.length): void {
   const hasWrite = steps.some((s) => s.write !== undefined);
   const height = HEAD + 5 * ROW + (hasWrite ? 30 : 6);
   const ctx = prepare(canvas, guessBarsWidth(steps.length), height);
   steps.forEach((s, c) => {
     const x = c * COL + 2;
+    if (c >= shown) {
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 1, HEAD, COL - 6, 5 * ROW);
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#cbd5e1';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 18px system-ui, sans-serif';
+      ctx.fillText('?', x + COL / 2, 12);
+      return;
+    }
     if (c === highlight) {
       ctx.fillStyle = '#fef3c7';
       ctx.fillRect(x - 2, 0, COL, height);

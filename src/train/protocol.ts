@@ -5,7 +5,7 @@
  * never holds live weights; it receives data ready to draw.
  */
 import type { AxisKind } from '../nn/transformer';
-import type { Scores, TaskResult } from './trainer';
+import type { PracticeBatch, Scores, TaskResult } from './trainer';
 
 /** Training speed: steps per second, or 'max' (as fast as possible). */
 export type Speed = number | 'max';
@@ -31,6 +31,12 @@ export type ToWorker =
   | { type: 'ask'; id: number; text: string; lang: string; form: string }
   /** Evaluate now; `inventions` also asks for the forms the data lacks. */
   | { type: 'evaluate'; inventions?: boolean }
+  /**
+   * The Practice tab is open (on) or closed (off). While on, the brain also
+   * answers the shown examples before learning from them at high speeds (at
+   * most every 500 ms; at slow speeds and on Step it always does).
+   */
+  | { type: 'watchPractice'; on: boolean }
   /**
    * Look inside: the listed weight matrices (answered with `weights`, empty
    * list = none) and, if `letterMap`, the letter map (answered with `letterMap`).
@@ -109,6 +115,12 @@ export interface TickMsg {
   stepsPerSec: number;
   /** Raw batch losses of every step since the previous tick. */
   losses: LossPoint[];
+  /**
+   * What the latest training step practised on (up to 32 examples of learning data and, when it answered them before the step, its answers) with the
+   * model's guesses). Only present when there was a new step since the
+   * previous tick.
+   */
+  practice?: PracticeBatch;
 }
 
 export interface EvalMsg {

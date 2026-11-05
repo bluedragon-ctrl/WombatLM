@@ -64,6 +64,34 @@ export interface EvalResult {
   results: TaskResult[];
 }
 
+/** One example the model just learned from (learning data), and what it answered before learning from it. */
+export interface PracticeExample {
+  source: string;
+  lang: string;
+  form: string;
+  /** The right answer (the learning data). */
+  target: string;
+  /**
+   * What the brain answered when asked this question just before the step
+   * (ordinary answering: no help, nothing changes). Only present when the
+   * step was asked to answer first, see `trainStep(answerFirst)`.
+   */
+  answer?: string;
+  status?: 'correct' | 'close' | 'wrong';
+}
+
+/** The latest training batch, as the UI shows it. */
+export interface PracticeBatch {
+  step: number;
+  batchSize: number;
+  /** The batch loss (the mistake that was measured). */
+  loss: number;
+  /** The first examples of the batch (at most the limit asked for). */
+  examples: PracticeExample[];
+  /** If the brain answered them first: how many of the shown examples it got right. */
+  rightCount?: number;
+}
+
 /** Chosen from the experiments in docs/DECISIONS.md. */
 export const TRAINER_DEFAULTS = {
   lr: 3e-3,
@@ -102,6 +130,8 @@ export class FormTrainer {
   /** Packs whose animals count as "new" on the scoreboard (Teach mode). */
   freshPacks = new Set<string>();
   private mix: MixPart[] = [];
+  /** The latest batch, and what the brain answered before learning from it (if asked to). */
+  private last: { step: number; tasks: Task[]; answers: string[]; loss: number } | null = null;
 
   constructor(public dataset: Dataset, opts: TrainerOptions) {
     this.rng = new Rng(opts.seed ^ 0x5eed);
@@ -163,11 +193,18 @@ export class FormTrainer {
     return last.tasks[this.rng.int(last.tasks.length)];
   }
 
-  /** One optimisation step on a random batch. Returns the batch loss. */
-  trainStep(): number {
+  /**
+   * One optimisation step on a random batch. Returns the batch loss.
+   * With `answerFirst` > 0, the brain first answers that many of the batch's
+   * questions the ordinary way (greedy, no dropout, weights only read), so the
+   * UI can show "learning data → what it answered → right or wrong" before
+   * the mistake is measured and the numbers are nudged.
+   */
+  trainStep(answerFirst = 0): number {
     if (this.mix.length === 0) throw new Error('Nothing to train on');
-    const examples = Array.from({ length: this.batchSize }, () => this.toExample(this.sampleTask()));
-    const batch = makeBatch(examples, this.ids);
+    const tasks = Array.from({ length: this.batchSize }, () => this.sampleTask());
+    const answers = answerFirst > 0 ? this.runTasks(tasks.slice(0, answerFirst)) : [];
+    const batch = makeBatch(tasks.map((t) => this.toExample(t)), this.ids);
     this.opt.zeroGrad();
     const tape = new Tape();
     const loss = tape.run(() => this.model.loss(batch, this.vocab.pad));
@@ -178,7 +215,26 @@ export class FormTrainer {
     this.lastLr = info.lr;
     this.lastGradNorm = info.gradNorm;
     this.lossEma = this.lossEma === null ? this.lastLoss : 0.95 * this.lossEma + 0.05 * this.lastLoss;
+    this.last = { step: this.step, tasks, answers, loss: this.lastLoss };
     return this.lastLoss;
+  }
+
+  /** The latest batch: its learning data and, if it answered first, its answers. Null before the first step. */
+  practice(limit = 8): PracticeBatch | null {
+    const last = this.last;
+    if (!last) return null;
+    let right = 0;
+    const examples = last.tasks.slice(0, limit).map((task, i): PracticeExample => {
+      const ex: PracticeExample = { source: task.source, lang: task.to, form: task.form, target: task.answer };
+      if (i < last.answers.length) {
+        ex.answer = last.answers[i];
+        ex.status = judge(ex.answer, task.accepted) as 'correct' | 'close' | 'wrong';
+        if (ex.status === 'correct') right++;
+      }
+      return ex;
+    });
+    const answered = last.answers.length >= examples.length && examples.length > 0;
+    return { step: last.step, batchSize: last.tasks.length, loss: last.loss, examples, ...(answered ? { rightCount: right } : {}) };
   }
 
   setLearningRate(lr: number): void {

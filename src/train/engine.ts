@@ -10,7 +10,7 @@ import { Dataset, Animal } from '../data/dataset';
 import { baseBundle } from '../data/bundle';
 import { Vocab } from '../nn/vocab';
 import { pca2 } from '../nn/pca';
-import { FormTrainer, TRAINER_DEFAULTS, confidence, judge } from './trainer';
+import { FormTrainer, PracticeBatch, TRAINER_DEFAULTS, confidence, judge } from './trainer';
 import type {
   Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, FromWorker, InspectMode, LossPoint, MatrixInfo, Speed, StepGuess, ToWorker,
 } from './protocol';
@@ -35,6 +35,10 @@ export const EVAL = {
 /** Work per slice before yielding to the message queue. */
 const SLICE_MS = 12;
 const TICK_MS = 50;
+/** How many examples of the latest batch a tick carries. */
+export const PRACTICE_SAMPLE = 32;
+/** While the Practice tab is open and training is fast: answers before a step at most this often. */
+const OWN_EVERY_MS = 500;
 
 export class Engine {
   dataset: Dataset;
@@ -58,6 +62,13 @@ export class Engine {
   private lastDelta = new Map<string, { steps: number; data: Float32Array }>();
   /** Weights before the latest training step (reused buffers), so the first delta request has something to show. */
   private beforeStep: Float32Array[] | null = null;
+  /** Step of the latest practice batch sent in a tick (sent once per new step). */
+  private lastPracticeStep = -1;
+  /** The Practice tab is open: practice batches carry the brain's own answers (see `watchPractice`). */
+  private watchPractice = false;
+  private lastOwnAt = -Infinity;
+  /** The latest batch the brain answered before learning from it. */
+  private answered: PracticeBatch | undefined;
 
   constructor(private host: EngineHost, dataset?: Dataset) {
     this.dataset = dataset ?? new Dataset(baseBundle());
@@ -129,6 +140,10 @@ export class Engine {
       case 'evaluate':
         this.evaluate(msg.inventions ?? false);
         break;
+      case 'watchPractice':
+        this.watchPractice = msg.on;
+        if (msg.on) { this.lastPracticeStep = -1; this.tick(true); } // send the current batch with own answers now
+        break;
       case 'inspect':
         if (msg.matrixIds.length) this.sendWeights(msg.id, msg.matrixIds, msg.mode);
         if (msg.letterMap) this.sendLetterMap(msg.id);
@@ -147,11 +162,33 @@ export class Engine {
     this.deltaBase.clear();
     this.lastDelta.clear();
     this.beforeStep = null;
+    this.lastPracticeStep = -1;
+    this.answered = undefined;
   }
 
   private stop(): void {
     this.running = false;
     this.generation++; // any scheduled slice of the old loop sees a stale generation and stops
+  }
+
+  /** Training too fast to follow single steps. */
+  private fastRun(): boolean {
+    return this.running && (this.speed === 'max' || this.speed > 5);
+  }
+
+  /**
+   * How many of the next batch's questions the brain should answer before
+   * learning from them (for the Practice tab and the one-step cycle). Always
+   * for Step and slow speeds (cheap); at high speeds only while the Practice
+   * tab is open, and at most every OWN_EVERY_MS (one greedy pass each).
+   */
+  private answerFirst(): number {
+    if (!this.fastRun()) return PRACTICE_SAMPLE;
+    if (!this.watchPractice) return 0;
+    const now = this.host.now();
+    if (now - this.lastOwnAt < OWN_EVERY_MS) return 0;
+    this.lastOwnAt = now;
+    return PRACTICE_SAMPLE;
   }
 
   private trainOne(): void {
@@ -162,7 +199,9 @@ export class Engine {
       this.beforeStep![i].set(p.data);
     });
     const t0 = this.host.now();
-    const loss = this.trainer.trainStep();
+    const answerFirst = this.answerFirst();
+    const loss = this.trainer.trainStep(answerFirst);
+    if (answerFirst > 0) this.answered = this.trainer.practice(PRACTICE_SAMPLE) ?? undefined;
     const dt = this.host.now() - t0;
     if (dt > 0) {
       const sps = 1000 / dt;
@@ -197,9 +236,19 @@ export class Engine {
     if (!force && now - this.lastTick < TICK_MS) return;
     this.lastTick = now;
     const tr = this.trainer;
+    // The latest batch it practised on (only when there is a new one).
+    let practice: PracticeBatch | undefined;
+    if (this.watchPractice && this.fastRun()) {
+      // Practice tab open at high speed: show the latest batch it answered (kept
+      // until sent, since later steps of the same tick would replace it).
+      if (this.answered && this.answered.step !== this.lastPracticeStep) practice = this.answered;
+    } else if (tr.step !== this.lastPracticeStep) {
+      practice = tr.practice(PRACTICE_SAMPLE) ?? undefined;
+    }
+    if (practice) this.lastPracticeStep = practice.step;
     this.host.post({
       type: 'tick', step: tr.step, running: this.running, speed: this.speed, lossEma: tr.lossEma,
-      lr: this.lr, batchSize: tr.batchSize, gradNorm: tr.lastGradNorm, stepsPerSec: this.stepsPerSec, losses: this.losses,
+      lr: this.lr, batchSize: tr.batchSize, gradNorm: tr.lastGradNorm, stepsPerSec: this.stepsPerSec, losses: this.losses, practice,
     });
     this.losses = [];
   }
