@@ -35,6 +35,8 @@ export const EVAL = {
 /** Work per slice before yielding to the message queue. */
 const SLICE_MS = 12;
 const TICK_MS = 50;
+/** How many examples of the latest batch a tick carries. */
+export const PRACTICE_SAMPLE = 8;
 
 export class Engine {
   dataset: Dataset;
@@ -58,6 +60,8 @@ export class Engine {
   private lastDelta = new Map<string, { steps: number; data: Float32Array }>();
   /** Weights before the latest training step (reused buffers), so the first delta request has something to show. */
   private beforeStep: Float32Array[] | null = null;
+  /** Step of the latest practice batch sent in a tick (sent once per new step). */
+  private lastPracticeStep = -1;
 
   constructor(private host: EngineHost, dataset?: Dataset) {
     this.dataset = dataset ?? new Dataset(baseBundle());
@@ -147,6 +151,7 @@ export class Engine {
     this.deltaBase.clear();
     this.lastDelta.clear();
     this.beforeStep = null;
+    this.lastPracticeStep = -1;
   }
 
   private stop(): void {
@@ -197,9 +202,12 @@ export class Engine {
     if (!force && now - this.lastTick < TICK_MS) return;
     this.lastTick = now;
     const tr = this.trainer;
+    // The latest batch it practised on (only when there is a new one).
+    const practice = tr.step !== this.lastPracticeStep ? tr.practice(PRACTICE_SAMPLE) ?? undefined : undefined;
+    if (practice) this.lastPracticeStep = practice.step;
     this.host.post({
       type: 'tick', step: tr.step, running: this.running, speed: this.speed, lossEma: tr.lossEma,
-      lr: this.lr, batchSize: tr.batchSize, gradNorm: tr.lastGradNorm, stepsPerSec: this.stepsPerSec, losses: this.losses,
+      lr: this.lr, batchSize: tr.batchSize, gradNorm: tr.lastGradNorm, stepsPerSec: this.stepsPerSec, losses: this.losses, practice,
     });
     this.losses = [];
   }

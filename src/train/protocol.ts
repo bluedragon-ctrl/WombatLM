@@ -5,7 +5,7 @@
  * never holds live weights; it receives data ready to draw.
  */
 import type { AxisKind } from '../nn/transformer';
-import type { Scores, TaskResult } from './trainer';
+import type { PracticeBatch, Scores, TaskResult } from './trainer';
 
 /** Training speed: steps per second, or 'max' (as fast as possible). */
 export type Speed = number | 'max';
@@ -109,6 +109,12 @@ export interface TickMsg {
   stepsPerSec: number;
   /** Raw batch losses of every step since the previous tick. */
   losses: LossPoint[];
+  /**
+   * What the latest training step practised on (up to 8 examples with the
+   * model's guesses). Only present when there was a new step since the
+   * previous tick.
+   */
+  practice?: PracticeBatch;
 }
 
 export interface EvalMsg {

@@ -123,3 +123,71 @@ canvas { display: block; }
 .strip-labels div { height: 12px; line-height: 12px; width: 14px; text-align: center; }
 .tooltip { position: fixed; z-index: 10; pointer-events: none; background: #111827; color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 6px; max-width: 360px; }
 .tooltip[hidden] { display: none; }
+
+/* Learning vs answering: two numbered phases */
+.phase-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.phase-head h2 { margin: 0; }
+.phase-head h3 { margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.phase-head.sub { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.panel.phase.build { border-left: 4px solid #f59e0b; }
+.panel.phase.ask { border-left: 4px solid var(--accent); }
+.phase.build .phase-head h2 { color: #b45309; }
+.phase.ask .phase-head h2 { color: var(--accent); }
+details.help { position: relative; display: inline-block; }
+details.help summary { list-style: none; cursor: pointer; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #cbd5e1; color: var(--muted); font-size: 12px; font-weight: 600; text-align: center; line-height: 18px; }
+details.help summary::-webkit-details-marker { display: none; }
+details.help[open] summary { background: #eff6ff; border-color: var(--accent); color: var(--accent); }
+details.help p { position: absolute; z-index: 5; left: 0; top: 24px; width: 340px; margin: 0; padding: 8px 10px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.08); font-size: 13px; color: var(--ink); text-transform: none; letter-spacing: 0; font-weight: 400; }
+button.small-btn { font-size: 13px; padding: 2px 8px; }
+
+/* Learning badge */
+.learning { display: inline-block; margin-top: 8px; padding: 3px 10px; border-radius: 12px; font-size: 13px; border: 1px solid #cbd5e1; font-variant-numeric: tabular-nums; }
+.learning.off { color: var(--muted); background: #f8fafc; border-style: dashed; }
+.learning.on { color: #92400e; background: #fef3c7; border-color: #f59e0b; font-weight: 600; }
+.learning.pulse { animation: pulse 0.9s ease-out; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); background: #fde68a; } 100% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); } }
+
+/* One learning step: four stages */
+.cycle { list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 0; margin: 6px 0 2px; counter-reset: none; }
+.cycle .stage { position: relative; border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; font-size: 12px; color: var(--muted); background: #fafafa; min-height: 62px; }
+.cycle .stage .num { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 1px solid #cbd5e1; text-align: center; line-height: 16px; font-size: 11px; margin-right: 4px; }
+.cycle .stage .what { font-weight: 600; }
+.cycle .stage .val { display: block; margin-top: 2px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.cycle .stage.lit { border-color: #f59e0b; background: #fffbeb; color: #92400e; }
+.cycle .stage.lit .num { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.cycle .stage.current { border-width: 2px; padding: 3px 5px; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25); }
+.cycle .see-change { display: none; font-size: 12px; padding: 0; }
+.cycle .stage.lit .see-change { display: inline; }
+.cycle-note { margin: 4px 0 6px; }
+
+/* Examples of the latest batch */
+.practice-list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.practice-list li { padding: 2px 0; border-bottom: 1px solid #f1f5f9; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.practice-list li.step-of, .practice-list li.empty { border: none; }
+.practice-list .pair { font-weight: 600; min-width: 150px; }
+.practice-list .src { color: var(--muted); font-weight: 500; }
+.practice-list .task { font-size: 11px; color: var(--muted); }
+.practice-list .result { margin-left: auto; }
+.practice-list .mark.right { color: var(--correct); font-weight: 600; }
+.practice-list .mark.wrong { color: var(--wrong); font-weight: 600; }
+.practice-list .guess { font-family: ui-monospace, monospace; letter-spacing: 0.04em; }
+.practice-list .miss { color: var(--wrong); font-weight: 700; text-decoration: underline wavy; text-underline-offset: 3px; }
+
+/* Answer: which brain answered */
+.stamp-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: -4px 0 10px; }
+.stamp { font-size: 13px; padding: 3px 8px; border-radius: 6px; background: #eff6ff; color: #1e3a8a; }
+.stamp[hidden] { display: none; }
+.stamp.stale { background: #f1f5f9; color: var(--muted); border: 1px dashed #94a3b8; }
+.stamp.flash { animation: stamp-flash 1.2s ease-out; }
+@keyframes stamp-flash { 0% { background: #bfdbfe; box-shadow: 0 0 0 3px #93c5fd; } 100% { background: #eff6ff; box-shadow: 0 0 0 0 transparent; } }
+.output.stale .word, .output.stale .meter, .bars-wrap.stale, .att-grids.stale { opacity: 0.4; filter: grayscale(0.8); transition: opacity 0.3s; }
+.guess-head h2 { margin: 0; }
+.guess-head { margin: 4px 0 6px; }
+.slow-caption { font-size: 13px; color: var(--muted); }
+.slow-caption.active { color: var(--accent); font-weight: 600; }
+.word .cursor { color: var(--accent); font-weight: 400; font-size: 0.7em; animation: blink 0.8s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .learning.pulse, .stamp.flash, .word .cursor { animation: none; }
+}

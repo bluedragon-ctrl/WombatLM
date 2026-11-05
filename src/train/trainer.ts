@@ -8,9 +8,10 @@
  * lets the model keep the stem of animals it has never seen.
  */
 import { Tape } from '../nn/autograd';
+import type { Tensor } from '../nn/tensor';
 import { Adam } from '../nn/optim';
 import { Rng } from '../nn/rng';
-import { Example, SpecialIds, TRANSLATOR_DEFAULTS, TranslationTrace, Translator, TranslatorConfig, makeBatch } from '../nn/translator';
+import { Batch, Example, SpecialIds, TRANSLATOR_DEFAULTS, TranslationTrace, Translator, TranslatorConfig, makeBatch } from '../nn/translator';
 import { Vocab } from '../nn/vocab';
 import { Animal, Dataset, FormKind, Split, Task, editDistance, formKind } from '../data/dataset';
 
@@ -64,6 +65,38 @@ export interface EvalResult {
   results: TaskResult[];
 }
 
+/**
+ * One example the model just practised on, with the model's own guess
+ * (teacher-forced: for every letter it is shown the correct letters before it,
+ * so each guessed letter is a separate small test). Read from the scores the
+ * loss already computed, with dropout on, exactly as the model was graded.
+ */
+export interface PracticeExample {
+  source: string;
+  lang: string;
+  form: string;
+  /** The correct answer it was shown. */
+  target: string;
+  /** Guess per position of the target plus the end of the word ('' = "end of word"). */
+  guess: string[];
+  /** Every letter and the end of the word were guessed right. */
+  right: boolean;
+  /** This example's share of the mistake: mean -log p(correct letter). */
+  loss: number;
+}
+
+/** The latest training batch, as the UI shows it. */
+export interface PracticeBatch {
+  step: number;
+  batchSize: number;
+  /** How many examples of the whole batch were guessed fully right. */
+  rightCount: number;
+  /** The batch loss (the mistake that was measured). */
+  loss: number;
+  /** The first examples of the batch (at most the limit asked for). */
+  examples: PracticeExample[];
+}
+
 /** Chosen from the experiments in docs/DECISIONS.md. */
 export const TRAINER_DEFAULTS = {
   lr: 3e-3,
@@ -102,6 +135,8 @@ export class FormTrainer {
   /** Packs whose animals count as "new" on the scoreboard (Teach mode). */
   freshPacks = new Set<string>();
   private mix: MixPart[] = [];
+  /** The latest batch and the scores the model gave it (decoded only when asked, see `practice`). */
+  private last: { step: number; tasks: Task[]; batch: Batch; scores: Float32Array; loss: number } | null = null;
 
   constructor(public dataset: Dataset, opts: TrainerOptions) {
     this.rng = new Rng(opts.seed ^ 0x5eed);
@@ -166,11 +201,12 @@ export class FormTrainer {
   /** One optimisation step on a random batch. Returns the batch loss. */
   trainStep(): number {
     if (this.mix.length === 0) throw new Error('Nothing to train on');
-    const examples = Array.from({ length: this.batchSize }, () => this.toExample(this.sampleTask()));
-    const batch = makeBatch(examples, this.ids);
+    const tasks = Array.from({ length: this.batchSize }, () => this.sampleTask());
+    const batch = makeBatch(tasks.map((t) => this.toExample(t)), this.ids);
     this.opt.zeroGrad();
     const tape = new Tape();
-    const loss = tape.run(() => this.model.loss(batch, this.vocab.pad));
+    const keep: { scores?: Tensor } = {};
+    const loss = tape.run(() => this.model.loss(batch, this.vocab.pad, keep));
     tape.backward(loss);
     const info = this.opt.step();
     this.step++;
@@ -178,7 +214,47 @@ export class FormTrainer {
     this.lastLr = info.lr;
     this.lastGradNorm = info.gradNorm;
     this.lossEma = this.lossEma === null ? this.lastLoss : 0.95 * this.lossEma + 0.05 * this.lastLoss;
+    // Keep references only (no copies); `practice()` decodes them on demand.
+    this.last = { step: this.step, tasks, batch, scores: keep.scores!.data, loss: this.lastLoss };
     return this.lastLoss;
+  }
+
+  /**
+   * What the latest step practised: the batch's examples with the model's
+   * guesses (the argmax of the scores the loss was computed from), or null
+   * before the first step. Cheap: no forward pass, called at most per tick.
+   */
+  practice(limit = 8): PracticeBatch | null {
+    const last = this.last;
+    if (!last) return null;
+    const { batch, scores, tasks } = last;
+    const V = scores.length / (batch.B * batch.Tt);
+    const vocab = this.vocab;
+    const probs = !!this.model.config.copy; // with the copy mechanism the scores are probabilities, else logits
+    let rightCount = 0;
+    const examples: PracticeExample[] = [];
+    tasks.forEach((task, b) => {
+      const guess: string[] = [];
+      let right = true;
+      let nll = 0;
+      let n = 0;
+      for (let t = 0; t < batch.Tt; t++) {
+        const want = batch.tgtOut[b * batch.Tt + t];
+        if (want === vocab.pad) break;
+        const row = (b * batch.Tt + t) * V;
+        let best = 0;
+        for (let i = 1; i < V; i++) if (scores[row + i] > scores[row + best]) best = i;
+        guess.push(best === vocab.eos ? '' : vocab.isChar(best) ? vocab.tokens[best] : '?');
+        if (best !== want) right = false;
+        nll += probs ? -Math.log(Math.max(1e-9, scores[row + want])) : logSumExp(scores, row, V) - scores[row + want];
+        n++;
+      }
+      if (right) rightCount++;
+      if (examples.length < limit) {
+        examples.push({ source: task.source, lang: task.to, form: task.form, target: task.answer, guess, right, loss: n ? nll / n : 0 });
+      }
+    });
+    return { step: last.step, batchSize: tasks.length, rightCount, loss: last.loss, examples };
   }
 
   setLearningRate(lr: number): void {
@@ -225,6 +301,14 @@ export class FormTrainer {
     const src = this.vocab.encodeWord(text).slice(0, model.config.maxLen - 2);
     return model.inspect(this.dataset.targetId(lang, form), src, this.ids);
   }
+}
+
+function logSumExp(x: Float32Array, off: number, n: number): number {
+  let m = -Infinity;
+  for (let i = 0; i < n; i++) m = Math.max(m, x[off + i]);
+  let s = 0;
+  for (let i = 0; i < n; i++) s += Math.exp(x[off + i] - m);
+  return m + Math.log(s);
 }
 
 export function judge(output: string, accepted: readonly string[]): Status {

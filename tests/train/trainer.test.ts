@@ -22,6 +22,34 @@ describe('FormTrainer', () => {
     for (let i = 0; i < 5; i++) expect(a.trainStep()).toBe(b.trainStep());
   });
 
+  it('reports the latest batch with teacher-forced guesses, at no change to training', () => {
+    const tr = new FormTrainer(ds, { seed: 7 });
+    expect(tr.practice()).toBeNull();
+    const loss = tr.trainStep();
+    const p = tr.practice(8)!;
+    expect(p.step).toBe(1);
+    expect(p.batchSize).toBe(16);
+    expect(p.examples.length).toBe(8);
+    expect(p.loss).toBe(loss);
+    for (const ex of p.examples) {
+      expect(ex.guess.length).toBe([...ex.target].length + 1); // every letter + the end of the word
+      expect(ex.right).toBe(ex.guess.join('') === ex.target && ex.guess.at(-1) === '');
+      expect(ex.loss).toBeGreaterThan(0);
+    }
+    expect(p.rightCount).toBeGreaterThanOrEqual(p.examples.filter((e) => e.right).length);
+    // Asking for the practice batch does not disturb training.
+    const other = new FormTrainer(ds, { seed: 7 });
+    other.trainStep();
+    expect(tr.trainStep()).toBe(other.trainStep());
+  });
+
+  it('practice guesses become right once it has learned', () => {
+    const tr = new FormTrainer(ds, { seed: 1 });
+    for (let i = 0; i < 600; i++) tr.trainStep();
+    const p = tr.practice(16)!;
+    expect(p.rightCount).toBeGreaterThan(4);
+  });
+
   it('evaluates every form per language, with inventions on request', () => {
     const tr = new FormTrainer(ds, { seed: 1 });
     tr.trainStep();

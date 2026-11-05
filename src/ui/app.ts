@@ -8,7 +8,7 @@
  * draws what comes back.
  */
 import type { AnimalInfo, AnswerMsg, EvalMsg, FromWorker, LetterMapMsg, LossPoint, ReadyMsg, Speed, TickMsg, ToWorker } from '../train/protocol';
-import type { Scores, TaskResult } from '../train/trainer';
+import type { PracticeBatch, PracticeExample, Scores, TaskResult } from '../train/trainer';
 import { LETTER_KINDS, LetterKind, STATUS_COLORS, STATUS_ICONS, SCORE_STYLE } from '../viz/colors';
 import { attentionCellAt, drawAttentionGrid, GridSpec } from '../viz/attentionGrid';
 import { drawGuessBars, guessColumnAt } from '../viz/guessBars';
@@ -24,6 +24,25 @@ type Tab = 'forms' | 'inside';
 const TABS: Tab[] = ['forms', 'inside'];
 /** Look-inside requests: at most one in flight, at most this often. */
 const INSPECT_MS = 250;
+/** "Write it slowly": time per letter, and the "reading the animal" pause before the first one. */
+const SLOW_MS = 400;
+const SLOW_READ_MS = 700;
+/** One-step learning cycle: time each stage stays lit before the next one. */
+const CYCLE_MS = 700;
+/** At high speeds the practice strip changes at most this often (so it can be read at all). */
+const PRACTICE_FAST_MS = 500;
+/** After a step while paused, the learning badge says "learning" for this long. */
+const LEARN_GLOW_MS = 1500;
+const CYCLE_STAGES = ['pick', 'guess', 'measure', 'nudge'] as const;
+
+/** A "?" that opens a short explanation (keyboard accessible). */
+const help = (text: string) => h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), h('p', {}, text));
+/** Restart a CSS animation class on an element. */
+function retrigger(el: HTMLElement, cls: string): void {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
 
 /** One attention grid on screen. `linked`: its rows are the output letters (hover links to the guess bars). */
 interface AttGrid {
@@ -37,6 +56,8 @@ interface AttGrid {
 const tokenLabel = (tok: string, i: number) => (i === 0 ? '✱' : tok === ' ' ? '␣' : tok);
 const SPEEDS: Speed[] = [1, 5, 20, 'max'];
 const SCORE_LINES = ['known', 'pattern', 'partly', 'irregular'] as const;
+/** Examples of the latest batch a tick carries (engine PRACTICE_SAMPLE). */
+const PRACTICE_SHOWN = 8;
 
 const resultKey = (id: string, lang: string, form: string) => `${id}|${lang}|${form}`;
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '–' : `${Math.round(v * 100)} %`);
@@ -56,7 +77,22 @@ export class App {
   private expert = false;
   private filter: Filter = 'all';
   private question = { text: '', lang: '', form: 'female' };
-  private dirty = { controls: true, answer: true, loss: true, scores: true, animals: true };
+  private dirty = { controls: true, answer: true, loss: true, scores: true, animals: true, practice: true, stamp: true };
+  /** The latest batch the brain practised on (learning), and when the strip last changed. */
+  private practice?: PracticeBatch;
+  private practiceShownAt = -Infinity;
+  private practiceTimer = 0;
+  private practiceNew = false;
+  private learnedAt = -Infinity;
+  /** "Keep answering while it learns": re-ask after every tick even while training. */
+  private live = false;
+  /** The answer changed because the brain changed (not the question): flash its step label. */
+  private stampFlash = false;
+  /** "Write it slowly" replay of one answer: how many letters are shown so far. */
+  private slow: { answer: AnswerMsg; shown: number; done: boolean; timer: number } | null = null;
+  /** One-step learning cycle animation (stage 1..4), started by Step ×1 while paused. */
+  private cycle: { phase: number; timer: number } | null = null;
+  private cycleWanted = false;
   private frame = 0;
   private els!: ReturnType<App['build']>;
   private tab: Tab = 'forms';
@@ -113,20 +149,36 @@ export class App {
         if (this.tick && msg.step < this.tick.step) {
           this.losses = []; this.evals = []; this.results.clear();
           this.letterMap.reset();
+          this.practice = undefined;
+          this.stopCycle();
+          this.stopSlow();
           this.requestInspect(true);
+          this.invalidate('practice');
         }
         this.tick = msg;
         this.losses.push(...msg.losses);
         if (this.losses.length > 40000) this.losses = this.losses.filter((_, i) => i % 2 === 0);
-        if (msg.losses.length) { this.ask(); this.requestInspect(); }
-        this.invalidate('controls', 'loss');
+        if (msg.practice) this.onPractice(msg.practice, msg);
+        if (msg.losses.length) this.requestInspect();
+        // Answering is separate from learning: while the brain learns, the answer
+        // waits (marked as out of date) unless the user asked for live answers.
+        if (this.answer && this.answer.step !== msg.step && (!msg.running || this.live)) this.ask();
+        this.invalidate('controls', 'loss', 'stamp');
+        if (!msg.running && this.practice) this.invalidate('practice');
         break;
       case 'eval':
         this.onEval(msg);
         break;
       case 'answer':
         this.askInFlight = false;
-        if (msg.id === this.askId) { this.answer = msg; this.invalidate('answer'); this.inside.setAnswer(msg); }
+        if (msg.id === this.askId) {
+          const prev = this.answer;
+          // Same question, new brain: the answer refreshed because the brain changed.
+          if (prev && prev.step !== msg.step && prev.text === msg.text && prev.lang === msg.lang && prev.form === msg.form) this.stampFlash = true;
+          this.answer = msg;
+          this.invalidate('answer', 'stamp');
+          this.inside.setAnswer(msg);
+        }
         if (this.askDirty) this.ask();
         break;
       case 'weights':
@@ -148,6 +200,95 @@ export class App {
     if (!this.evals.length || this.evals[this.evals.length - 1].step !== msg.step) this.evals.push({ step: msg.step, scores: msg.scores });
     for (const r of msg.results) this.results.set(resultKey(r.id, r.lang, r.form), r);
     this.invalidate('scores', 'animals');
+  }
+
+  private onPractice(p: PracticeBatch, tk: TickMsg): void {
+    this.practice = p;
+    this.practiceNew = true;
+    this.learnedAt = performance.now();
+    if (this.cycleWanted && !tk.running) { this.cycleWanted = false; this.startCycle(); }
+    if (this.fast() && performance.now() - this.practiceShownAt < PRACTICE_FAST_MS) {
+      if (!this.practiceTimer) this.practiceTimer = window.setTimeout(() => { this.practiceTimer = 0; this.invalidate('practice'); }, PRACTICE_FAST_MS);
+      return;
+    }
+    this.invalidate('practice');
+    if (!tk.running) window.setTimeout(() => this.invalidate('practice'), LEARN_GLOW_MS + 50);
+  }
+
+  /** Training too fast to follow single steps. */
+  private fast(): boolean {
+    const tk = this.tick;
+    return !!tk?.running && (tk.speed === 'max' || tk.speed > 5);
+  }
+
+  /** One-step learning cycle: light the four stages one after another. */
+  private startCycle(): void {
+    this.stopCycle();
+    const c = { phase: 1, timer: 0 };
+    this.cycle = c;
+    const next = () => {
+      if (this.cycle !== c) return;
+      if (c.phase < CYCLE_STAGES.length) {
+        c.phase++;
+        c.timer = window.setTimeout(next, CYCLE_MS);
+        if (c.phase === CYCLE_STAGES.length) {
+          // "Nudge the numbers": the learning badge lights up now.
+          this.learnedAt = performance.now();
+          this.practiceNew = true;
+          window.setTimeout(() => this.invalidate('practice'), LEARN_GLOW_MS + 50);
+        }
+      } else this.cycle = null;
+      this.invalidate('practice');
+    };
+    c.timer = window.setTimeout(next, CYCLE_MS);
+  }
+
+  private stopCycle(): void {
+    if (this.cycle) window.clearTimeout(this.cycle.timer);
+    this.cycle = null;
+  }
+
+  /** "Write it slowly": reveal the current answer one letter at a time. */
+  private toggleSlow(): void {
+    if (this.slow) { this.stopSlow(); return; }
+    const a = this.answer;
+    if (!a) return;
+    const s = { answer: a, shown: 0, done: false, timer: 0 };
+    this.slow = s;
+    const next = () => {
+      if (this.slow !== s) return;
+      if (s.shown < a.steps.length) {
+        s.shown++;
+        this.hoverStep = s.shown - 1;
+        s.timer = window.setTimeout(next, SLOW_MS);
+      } else {
+        s.done = true;
+        this.hoverStep = null;
+        s.timer = window.setTimeout(() => this.stopSlow(), 2 * SLOW_MS + 600);
+      }
+      this.invalidate('answer', 'stamp');
+    };
+    this.hoverStep = null;
+    s.timer = window.setTimeout(next, SLOW_READ_MS);
+    this.invalidate('answer', 'stamp');
+  }
+
+  private stopSlow(): void {
+    if (!this.slow) return;
+    window.clearTimeout(this.slow.timer);
+    this.slow = null;
+    this.hoverStep = null;
+    this.invalidate('answer', 'stamp');
+  }
+
+  /** The answer on screen: the one being written slowly, else the latest. */
+  private shown(): AnswerMsg | undefined {
+    return this.slow?.answer ?? this.answer;
+  }
+
+  /** How many letters of the answer on screen are visible (all, unless written slowly). */
+  private shownSteps(): number | undefined {
+    return this.slow && !this.slow.done ? this.slow.shown : undefined;
   }
 
   /** Ask the worker about the current question (at most one request in flight). */
@@ -221,7 +362,11 @@ export class App {
     const play = h('button', { class: 'primary', 'data-test': 'play' });
     play.onclick = () => this.send({ type: this.tick?.running ? 'pause' : 'play' });
     const step1 = h('button', {}, t('step1'));
-    step1.onclick = () => this.send({ type: 'step', n: 1 });
+    step1.onclick = () => {
+      // Paused: show this one step slowly (the four-stage cycle).
+      if (!this.tick?.running) this.cycleWanted = true;
+      this.send({ type: 'step', n: 1 });
+    };
     const step10 = h('button', {}, t('step10'));
     step10.onclick = () => this.send({ type: 'step', n: 10 });
     const speed = h('select', { 'aria-label': t('speed') });
@@ -231,7 +376,7 @@ export class App {
     const seed = h('input', { type: 'number', min: 1, step: 1, class: 'seed', 'aria-label': t('seed') });
     const reset = h('button', {}, t('reset'));
     reset.onclick = () => this.send({ type: 'reset', seed: Number(seed.value) || 1 });
-    const expertBox = h('input', { type: 'checkbox' });
+    const expertBox = h('input', { type: 'checkbox', 'data-test': 'expert' });
     expertBox.onchange = () => {
       this.expert = expertBox.checked;
       expertPanel.hidden = !this.expert;
@@ -253,9 +398,33 @@ export class App {
     const formPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('form') });
     const hint = h('div', { class: 'hint' });
     const output = h('div', { class: 'output', 'data-test': 'output' });
+    // Built once: it updates on every tick, and a rebuilt button would swallow clicks.
+    const stampText = h('span');
+    const askAgain = h('button', { class: 'small-btn', 'data-test': 'ask-again', hidden: true }, t('stamp.askAgain'));
+    askAgain.onclick = () => this.ask();
+    const stamp = h('div', { class: 'stamp', 'data-test': 'stamp', 'aria-live': 'polite' }, stampText, ' ', askAgain);
+    const liveBox = h('input', { type: 'checkbox', 'data-test': 'live' });
+    liveBox.onchange = () => { this.live = liveBox.checked; if (this.live) this.ask(); this.invalidate('stamp'); };
+    const liveLabel = h('label', { class: 'small live' }, liveBox, ' ', t('stamp.live'));
     const bars = h('canvas', { class: 'bars', 'data-test': 'bars' });
-    bars.onmousemove = (e) => this.setHover(guessColumnAt(e.offsetX, this.answer?.steps.length ?? 0));
-    bars.onmouseleave = () => this.setHover(null);
+    bars.onmousemove = (e) => { if (!this.slow) this.setHover(guessColumnAt(e.offsetX, this.shown()?.steps.length ?? 0)); };
+    bars.onmouseleave = () => { if (!this.slow) this.setHover(null); };
+    const barsWrap = h('div', { class: 'bars-wrap' }, bars);
+    const slowBtn = h('button', { class: 'small-btn', 'data-test': 'slow' }, t('slow.button'));
+    slowBtn.onclick = () => this.toggleSlow();
+    const slowCaption = h('span', { class: 'slow-caption', 'data-test': 'slow-caption', 'aria-live': 'polite' });
+    const learning = h('div', { class: 'learning off', 'data-test': 'learning' });
+    const cycleStages = CYCLE_STAGES.map((k, i) => h('li', { class: 'stage', 'data-stage': k },
+      h('span', { class: 'num' }, String(i + 1)),
+      h('span', { class: 'what' }),
+      h('span', { class: 'val' })));
+    const seeChange = h('button', { class: 'link see-change' }, t('cycle.seeChange'));
+    seeChange.onclick = () => { this.inside.setMode('delta'); this.setTab('inside'); };
+    cycleStages[3].append(seeChange);
+    const cycle = h('ol', { class: 'cycle', 'data-test': 'cycle', 'aria-label': t('cycle.title') }, ...cycleStages);
+    const cycleNote = h('p', { class: 'small cycle-note' });
+    const practiceList = h('ul', { class: 'practice-list', 'data-test': 'practice' });
+    const practiceHelp = help(t('practice.help', { shown: PRACTICE_SHOWN, batch: 16 }));
     const attention = h('div', { class: 'att-grids', 'data-test': 'attention' });
     const mapCanvas = h('canvas', { class: 'letter-map', 'data-test': 'letter-map' });
     const mapNote = h('p', { class: 'small' });
@@ -291,8 +460,9 @@ export class App {
     };
     const error = h('div', { class: 'error', hidden: true });
     const formsMain = this.buildForms({
-      play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, bars,
+      play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, barsWrap,
       attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals,
+      stamp, liveLabel, slowBtn, slowCaption, learning, cycle, cycleNote, practiceList, practiceHelp,
     });
     const insideMain = h('main', { class: 'inside-main', hidden: true }, this.inside.el);
 
@@ -303,29 +473,40 @@ export class App {
       insideMain,
     );
     return {
-      play, speed, seed, status, input, langPick, formPick, hint, output, bars, attention, mapCanvas, mapNote, tabs, formsMain, insideMain,
+      play, speed, seed, status, input, langPick, formPick, hint, output, bars, barsWrap, attention, mapCanvas, mapNote, tabs, formsMain, insideMain,
+      stamp, stampText, askAgain, slowBtn, slowCaption, learning, cycleStages, cycleNote, practiceList, practiceHelp,
       lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
     };
   }
 
   private buildForms(parts: Record<string, HTMLElement>) {
-    const { play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, bars,
-      attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals } = parts;
+    const { play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, barsWrap,
+      attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals,
+      stamp, liveLabel, slowBtn, slowCaption, learning, cycle, cycleNote, practiceList, practiceHelp } = parts;
     return h('main', { class: 'forms' },
         h('aside', { class: 'left' },
-          h('section', { class: 'panel controls' },
+          h('section', { class: 'panel controls phase build' },
+            h('div', { class: 'phase-head' }, h('h2', {}, t('build.title')), help(t('build.help'))),
             h('div', { class: 'row' }, play, step1, step10),
             h('label', { class: 'row' }, t('speed'), ' ', speed),
             h('div', { class: 'row' }, h('label', {}, t('seed'), ' ', seed), reset),
             h('label', { class: 'row small' }, expertBox, ' ', t('expert')),
             expertPanel,
-            status),
+            status,
+            learning,
+            h('div', { class: 'phase-head sub' }, h('h3', {}, t('practice.title')), practiceHelp),
+            cycle,
+            cycleNote,
+            practiceList),
           h('section', { class: 'panel list' }, h('h2', {}, t('animals')), filters, animals)),
         h('section', { class: 'centre' },
-          h('section', { class: 'panel askbox' },
+          h('section', { class: 'panel askbox phase ask' },
+            h('div', { class: 'phase-head' }, h('h2', {}, t('ask.title')), help(t('ask.help'))),
             h('div', { class: 'row' }, input, langPick),
             formPick, hint, output,
-            h('h2', {}, t('guessBars')), h('div', { class: 'bars-wrap' }, bars)),
+            h('div', { class: 'stamp-row' }, stamp, liveLabel),
+            h('div', { class: 'row guess-head' }, h('h2', {}, t('guessBars')), slowBtn, slowCaption),
+            barsWrap),
           h('section', { class: 'panel attention' },
             h('h2', {}, t('att.title')),
             h('p', { class: 'small' }, t('att.help')),
@@ -372,6 +553,7 @@ export class App {
     }
     if (!typed) this.els.input.value = this.question.text;
     this.revealed = false;
+    this.stopSlow();
     this.ask();
     this.invalidate('answer', 'animals');
   }
@@ -393,7 +575,9 @@ export class App {
     if (d.loss) this.renderLoss();
     if (d.scores) this.renderScores();
     if (d.animals) this.renderAnimals();
-    this.dirty = { controls: false, answer: false, loss: false, scores: false, animals: false };
+    if (d.practice) this.renderPractice();
+    if (d.stamp) this.renderStamp();
+    this.dirty = { controls: false, answer: false, loss: false, scores: false, animals: false, practice: false, stamp: false };
   }
 
   private renderControls(): void {
@@ -411,14 +595,17 @@ export class App {
     if (document.activeElement !== input) input.value = this.question.text;
     for (const b of langPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.lang === this.question.lang);
     for (const b of formPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.form === this.question.form);
-    const a = this.answer;
+    const a = this.shown();
     if (!a || !this.ready) { output.replaceChildren(); return; }
+    const writing = this.shownSteps();
     const langName = (code: string) => this.ready!.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
     hint.textContent = a.badge === 'free' ? t('unknownWord') : t('looksLike', { lang: langName(a.lang) });
 
     // A hidden answer is not judged on screen until revealed: the colour would give it away.
-    const wordClass = a.badge === 'hidden' && !this.revealed ? 'unrevealed' : a.answer ? a.answer.status : 'invented';
-    const word = h('span', { class: `word ${wordClass}` }, a.output || '∅');
+    const wordClass = (a.badge === 'hidden' && !this.revealed) || writing !== undefined ? 'unrevealed' : a.answer ? a.answer.status : 'invented';
+    const word = writing !== undefined
+      ? h('span', { class: `word ${wordClass}` }, a.steps.slice(0, writing).map((s) => s.chosen).join(''), h('span', { class: 'cursor' }, '▌'))
+      : h('span', { class: `word ${wordClass}` }, a.output || '∅');
     const parts: (Node | string)[] = [h('span', { class: 'from' }, `${a.text} →`), word];
     if (!a.finished) parts.push(h('span', { class: 'small' }, t('notFinished')));
     const badge = h('div', { class: `badge ${a.badge}` }, t(`badge.${a.badge}`));
@@ -440,7 +627,8 @@ export class App {
       h('span', {}, `${Math.round(a.confidence * 100)}`));
     output.replaceChildren(h('div', { class: 'answer-line' }, ...parts), badge, meter);
     if (this.hoverStep !== null && this.hoverStep >= a.steps.length) this.hoverStep = null;
-    drawGuessBars(bars, a.steps, { copied: t('copied'), wrote: t('wrote') }, this.hoverStep);
+    drawGuessBars(bars, a.steps, { copied: t('copied'), wrote: t('wrote') }, this.hoverStep, writing);
+    this.renderSlowCaption(a);
     this.renderAttention();
   }
 
@@ -448,7 +636,8 @@ export class App {
   private setHover(step: number | null): void {
     if (step === this.hoverStep) return;
     this.hoverStep = step;
-    if (this.answer) drawGuessBars(this.els.bars, this.answer.steps, { copied: t('copied'), wrote: t('wrote') }, step);
+    const a = this.shown();
+    if (a) drawGuessBars(this.els.bars, a.steps, { copied: t('copied'), wrote: t('wrote') }, step, this.shownSteps());
     this.drawAttention();
   }
 
@@ -482,7 +671,7 @@ export class App {
   }
 
   private renderAttention(): void {
-    const a = this.answer;
+    const a = this.shown();
     if (!a) return;
     const grids = this.attentionGrids(a);
     const keys = grids.map((g) => g.key).join();
@@ -494,12 +683,12 @@ export class App {
         canvas.onmousemove = (e) => {
           const grid = this.attGrids[i];
           const cell = attentionCellAt(grid.spec, e.offsetX, e.offsetY);
-          if (grid.linked) this.setHover(cell ? cell.row : null);
+          if (grid.linked && !this.slow) this.setHover(cell ? cell.row : null);
           canvas.title = cell && cell.col !== null
             ? t('att.cell', { row: grid.spec.rows[cell.row], col: grid.spec.cols[cell.col], p: Math.round(grid.spec.data[grid.spec.offset + cell.row * grid.spec.stride + cell.col] * 100) })
             : '';
         };
-        canvas.onmouseleave = () => { if (this.attGrids[i].linked) this.setHover(null); };
+        canvas.onmouseleave = () => { if (this.attGrids[i].linked && !this.slow) this.setHover(null); };
         return h('figure', { class: 'att' }, h('figcaption', {}, g.title), canvas);
       }));
     } else {
@@ -512,8 +701,128 @@ export class App {
   private drawAttention(): void {
     for (const g of this.attGrids) {
       if (!g.canvas) continue;
-      drawAttentionGrid(g.canvas, g.spec, g.linked ? this.hoverStep : null);
+      drawAttentionGrid(g.canvas, g.spec, g.linked ? this.hoverStep : null, g.linked ? this.shownSteps() : undefined);
     }
+  }
+
+  /** "Write it slowly": the button and the caption ("reading the animal → writing letter 3 of 7"). */
+  private renderSlowCaption(a: AnswerMsg): void {
+    const s = this.slow;
+    this.els.slowBtn.textContent = s ? t('slow.stop') : t('slow.button');
+    this.els.slowBtn.classList.toggle('on', !!s);
+    let caption = '';
+    if (s) {
+      if (s.done) caption = t('slow.done', { word: a.output || '∅' });
+      else if (s.shown === 0) caption = t('slow.reading', { word: a.text });
+      else if (s.shown > a.output.length) caption = t('slow.ending');
+      else caption = t('slow.writing', { k: s.shown, n: a.output.length });
+    }
+    this.els.slowCaption.textContent = caption;
+    this.els.slowCaption.classList.toggle('active', !!s);
+  }
+
+  /**
+   * Under the answer: which brain (step) answered, and that answering never
+   * changes it. While the brain learns, the answer is marked as out of date.
+   */
+  private renderStamp(): void {
+    const { stamp, stampText, askAgain, output, barsWrap, attention } = this.els;
+    const a = this.shown();
+    const tk = this.tick;
+    stamp.hidden = !a;
+    if (!a) return;
+    const behind = tk ? tk.step - a.step : 0;
+    const stale = !this.slow && behind > 0 && !!tk?.running && !this.live;
+    stampText.textContent = stale
+      ? t('stamp.stale', { n: behind.toLocaleString(uiLang()), step: a.step.toLocaleString(uiLang()) })
+      : t('stamp.fresh', { step: a.step.toLocaleString(uiLang()) });
+    askAgain.hidden = !stale;
+    stamp.classList.toggle('stale', stale);
+    for (const el of [output, barsWrap, attention]) el.classList.toggle('stale', stale);
+    if (this.stampFlash) {
+      this.stampFlash = false;
+      retrigger(stamp, 'flash');
+    }
+  }
+
+  /** Learning: the badge, the one-step cycle and the examples of the latest batch. */
+  private renderPractice(): void {
+    if (!this.ready) return;
+    this.practiceShownAt = performance.now();
+    const { learning, cycleStages, cycleNote, practiceList, practiceHelp } = this.els;
+    const p = this.practice;
+    const tk = this.tick;
+    const n = this.ready.params.toLocaleString(uiLang());
+    const phase = this.cycle?.phase ?? CYCLE_STAGES.length;
+    const fast = this.fast();
+
+    // Badge: is it learning right now?
+    const glowing = !tk?.running && !!p && performance.now() - this.learnedAt < LEARN_GLOW_MS && phase >= CYCLE_STAGES.length;
+    const on = !!tk?.running || glowing || !!this.cycle;
+    learning.textContent = !on ? t('learning.off')
+      : fast ? t('learning.fast', { n, sps: Math.round(tk!.stepsPerSec) }) : t('learning.on', { n });
+    learning.classList.toggle('on', on);
+    learning.classList.toggle('off', !on);
+    learning.classList.toggle('busy', on && fast);
+    if (this.practiceNew && on && !fast && phase >= CYCLE_STAGES.length) retrigger(learning, 'pulse');
+    if (fast) learning.classList.remove('pulse');
+    this.practiceNew = false;
+
+    // The four stages of one step.
+    const values = p ? [
+      t('cycle.pickVal'),
+      t('cycle.guessVal', { right: p.rightCount, n: p.batchSize }),
+      t('cycle.measureVal', { loss: p.loss.toFixed(2) }),
+      t('cycle.nudgeVal', { n }),
+    ] : ['', '', '', ''];
+    cycleStages.forEach((el, i) => {
+      const lit = !!p && phase > i;
+      el.classList.toggle('lit', lit);
+      el.classList.toggle('current', !!this.cycle && phase === i + 1);
+      (el.querySelector('.what') as HTMLElement).textContent = t(`cycle.${CYCLE_STAGES[i]}`, { n: p?.batchSize ?? tk?.batchSize ?? 16 });
+      (el.querySelector('.num') as HTMLElement).textContent = this.cycle && phase === i + 1 ? '▶' : String(i + 1);
+      (el.querySelector('.val') as HTMLElement).textContent = lit ? values[i] : '';
+    });
+    cycleNote.textContent = fast ? t('cycle.running', { n: Math.round(tk!.stepsPerSec) }) : t('cycle.hint');
+    practiceHelp.querySelector('p')!.textContent = t('practice.help', { shown: Math.min(PRACTICE_SHOWN, p?.batchSize ?? 16), batch: p?.batchSize ?? 16 });
+
+    // The examples (revealed with the stages: answers, then guesses, then right/wrong).
+    if (!p) {
+      practiceList.replaceChildren(h('li', { class: 'empty small' }, t('practice.empty')));
+      return;
+    }
+    const langName = (code: string) => this.ready!.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
+    practiceList.replaceChildren(
+      h('li', { class: 'small step-of' }, t('practice.step', { step: p.step.toLocaleString(uiLang()) })),
+      ...p.examples.map((ex) => {
+        const judged = phase >= 3;
+        const task = ex.form === 'name' ? t('practice.copy') : `${t(`form.${ex.form}`)} · ${langName(ex.lang)}`;
+        const result: (Node | string)[] = [];
+        if (phase >= 2) {
+          if (judged && ex.right) result.push(h('span', { class: 'mark right' }, t('practice.right')));
+          else {
+            if (judged) result.push(h('span', { class: 'mark wrong' }, t('practice.wrong')), ' ');
+            result.push(this.guessLetters(ex, judged));
+          }
+        }
+        return h('li', { class: `ex ${judged ? (ex.right ? 'right' : 'wrong') : ''}` },
+          h('span', { class: 'pair' }, h('span', { class: 'src' }, ex.source), ' → ', h('span', { class: 'tgt' }, ex.target)),
+          h('span', { class: 'task' }, task),
+          h('span', { class: 'result' }, ...result));
+      }));
+  }
+
+  /** The guessed letters; wrong ones marked (red, underlined) once judged. */
+  private guessLetters(ex: PracticeExample, judged: boolean): HTMLElement {
+    const want = [...ex.target];
+    const out = h('span', { class: 'guess' });
+    ex.guess.forEach((g, i) => {
+      const end = i === want.length;
+      if (end && g === '') return; // ended the word at the right place
+      const miss = end || g !== want[i];
+      out.append(judged && miss ? h('span', { class: 'miss' }, g === '' ? '⏎' : g) : (g === '' ? '⏎' : g));
+    });
+    return out;
   }
 
   private renderLoss(): void {

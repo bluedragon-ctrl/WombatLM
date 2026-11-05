@@ -192,6 +192,44 @@ describe('Engine', () => {
     expect(m.coords.every(Number.isFinite)).toBe(true);
   });
 
+  it('ticks carry the latest practice batch once per new step', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    expect((h.of('tick').at(-1) as TickMsg).practice).toBeUndefined();
+    e.handle({ type: 'step', n: 2 });
+    const p = (h.of('tick').at(-1) as TickMsg).practice!;
+    expect(p.step).toBe(2);
+    expect(p.examples.length).toBe(8);
+    expect(p.examples[0].target.length).toBeGreaterThan(0);
+    e.handle({ type: 'pause' });
+    expect((h.of('tick').at(-1) as TickMsg).practice).toBeUndefined();
+  });
+
+  it('answering and evaluating never change the brain', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    const twin = new Engine(fakeHost().host, ds);
+    e.handle({ type: 'init', seed: 5 });
+    twin.handle({ type: 'init', seed: 5 });
+    e.handle({ type: 'step', n: 20 });
+    twin.handle({ type: 'step', n: 20 });
+    const bits = () => e.trainer.model.params.list.map((p) => Array.from(new Uint32Array(p.data.slice().buffer)));
+    const before = bits();
+    const lang = ds.languageCodes[0];
+    for (let i = 0; i < 5; i++) e.handle({ type: 'ask', id: i, text: ['tygr', 'kočka', 'qqq', 'buvol', 'x'][i], lang, form: 'female' });
+    e.handle({ type: 'evaluate', inventions: true });
+    e.handle({ type: 'inspect', id: 9, matrixIds: ['tokEmb'], mode: 'delta', letterMap: true });
+    expect(h.of('answer').length).toBe(5);
+    expect(bits()).toEqual(before);
+    expect(e.trainer.step).toBe(20);
+    // …and nothing hidden changed either (optimiser, random numbers): the next step is identical.
+    e.handle({ type: 'step', n: 1 });
+    twin.handle({ type: 'step', n: 1 });
+    expect(e.trainer.lastLoss).toBe(twin.trainer.lastLoss);
+    expect(bits()).toEqual(twin.trainer.model.params.list.map((p) => Array.from(new Uint32Array(p.data.slice().buffer))));
+  });
+
   it('reports errors instead of throwing', () => {
     const h = fakeHost();
     const e = new Engine(h.host, ds);
