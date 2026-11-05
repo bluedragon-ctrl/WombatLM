@@ -1,35 +1,42 @@
 /**
- * The minimal M2 app: controls, the question box with form and language
- * pickers, guess bars, loss chart, scoreboard and the animal list.
+ * The app: two tabs.
+ * - Forms: controls, the question box with form and language pickers, guess
+ *   bars, attention grids, letter map, loss chart, scoreboard, animal list.
+ * - Inside the brain: weight heatmaps (see inside.ts).
  *
  * All training happens in the worker; this file only sends messages and
  * draws what comes back.
  */
-import type { AnimalInfo, AnswerMsg, EvalMsg, FromWorker, LossPoint, ReadyMsg, Speed, TickMsg, ToWorker } from '../train/protocol';
+import type { AnimalInfo, AnswerMsg, EvalMsg, FromWorker, LetterMapMsg, LossPoint, ReadyMsg, Speed, TickMsg, ToWorker } from '../train/protocol';
 import type { Scores, TaskResult } from '../train/trainer';
-import { STATUS_COLORS, STATUS_ICONS, SCORE_STYLE } from '../viz/colors';
-import { drawGuessBars } from '../viz/guessBars';
+import { LETTER_KINDS, LetterKind, STATUS_COLORS, STATUS_ICONS, SCORE_STYLE } from '../viz/colors';
+import { attentionCellAt, drawAttentionGrid, GridSpec } from '../viz/attentionGrid';
+import { drawGuessBars, guessColumnAt } from '../viz/guessBars';
+import { LetterMapView, letterKind, letterLabel, marker } from '../viz/letterMap';
 import { drawLineChart } from '../viz/lineChart';
-import { parentWidth } from '../viz/canvas';
+import { parentWidth, prepare } from '../viz/canvas';
 import { setUiLang, t, uiLang, UI_LANGUAGES } from './i18n';
+import { h } from './dom';
+import { InsideTab } from './inside';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
+type Tab = 'forms' | 'inside';
+const TABS: Tab[] = ['forms', 'inside'];
+/** Look-inside requests: at most one in flight, at most this often. */
+const INSPECT_MS = 250;
+
+/** One attention grid on screen. `linked`: its rows are the output letters (hover links to the guess bars). */
+interface AttGrid {
+  key: string;
+  title: string;
+  spec: GridSpec;
+  linked: boolean;
+  canvas?: HTMLCanvasElement;
+}
+
+const tokenLabel = (tok: string, i: number) => (i === 0 ? '✱' : tok === ' ' ? '␣' : tok);
 const SPEEDS: Speed[] = [1, 5, 20, 'max'];
 const SCORE_LINES = ['known', 'pattern', 'partly', 'irregular'] as const;
-
-/** Tiny DOM helper. */
-function h<K extends keyof HTMLElementTagNameMap>(
-  tag: K, attrs: Record<string, string | number | boolean> = {}, ...children: (Node | string | null | undefined)[]
-): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false) continue;
-    if (k === 'class') el.className = String(v);
-    else el.setAttribute(k, v === true ? '' : String(v));
-  }
-  for (const c of children) if (c !== null && c !== undefined) el.append(c);
-  return el;
-}
 
 const resultKey = (id: string, lang: string, form: string) => `${id}|${lang}|${form}`;
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '–' : `${Math.round(v * 100)} %`);
@@ -52,13 +59,27 @@ export class App {
   private dirty = { controls: true, answer: true, loss: true, scores: true, animals: true };
   private frame = 0;
   private els!: ReturnType<App['build']>;
+  private tab: Tab = 'forms';
+  /** Output step linked between the guess bars and the attention grids (hover). */
+  private hoverStep: number | null = null;
+  private attGrids: AttGrid[] = [];
+  private attKeys = '';
+  private inside: InsideTab;
+  private letterMap!: LetterMapView;
+  private inspectId = 0;
+  private inspectPending: number | null = null;
+  private inspectDirty = false;
+  private lastInspect = -Infinity;
+  private inspectTimer = 0;
 
   constructor(private root: HTMLElement) {
     this.worker = new Worker(new URL('../train/worker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => this.onMessage(e.data);
     this.worker.onerror = (e) => this.showError(e.message);
+    this.inside = new InsideTab(() => this.requestInspect(true));
     this.els = this.build();
-    window.addEventListener('resize', () => this.invalidate('loss', 'scores'));
+    this.letterMap = new LetterMapView(this.els.mapCanvas, () => Math.min(360, parentWidth(this.els.mapCanvas, 320)));
+    window.addEventListener('resize', () => { this.invalidate('loss', 'scores'); this.letterMap.draw(); });
     const seed = 1 + Math.floor(Math.random() * 9999);
     this.send({ type: 'init', seed, speed: 'max' });
   }
@@ -81,16 +102,23 @@ export class App {
         if (!this.question.lang) this.question.lang = msg.languages[0].code;
         if (!this.question.text) this.question.text = msg.animals.find((a) => a.forms[this.question.lang]?.female)?.names[this.question.lang] ?? '';
         this.els.seed.value = String(msg.seed);
+        this.letterMap.reset();
+        this.inside.setReady(msg);
         this.renderPickers();
         this.ask();
+        this.requestInspect(true);
         this.invalidate('controls', 'loss', 'scores', 'animals');
         break;
       case 'tick':
-        if (this.tick && msg.step < this.tick.step) { this.losses = []; this.evals = []; this.results.clear(); }
+        if (this.tick && msg.step < this.tick.step) {
+          this.losses = []; this.evals = []; this.results.clear();
+          this.letterMap.reset();
+          this.requestInspect(true);
+        }
         this.tick = msg;
         this.losses.push(...msg.losses);
         if (this.losses.length > 40000) this.losses = this.losses.filter((_, i) => i % 2 === 0);
-        if (msg.losses.length) this.ask();
+        if (msg.losses.length) { this.ask(); this.requestInspect(); }
         this.invalidate('controls', 'loss');
         break;
       case 'eval':
@@ -98,8 +126,16 @@ export class App {
         break;
       case 'answer':
         this.askInFlight = false;
-        if (msg.id === this.askId) { this.answer = msg; this.invalidate('answer'); }
+        if (msg.id === this.askId) { this.answer = msg; this.invalidate('answer'); this.inside.setAnswer(msg); }
         if (this.askDirty) this.ask();
+        break;
+      case 'weights':
+        this.inspectDone(msg.id);
+        this.inside.onWeights(msg);
+        break;
+      case 'letterMap':
+        this.inspectDone(msg.id);
+        this.onLetterMap(msg);
         break;
       case 'error':
         this.showError(msg.message);
@@ -121,6 +157,55 @@ export class App {
     this.askDirty = false;
     this.askInFlight = true;
     this.send({ type: 'ask', id: ++this.askId, ...this.question });
+  }
+
+  /**
+   * Ask the worker for what the visible tab shows inside the brain: the
+   * weight heatmaps (Inside tab) or the letter map (Forms tab). At most one
+   * request in flight and one every INSPECT_MS; `now` skips the wait.
+   */
+  private requestInspect(now = false): void {
+    if (!this.ready) return;
+    if (this.inspectPending !== null) { this.inspectDirty = true; return; }
+    const wait = this.lastInspect + INSPECT_MS - performance.now();
+    if (wait > 0 && !now) {
+      if (!this.inspectTimer) this.inspectTimer = window.setTimeout(() => { this.inspectTimer = 0; this.requestInspect(); }, wait);
+      return;
+    }
+    this.inspectDirty = false;
+    this.lastInspect = performance.now();
+    const inside = this.tab === 'inside';
+    const matrixIds = inside ? this.inside.wanted() : [];
+    if (inside && !matrixIds.length) return;
+    this.inspectPending = ++this.inspectId;
+    this.send({ type: 'inspect', id: this.inspectId, matrixIds, mode: this.inside.mode, letterMap: !inside });
+  }
+
+  private inspectDone(id: number): void {
+    if (id !== this.inspectPending) return;
+    this.inspectPending = null;
+    if (this.inspectDirty) this.requestInspect();
+  }
+
+  private onLetterMap(msg: LetterMapMsg): void {
+    if (!this.ready) return;
+    const tokens = this.ready.tokens;
+    const points = msg.ids.map((id) => ({ token: tokens[id], label: letterLabel(tokens[id]), kind: letterKind(tokens[id]) }));
+    this.letterMap.update(points, msg.coords);
+    const p = (v: number) => Math.round(v * 100);
+    this.els.mapNote.textContent = t('map.note', { a: p(msg.explained[0]), b: p(msg.explained[1]) });
+  }
+
+  private setTab(tab: Tab): void {
+    this.tab = tab;
+    for (const b of this.els.tabs.querySelectorAll('button')) {
+      b.classList.toggle('on', b.dataset.tab === tab);
+      b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+    }
+    this.els.formsMain.hidden = tab !== 'forms';
+    this.els.insideMain.hidden = tab !== 'inside';
+    if (tab === 'forms') { this.invalidate('loss', 'scores', 'answer'); this.letterMap.draw(); }
+    this.requestInspect(true);
   }
 
   private showError(message: string): void {
@@ -147,7 +232,13 @@ export class App {
     const reset = h('button', {}, t('reset'));
     reset.onclick = () => this.send({ type: 'reset', seed: Number(seed.value) || 1 });
     const expertBox = h('input', { type: 'checkbox' });
-    expertBox.onchange = () => { this.expert = expertBox.checked; expertPanel.hidden = !this.expert; this.invalidate('loss'); };
+    expertBox.onchange = () => {
+      this.expert = expertBox.checked;
+      expertPanel.hidden = !this.expert;
+      this.inside.setExpert(this.expert);
+      this.invalidate('loss', 'answer');
+      this.requestInspect(true);
+    };
     const lr = h('input', { type: 'number', step: 0.0005, min: 0.0001, max: 0.05, value: 0.003 });
     lr.onchange = () => this.send({ type: 'setHyper', lr: Number(lr.value) });
     const batch = h('input', { type: 'number', step: 1, min: 1, max: 128, value: 16 });
@@ -162,7 +253,26 @@ export class App {
     const formPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('form') });
     const hint = h('div', { class: 'hint' });
     const output = h('div', { class: 'output', 'data-test': 'output' });
-    const bars = h('canvas', { class: 'bars' });
+    const bars = h('canvas', { class: 'bars', 'data-test': 'bars' });
+    bars.onmousemove = (e) => this.setHover(guessColumnAt(e.offsetX, this.answer?.steps.length ?? 0));
+    bars.onmouseleave = () => this.setHover(null);
+    const attention = h('div', { class: 'att-grids', 'data-test': 'attention' });
+    const mapCanvas = h('canvas', { class: 'letter-map', 'data-test': 'letter-map' });
+    const mapNote = h('p', { class: 'small' });
+    const mapLegend = h('div', { class: 'map-legend' }, ...(Object.keys(LETTER_KINDS) as LetterKind[]).map((k) => {
+      const c = h('canvas');
+      const ctx = prepare(c, 16, 16);
+      ctx.fillStyle = LETTER_KINDS[k].color + '22';
+      ctx.strokeStyle = LETTER_KINDS[k].color;
+      ctx.lineWidth = 1.5;
+      marker(ctx, LETTER_KINDS[k].shape, 8, 8, k === 'task' ? 6 : 5.5);
+      return h('span', {}, c, t(`map.kind.${k}`));
+    }));
+    const tabs = h('nav', { class: 'tabs', role: 'tablist' }, ...TABS.map((tab) => {
+      const b = h('button', { role: 'tab', 'data-tab': tab, 'data-test': `tab-${tab}`, class: tab === this.tab ? 'on' : '' }, t(`tab.${tab}`));
+      b.onclick = () => this.setTab(tab);
+      return b;
+    }));
     const lossCanvas = h('canvas');
     const scoreCanvas = h('canvas');
     const scoreTable = h('div', { class: 'score-table' });
@@ -180,11 +290,28 @@ export class App {
       location.reload();
     };
     const error = h('div', { class: 'error', hidden: true });
+    const formsMain = this.buildForms({
+      play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, bars,
+      attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals,
+    });
+    const insideMain = h('main', { class: 'inside-main', hidden: true }, this.inside.el);
 
     this.root.replaceChildren(
-      h('header', {}, h('h1', {}, t('title')), h('span', { class: 'sub' }, t('subtitle')), params, uiSwitch),
+      h('header', {}, h('h1', {}, t('title')), h('span', { class: 'sub' }, t('subtitle')), tabs, params, uiSwitch),
       error,
-      h('main', {},
+      formsMain,
+      insideMain,
+    );
+    return {
+      play, speed, seed, status, input, langPick, formPick, hint, output, bars, attention, mapCanvas, mapNote, tabs, formsMain, insideMain,
+      lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
+    };
+  }
+
+  private buildForms(parts: Record<string, HTMLElement>) {
+    const { play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, bars,
+      attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals } = parts;
+    return h('main', { class: 'forms' },
         h('aside', { class: 'left' },
           h('section', { class: 'panel controls' },
             h('div', { class: 'row' }, play, step1, step10),
@@ -199,11 +326,20 @@ export class App {
             h('div', { class: 'row' }, input, langPick),
             formPick, hint, output,
             h('h2', {}, t('guessBars')), h('div', { class: 'bars-wrap' }, bars)),
+          h('section', { class: 'panel attention' },
+            h('h2', {}, t('att.title')),
+            h('p', { class: 'small' }, t('att.help')),
+            attention),
           h('div', { class: 'charts' },
             h('section', { class: 'panel' }, h('h2', {}, t('loss')), h('div', { class: 'chart' }, lossCanvas)),
-            h('section', { class: 'panel' }, h('h2', {}, t('scoreboard')), h('div', { class: 'chart' }, scoreCanvas), scoreTable)))),
-    );
-    return { play, speed, seed, status, input, langPick, formPick, hint, output, bars, lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error };
+            h('section', { class: 'panel' }, h('h2', {}, t('scoreboard')), h('div', { class: 'chart' }, scoreCanvas), scoreTable))),
+        h('aside', { class: 'right' },
+          h('section', { class: 'panel map' },
+            h('h2', {}, t('map.title')),
+            h('div', { class: 'map-wrap' }, mapCanvas),
+            mapLegend,
+            mapNote,
+            h('p', { class: 'small' }, t('map.help')))));
   }
 
   /** Language and form pickers (built from the data, never hard-coded). */
@@ -303,7 +439,81 @@ export class App {
       h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${Math.round(a.confidence * 100)}%` })),
       h('span', {}, `${Math.round(a.confidence * 100)}`));
     output.replaceChildren(h('div', { class: 'answer-line' }, ...parts), badge, meter);
-    drawGuessBars(bars, a.steps, { copied: t('copied'), wrote: t('wrote') });
+    if (this.hoverStep !== null && this.hoverStep >= a.steps.length) this.hoverStep = null;
+    drawGuessBars(bars, a.steps, { copied: t('copied'), wrote: t('wrote') }, this.hoverStep);
+    this.renderAttention();
+  }
+
+  /** Link a guess-bar column and the matching attention rows (null = none). */
+  private setHover(step: number | null): void {
+    if (step === this.hoverStep) return;
+    this.hoverStep = step;
+    if (this.answer) drawGuessBars(this.els.bars, this.answer.steps, { copied: t('copied'), wrote: t('wrote') }, step);
+    this.drawAttention();
+  }
+
+  /** Which attention grids to show for this answer (expert mode adds the self-attention). */
+  private attentionGrids(a: AnswerMsg): AttGrid[] {
+    const input = a.input.map(tokenLabel);
+    const out = a.steps.map((s) => (s.chosen === ' ' ? '␣' : s.chosen || '⏎'));
+    const decIn = ['✱', ...out];
+    const grids: AttGrid[] = [];
+    const add = (name: string, title: (head: number) => string, rows: string[], cols: string[], linked: boolean) => {
+      const m = a.attention.find((x) => x.name === name);
+      if (!m) return;
+      for (let head = 0; head < m.heads; head++) {
+        grids.push({
+          key: `${name}#${head}`, title: title(head), linked,
+          spec: { rows: rows.slice(0, m.Tq), cols: cols.slice(0, m.Tk), data: m.data, offset: head * m.Tq * m.Tk, stride: m.Tk },
+        });
+      }
+    };
+    const layers = [...new Set(a.attention.map((x) => x.name.match(/^dec(\d+)\./)?.[1]).filter((x): x is string => x !== undefined))];
+    const layerNote = (l: string) => (layers.length > 1 ? ` · ${t('att.layer', { n: Number(l) + 1 })}` : '');
+    for (const l of layers) add(`dec${l}.cross`, (hd) => t('att.cross', { n: hd + 1 }) + layerNote(l), out, input, true);
+    add('copy', () => t('att.copy'), out, input, true);
+    if (this.expert) {
+      for (const l of layers) add(`dec${l}.self`, (hd) => t('att.decSelf', { n: hd + 1 }) + layerNote(l), out, decIn, true);
+      for (const name of a.attention.map((x) => x.name).filter((n) => /^enc\d+\.self$/.test(n))) {
+        add(name, (hd) => t('att.encSelf', { n: hd + 1 }), input, input, false);
+      }
+    }
+    return grids;
+  }
+
+  private renderAttention(): void {
+    const a = this.answer;
+    if (!a) return;
+    const grids = this.attentionGrids(a);
+    const keys = grids.map((g) => g.key).join();
+    if (keys !== this.attKeys) {
+      this.attKeys = keys;
+      this.els.attention.replaceChildren(...grids.map((g, i) => {
+        const canvas = h('canvas', { 'data-grid': g.key });
+        g.canvas = canvas;
+        canvas.onmousemove = (e) => {
+          const grid = this.attGrids[i];
+          const cell = attentionCellAt(grid.spec, e.offsetX, e.offsetY);
+          if (grid.linked) this.setHover(cell ? cell.row : null);
+          canvas.title = cell && cell.col !== null
+            ? t('att.cell', { row: grid.spec.rows[cell.row], col: grid.spec.cols[cell.col], p: Math.round(grid.spec.data[grid.spec.offset + cell.row * grid.spec.stride + cell.col] * 100) })
+            : '';
+        };
+        canvas.onmouseleave = () => { if (this.attGrids[i].linked) this.setHover(null); };
+        return h('figure', { class: 'att' }, h('figcaption', {}, g.title), canvas);
+      }));
+    } else {
+      grids.forEach((g, i) => { g.canvas = this.attGrids[i].canvas; });
+    }
+    this.attGrids = grids;
+    this.drawAttention();
+  }
+
+  private drawAttention(): void {
+    for (const g of this.attGrids) {
+      if (!g.canvas) continue;
+      drawAttentionGrid(g.canvas, g.spec, g.linked ? this.hoverStep : null);
+    }
   }
 
   private renderLoss(): void {

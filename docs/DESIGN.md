@@ -80,6 +80,7 @@ Runtime dependencies: none. Dev dependencies: vite, typescript, vitest, tsx, @pl
 │  │  ├─ transformer.ts            attention, blocks, KV cache
 │  │  ├─ translator.ts             encoder–decoder (+ copy mechanism)
 │  │  ├─ serialize.ts              weights <-> binary (f32/f16/int8), vocab growth
+│  │  ├─ pca.ts                    ✔ 2-D PCA + Procrustes (letter map)
 │  │  └─ namer.ts                  ◌ decoder-only "invent an animal" model
 │  ├─ train/
 │  │  ├─ trainer.ts                ✔ FormTrainer: batches, steps, evaluation
@@ -94,9 +95,11 @@ Runtime dependencies: none. Dev dependencies: vite, typescript, vitest, tsx, @pl
 │  ├─ viz/                         one file per visual, Canvas 2D
 │  │  ├─ canvas.ts colors.ts       ✔ HiDPI setup, shared palettes
 │  │  ├─ guessBars.ts lineChart.ts ✔
-│  │  └─ attentionGrid.ts letterMap.ts weightHeatmap.ts timeline.ts   ◌
+│  │  ├─ attentionGrid.ts letterMap.ts weightHeatmap.ts   ✔ (M3)
+│  │  └─ timeline.ts               ◌
 │  ├─ ui/
-│  │  ├─ app.ts style.css          ✔ the M2 app (one tab)
+│  │  ├─ app.ts style.css          ✔ the app: tabs, Forms tab
+│  │  ├─ inside.ts dom.ts          ✔ Inside the brain tab, DOM helpers
 │  │  ├─ i18n/{cs,en}.json, index.ts ✔
 │  │  └─ tabs, tour, help          ◌
 │  └─ main.ts                      ✔
@@ -248,9 +251,9 @@ The worker owns the models, optimiser state, dataset and (from M4) the snapshot 
 **Evaluation schedule:** real forms every 100 steps (or every 3 s at slow speeds), inventions every 500 steps, plus on init / reset / step / request. Evaluating all ~900 forms every 50 steps would halve training speed.
 
 ### 7.1 Messages main → worker (`src/train/protocol.ts`)
-Built (M2): `init{seed, speed?}` · `play` · `pause` · `step{n}` · `setSpeed{speed}` · `setHyper{lr?, batchSize?}` · `reset{seed}` · `ask{id, text, lang, form}` · `evaluate{inventions?}`.
+Built (M2): `init{seed, speed?}` · `play` · `pause` · `step{n}` · `setSpeed{speed}` · `setHyper{lr?, batchSize?}` · `reset{seed}` · `ask{id, text, lang, form}` · `evaluate{inventions?}`. Built (M3): `inspect{id, matrixIds, mode, letterMap?}`.
 
-Planned: `inspect{matrixIds, mode}` (M3) · `seekSnapshot{index}` · `returnToLive` (M4) · `addPack{pack}` · `setRehearsal{on}` · `growTask{…}` (M5) · `namer.*` (M6) · `exportWeights` · `importWeights{buffer}`.
+Planned: `seekSnapshot{index}` · `returnToLive` (M4) · `addPack{pack}` · `setRehearsal{on}` · `growTask{…}` (M5) · `namer.*` (M6) · `exportWeights` · `importWeights{buffer}`.
 
 ### 7.2 Messages worker → main
 Built (M2):
@@ -260,7 +263,9 @@ Built (M2):
 - `answer`: the output word, whether it finished, the input tokens, **per letter the top-5 candidates with probabilities and the write-vs-copy share**, the confidence, **all attention maps** (transferred buffers), the badge and, for real/hidden, the accepted answers and status.
 - `error`.
 
-Planned: `weights` (requested matrices as transferable `Float32Array`s plus their delta since the previous request, or their gradient) and `letterMap` (vocab × 2 PCA coordinates) in M3; `snapshotIndex` in M4.
+Built (M3): `weights` (requested matrices as transferable `Float32Array`s: the weights, their change since the previous request, or the latest gradient), `letterMap` (PCA coordinates of characters, end-of-word and task tokens), `ready.matrices` (shapes and axis meanings), `answer.activations`.
+
+Planned: `snapshotIndex` in M4.
 
 The UI re-asks its current question after each tick while training (at most one request in flight). Only visible panels request data.
 
@@ -374,7 +379,7 @@ Each milestone ends with tests green, `npm run build` passing, and a merged pull
 
 **M2: Training in the browser.** ✅ Done (pending the user's data review). Dataset v2 with forms + validator + review doc, generalisation experiments, copy mechanism and target-token start, `FormTrainer` with copy practice, engine + worker + protocol, minimal UI (controls, question box with pickers, badge, confidence, guess bars with copied/wrote, loss chart, scoreboard, animal list), Playwright smoke test. Measured: ~38 steps/s; known cs 98% / en 93%; never-seen Czech pattern forms partly right.
 
-**M3: Seeing inside.** Attention grids (cross, copy, self in expert mode) linked to the guess bars by hover; letter map (PCA + Procrustes + lerp); "Inside the brain" tab with weight / change / gradient heatmaps; `inspect`/`weights`/`letterMap` messages; tabs in the UI.
+**M3: Seeing inside.** ✅ Done (PR, pending review). Attention grids (cross, copy, self in expert mode) linked to the guess bars by hover; letter map (PCA + Procrustes + lerp); "Inside the brain" tab with weight / change / gradient heatmaps; `inspect`/`weights`/`letterMap` messages; tabs in the UI.
 ✔ Playwright screenshots of each panel at step 0 and after training, reviewed visually.
 
 **M4: Time travel and replay.** Snapshot store, timeline seeking, bake script, int8 replay, replay-first start.

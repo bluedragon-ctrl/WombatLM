@@ -12,18 +12,31 @@ export interface GuessBarLabels {
   wrote: string;
 }
 
-const COL = 78, ROW = 20, HEAD = 26;
+/** Width of one letter column (exported so hover can find the column under the mouse). */
+export const GUESS_COL = 78;
+const COL = GUESS_COL, ROW = 20, HEAD = 26;
+
+/** Which column (output step) is at x, or null. */
+export function guessColumnAt(x: number, steps: number): number | null {
+  const c = Math.floor((x - 2) / COL);
+  return c >= 0 && c < steps ? c : null;
+}
 
 export function guessBarsWidth(steps: number): number {
   return Math.max(COL, steps * COL) + 4;
 }
 
-export function drawGuessBars(canvas: HTMLCanvasElement, steps: StepGuess[], labels: GuessBarLabels): void {
+/** `highlight`: the column linked to the attention grid (hovered there or here). */
+export function drawGuessBars(canvas: HTMLCanvasElement, steps: StepGuess[], labels: GuessBarLabels, highlight: number | null = null): void {
   const hasWrite = steps.some((s) => s.write !== undefined);
   const height = HEAD + 5 * ROW + (hasWrite ? 30 : 6);
   const ctx = prepare(canvas, guessBarsWidth(steps.length), height);
   steps.forEach((s, c) => {
     const x = c * COL + 2;
+    if (c === highlight) {
+      ctx.fillStyle = '#fef3c7';
+      ctx.fillRect(x - 2, 0, COL, height);
+    }
     ctx.fillStyle = INK;
     ctx.textAlign = 'center';
     ctx.font = 'bold 18px system-ui, sans-serif';
