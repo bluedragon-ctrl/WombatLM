@@ -157,6 +157,10 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=explain-ladder]')).toContainText(/How sure it is/);
   await expect(page.locator('[data-test=explain-lens]')).toHaveCount(4);
   await expect(page.locator('canvas[data-strip]')).toHaveCount(0);
+  // What the detectors do: the strongest ones for this letter, and all of them in their own panel.
+  await expect(page.locator('[data-test=explain-units] .ucard')).toHaveCount(3, { timeout: 10_000 });
+  await expect(page.locator('[data-test=unit-cards] .ucard').first()).toContainText(/Detector \d+/);
+  await expect(page.locator('[data-test=units-note]')).toContainText(/letters of the learning data/);
   // Expert: every number, and where it comes from; how fast each part changes.
   await page.locator('[data-test=expert]').check();
   await expect(page.locator('[data-test=overview] .flow-box')).toHaveCount(7);

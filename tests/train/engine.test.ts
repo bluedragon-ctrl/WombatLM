@@ -324,6 +324,24 @@ describe('Engine', () => {
     expect(last.chosen).toBeGreaterThan(0);
   });
 
+  it('units: what each thinking unit has learned, read again only after a new step', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'step', n: 2 });
+    e.handle({ type: 'units', id: 7 });
+    const u = h.of('units').at(-1)!;
+    expect(u.id).toBe(7);
+    expect(u.layer).toBe('dec0');
+    expect(u.units.length).toBeGreaterThan(0);
+    expect(u.moments).toBeGreaterThan(u.units.length);
+    e.handle({ type: 'units', id: 8 });
+    expect(h.of('units').at(-1)!.units).toBe(u.units); // same step: from the cache
+    e.handle({ type: 'step', n: 1 });
+    e.handle({ type: 'units', id: 9 });
+    expect(h.of('units').at(-1)!.units).not.toBe(u.units);
+  });
+
   it('inspect sends the letter map: characters, end of word and task tokens', () => {
     const h = fakeHost();
     const e = new Engine(h.host, ds);

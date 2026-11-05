@@ -196,6 +196,7 @@ export class App {
   private inspectTimer = 0;
   /** Latest "look inside one letter" request (older replies are dropped). */
   private explainId = 0;
+  private unitsId = 0;
   /** What the word hint shows now (it is rebuilt only when this changes). */
   private hintKey = '';
   /** "What this step changed" (Model learning tab) and its latest "why" request. */
@@ -218,6 +219,7 @@ export class App {
       this.setTab('inside');
       this.inside.scrollToExplain();
     });
+    this.inside.requestUnits = () => this.send({ type: 'units', id: ++this.unitsId });
     // A click on a number in the heatmaps (after Step ×1): why did it change?
     this.inside.onPickNumber = (name, index) => {
       if (!this.stepView.current()) return;
@@ -322,6 +324,9 @@ export class App {
         break;
       case 'explain':
         if (msg.id === this.explainId) this.inside.onExplain(msg);
+        break;
+      case 'units':
+        if (msg.id === this.unitsId) this.inside.onUnits(msg);
         break;
       case 'letterMap':
         this.inspectDone(msg.id);

@@ -8,13 +8,17 @@
  *   much of its numbers changed per step lately (one scale for all) and a
  *   line of that over time; clicking a part scrolls to its heatmaps;
  * - "Look inside one letter" (see explainView.ts);
+ * - "What have the detectors learned?": the writer's thinking units, each
+ *   with the moments of the learning data that switch it on most (see
+ *   train/units.ts and unitCard.ts);
  * - a heatmap per weight matrix (weights, their change in the last steps, or
  *   the gradient), with letters / positions on the axes where they mean
  *   something and plain-language tooltips;
  * - in expert mode, "follow the signal" for the current word.
  */
 import type { AxisKind } from '../nn/transformer';
-import type { AnswerMsg, ExplainMsg, InspectMode, MatrixChange, MatrixInfo, ReadyMsg, WeightsMsg } from '../train/protocol';
+import type { AnswerMsg, ExplainMsg, InspectMode, MatrixChange, MatrixInfo, ReadyMsg, UnitsMsg, WeightsMsg } from '../train/protocol';
+import { clearestFirst, unitCard } from './unitCard';
 import { DIVERGING_ENDS, INK, symmetricScale } from '../viz/colors';
 import { prepare } from '../viz/canvas';
 import { drawHeatmap, heatmapCellAt, heatmapLayout, HeatmapLayout, HeatmapMarks } from '../viz/weightHeatmap';
@@ -60,6 +64,9 @@ export const BOXES: { id: string; column: string; match: RegExp; target: string 
 /** The scan calls a part busiest / quietest only if its numbers move at least this much more / less than average. */
 const BUSY = 1.3;
 const QUIET = 0.7;
+/** "What have the detectors learned?": at most one request per this many ms while learning; clear ones shown in plain mode. */
+const UNITS_EVERY = 15000;
+const UNITS_CLEAR = 12;
 
 /** Points kept per box for the "over time" line. */
 const HISTORY = 240;
@@ -130,6 +137,17 @@ export class InsideTab {
   private explain: ExplainView;
   /** Weights used by the letter in "look inside one letter", outlined in the heatmaps. */
   private marks = new Map<string, HeatmapMarks>();
+  /** "What have the detectors learned?" */
+  private unitsEl: HTMLElement;
+  private unitsBody: HTMLElement;
+  private unitsNote: HTMLElement;
+  private unitsButton: HTMLButtonElement;
+  private units?: UnitsMsg;
+  private unitsAll = false;
+  private unitsAsked = 0;
+  private unitsInFlight = false;
+  /** Ask the worker what the thinking units have learned (set by the app). */
+  requestUnits?: () => void;
   /** A click on a number asks why it changed (set by the app). */
   onPickNumber?: (name: string, index: number) => void;
   /** The latest step was recorded in detail, so a click can explain a number (set by the app). */
@@ -177,6 +195,16 @@ export class InsideTab {
       h('p', { class: 'small' }, t('flow.helpShort'), ' ', help(t('flow.help'))),
       this.flow);
     this.explain = new ExplainView(requestExplain, (marks) => { this.marks = marks; for (const c of this.cards) this.draw(c); }, (code) => this.langName(code));
+    this.unitsBody = h('div', { class: 'ucards', 'data-test': 'unit-cards' });
+    this.unitsNote = h('p', { class: 'small', 'data-test': 'units-note' }, t('units.wait'));
+    this.unitsButton = h('button', { class: 'units-toggle', 'data-test': 'units-toggle' });
+    this.unitsButton.onclick = () => { this.unitsAll = !this.unitsAll; this.renderUnits(); };
+    this.unitsEl = h('section', { class: 'panel units', 'data-test': 'units' },
+      h('h2', {}, t('units.title')),
+      h('p', { class: 'small' }, h('span', { class: 'units-help' }), ' ', help(t('units.help'))),
+      this.unitsNote,
+      this.unitsBody,
+      this.unitsButton);
     this.heatHead = h('section', { class: 'panel inside-head heat-head' },
       h('h2', {}, t('inside.heatTitle')),
       h('div', { class: 'row' }, modePicker(), this.modeNote),
@@ -189,6 +217,7 @@ export class InsideTab {
       this.scanEl,
       this.overview,
       this.explain.el,
+      this.unitsEl,
       this.heatHead,
       this.body,
       this.signal);
@@ -224,6 +253,9 @@ export class InsideTab {
     this.lastSummaryStep = -1;
     this.rates.clear();
     this.all.clear();
+    this.units = undefined;
+    this.explain.setUnits(undefined);
+    this.renderUnits();
     this.buildFlow();
     this.buildScan();
     this.build();
@@ -237,6 +269,7 @@ export class InsideTab {
     this.overview.hidden = !on;
     this.renderNumbersOpen();
     this.explain.setExpert(on);
+    this.renderUnits();
     this.build();
     this.renderSignal();
   }
@@ -249,6 +282,37 @@ export class InsideTab {
   /** The tab became visible (or its answer changed while visible): bring "look inside one letter" up to date. */
   shown(): void {
     this.explain.refresh();
+    this.askUnits(true);
+  }
+
+  /** Ask for the units again: when the tab is shown, or (while learning) every few seconds at most. */
+  private askUnits(now = false): void {
+    if (!this.requestUnits || this.unitsInFlight) return;
+    if (!now && Date.now() - this.unitsAsked < UNITS_EVERY) return;
+    this.unitsInFlight = true;
+    this.unitsAsked = Date.now();
+    this.requestUnits();
+  }
+
+  onUnits(msg: UnitsMsg): void {
+    this.unitsInFlight = false;
+    this.units = msg;
+    this.explain.setUnits(msg);
+    this.renderUnits();
+  }
+
+  private renderUnits(): void {
+    const u = this.units;
+    this.el.querySelector('.units-help')!.textContent = t('units.helpShort', { n: u?.units.length ?? 64 });
+    if (!u) { this.unitsNote.textContent = t('units.wait'); this.unitsBody.replaceChildren(); this.unitsButton.hidden = true; return; }
+    const sorted = clearestFirst(u.units);
+    const clear = sorted.filter((x) => x.theme);
+    const all = this.expert || this.unitsAll || clear.length === 0;
+    const shown = all ? sorted : clear.slice(0, UNITS_CLEAR);
+    this.unitsNote.textContent = `${t(all ? 'units.countAll' : 'units.count', { k: shown.length, clear: clear.length, n: u.units.length, m: u.moments.toLocaleString(uiLang()) })} ${t('units.step', { step: u.step })}`;
+    this.unitsBody.replaceChildren(...shown.map((x) => unitCard(x, (c) => this.langName(c), { expert: this.expert })));
+    this.unitsButton.hidden = this.expert || clear.length === 0;
+    this.unitsButton.textContent = this.unitsAll ? t('units.showClear') : t('units.showAll', { n: u.units.length });
   }
 
   /** Look inside letter `position` of the current answer (from a click on the guess bars). */
@@ -559,6 +623,7 @@ export class InsideTab {
 
   onWeights(msg: WeightsMsg): void {
     if (msg.summary) this.onSummary(msg.step, msg.summary);
+    if (this.units && msg.step !== this.units.step) this.askUnits();
     if (msg.mode !== this.mode) return;
     const byName = new Map(msg.matrices.map((m) => [m.name, m.data]));
     this.all = byName;

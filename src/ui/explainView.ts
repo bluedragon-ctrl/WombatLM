@@ -14,7 +14,8 @@
  * Computed by the worker only on request (`explain`), for one letter at a time.
  */
 import { EOS } from '../nn/vocab';
-import type { AnswerMsg, ExplainLens, ExplainMsg, ExplainStage } from '../train/protocol';
+import type { AnswerMsg, ExplainLens, ExplainMsg, ExplainStage, UnitsMsg } from '../train/protocol';
+import { unitCard } from './unitCard';
 import { sequential, symmetricScale } from '../viz/colors';
 import { drawStrip, stripCellAt, stripLayout, topIndices } from '../viz/vectorStrip';
 import type { HeatmapMarks } from '../viz/weightHeatmap';
@@ -35,6 +36,8 @@ interface Pick {
   index: number;
 }
 
+/** Thinking units shown in the Think stage (the most strongly on). */
+const STRONG_UNITS = 3;
 /** How many squares with the biggest change get an outline. */
 const TOP = 3;
 /** Contributions listed one by one (the rest are summed up). */
@@ -58,6 +61,8 @@ export class ExplainView {
   /** The question of the latest answer, and whether the user picked its letter (otherwise the most interesting one is shown). */
   private question = '';
   private picked = false;
+  /** What each thinking unit has learned (for the Think stage). */
+  private units?: UnitsMsg;
 
   constructor(
     private request: (q: Question, position: number) => void,
@@ -107,6 +112,11 @@ export class ExplainView {
     }
     this.renderPicker();
     if (!a) this.render();
+  }
+
+  setUnits(u: UnitsMsg | undefined): void {
+    this.units = u;
+    if (this.msg) this.render();
   }
 
   /** Choose a letter (guess-bar column) and look inside it. */
@@ -189,6 +199,7 @@ export class ExplainView {
       if (s.kind === 'attend') strips.push(ex ? this.attention(s, kind === 'self' ? m.decIn : m.input) : this.attentionPlain(s, kind === 'self' ? m.decIn : m.input));
       else if (ex) strips.push(this.strip(s.name, 'hidden', t('explain.strip.units', { on: unitsOn(s), n: s.sources }), s.hidden, symmetricScale(s.hidden)));
       else strips.push(h('p', { class: 'small xunits' }, t('explain.unitsOn', { on: unitsOn(s), n: s.sources })));
+      if (s.kind === 'think') strips.push(this.strongUnits(s));
       if (ex) {
         strips.push(
           this.strip(s.name, 'add', t('explain.strip.add'), s.add, scale, marks),
@@ -240,6 +251,16 @@ export class ExplainView {
       h('span', { class: 'small' }, t('explain.ladder', { tok })),
       h('div', { class: 'xladder-chips' }, ...chips),
       verdict ? h('p', { class: 'small xverdict' }, verdict) : null);
+  }
+
+  /** The thinking units most strongly on for this letter, with what they usually do. */
+  private strongUnits(s: ExplainStage): HTMLElement {
+    const u = this.units;
+    if (!u || u.layer !== s.name.split('.')[0]) return h('p', { class: 'small xunits' }, t('explain.ffn.unitsWait'));
+    const strongest = Array.from(s.hidden, (v, k) => ({ v, k })).filter((x) => x.v > 0.05).sort((a, b) => b.v - a.v).slice(0, STRONG_UNITS);
+    return h('div', { class: 'xunitcards', 'data-test': 'explain-units' },
+      h('p', { class: 'small' }, t('explain.ffn.units')),
+      h('div', { class: 'ucards' }, ...strongest.map((x) => unitCard(u.units[x.k], this.langName, { now: x.v, expert: this.expert }))));
   }
 
   /** "Would write now": the 3 most likely letters at this point, the finally written one outlined. */

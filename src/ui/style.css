@@ -560,3 +560,26 @@ main.ask-main > .journey { grid-column: 1 / -1; }
 .scan-verdict { margin: 8px 0 4px; font-weight: 600; }
 .scan-verdict:empty { display: none; }
 .numbers-toggle { margin-top: 6px; }
+
+/* Inside the model: what the detectors (thinking units) have learned */
+.ucards { display: flex; flex-wrap: wrap; gap: 8px; }
+.ucard { width: 300px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; font-size: 13px; }
+.ucard.unclear { background: #fafbfc; }
+.uhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.uhead .small { color: var(--muted); }
+.unow { display: inline-flex; align-items: center; gap: 4px; }
+.unow .track { display: inline-block; width: 50px; height: 7px; background: #eef2f7; border-radius: 4px; overflow: hidden; }
+.unow .fill { display: block; height: 100%; background: #f97316; }
+.utheme { margin: 4px 0 6px; font-weight: 600; }
+.utheme.none { font-weight: 400; color: var(--muted); }
+.umoments { display: flex; flex-wrap: wrap; gap: 4px; }
+.umoment { padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; font-size: 14px; letter-spacing: 0.02em; }
+.umoment .done { color: var(--ink); }
+.umoment b { color: #c2410c; background: #ffedd5; border-radius: 3px; padding: 0 1px; }
+.umoment .rest { color: #b6bcc6; }
+.uvotes { margin-top: 6px; color: var(--muted); }
+.uvote { color: var(--ink); margin-left: 4px; font-size: 14px; }
+.units .ucards { margin: 8px 0; }
+.xunitcards { margin: 4px 0 4px 158px; }
+.xunitcards > p { margin: 0 0 4px; }
+.xunitcards .ucard { width: 260px; }
