@@ -11,6 +11,12 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=data-table] tr.kept td.hidden').first()).toBeVisible();
   await page.click('[data-test=data-reveal]');
   await expect(page.locator('[data-test=data-table] tr.kept td.hidden')).toHaveCount(0);
+  // The same data exactly as it is: every question, and the data records with every field.
+  await page.click('[data-view=questions]');
+  await expect(page.locator('[data-test=data-questions] tbody tr').first()).toBeVisible();
+  await page.click('[data-view=records]');
+  await expect(page.locator('[data-test=data-records] pre').first()).toContainText('"split"');
+  await page.click('[data-view=table]');
   // A learning example as tokens: shown so far and guess next, shifted by one, ending with "end".
   await expect(page.locator('[data-test=example-grid]')).toBeVisible();
   await page.locator('[data-test=data-table] td.learned:not(.name)').first().click();

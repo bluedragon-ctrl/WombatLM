@@ -433,5 +433,8 @@ export class Engine {
 }
 
 function animalInfo(a: Animal): AnimalInfo {
-  return { id: a.id, split: a.split, pack: a.pack, names: { ...a.names }, forms: structuredClone(a.forms) };
+  return {
+    id: a.id, split: a.split, pack: a.pack, names: { ...a.names }, forms: structuredClone(a.forms),
+    alt: structuredClone(a.alt), formsAlt: structuredClone(a.formsAlt), unsure: a.unsure.slice(),
+  };
 }
