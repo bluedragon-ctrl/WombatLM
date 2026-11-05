@@ -140,3 +140,34 @@ function centroid(p: Float32Array): [number, number] {
   for (let i = 0; i < n; i++) { x += p[2 * i]; y += p[2 * i + 1]; }
   return [x / n, y / n];
 }
+
+/**
+ * For each of the given rows of a [*, d] matrix, the `k` other rows that point
+ * the most the same way, using all `d` numbers, not the flat 2-D picture.
+ * "Same way" is cosine similarity measured from the average candidate row,
+ * so what all letters share does not count. Only rows with `candidate[i]`
+ * can be neighbours. Indices refer to positions in `rows`; rows that are not
+ * candidates get no list.
+ */
+export function nearestRows(data: Float32Array, d: number, rows: readonly number[], candidate: readonly boolean[], k: number): number[][] {
+  const n = rows.length;
+  const mean = new Float64Array(d);
+  const m = candidate.filter(Boolean).length || 1;
+  rows.forEach((r, i) => { if (candidate[i]) for (let j = 0; j < d; j++) mean[j] += data[r * d + j] / m; });
+  const X = rows.map((r) => Float64Array.from({ length: d }, (_, j) => data[r * d + j] - mean[j]));
+  const norm = X.map((x) => Math.sqrt(x.reduce((s, q) => s + q * q, 0)) || 1);
+  const cos = (a: number, b: number) => {
+    let s = 0;
+    for (let j = 0; j < d; j++) s += X[a][j] * X[b][j];
+    return s / (norm[a] * norm[b]);
+  };
+  const out: number[][] = [];
+  for (let i = 0; i < n; i++) {
+    if (!candidate[i]) { out.push([]); continue; }
+    const others: [number, number][] = [];
+    for (let j = 0; j < n; j++) if (j !== i && candidate[j]) others.push([j, cos(i, j)]);
+    others.sort((a, b) => b[1] - a[1]);
+    out.push(others.slice(0, k).map(([j]) => j));
+  }
+  return out;
+}

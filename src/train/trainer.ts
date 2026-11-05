@@ -182,6 +182,21 @@ export class FormTrainer {
   /** Choose what batches are made of, e.g. 50% old animals + 50% new ones. */
   setMix(parts: MixPart[]): void {
     this.mix = parts.filter((p) => p.tasks.length > 0 && p.weight > 0);
+    this.counts = null;
+  }
+
+  private counts: Map<string, number> | null = null;
+
+  /** How often each character appears in the learning data (the words given and the answers). */
+  letterCounts(): Map<string, number> {
+    if (!this.counts) {
+      const c = new Map<string, number>();
+      for (const part of this.mix)
+        for (const task of part.tasks)
+          for (const ch of task.source + task.answer) c.set(ch, (c.get(ch) ?? 0) + 1);
+      this.counts = c;
+    }
+    return this.counts;
   }
 
   toExample(task: Task): Example {

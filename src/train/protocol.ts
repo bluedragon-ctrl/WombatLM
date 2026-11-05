@@ -249,6 +249,13 @@ export interface LetterMapMsg {
   coords: Float32Array;
   /** Share of all variation each axis shows. */
   explained: [number, number];
+  /**
+   * For each id, the positions (in `ids`) of its closest letters in the full
+   * letter table, closest first. Empty for task tokens.
+   */
+  near: number[][];
+  /** For each id, how often it appears in the learning data (-1 for the end of word and task tokens). */
+  counts: number[];
 }
 
 export type FromWorker = ReadyMsg | TickMsg | EvalMsg | AnswerMsg | WeightsMsg | LetterMapMsg | ErrorMsg;

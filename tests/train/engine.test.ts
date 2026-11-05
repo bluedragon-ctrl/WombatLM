@@ -207,6 +207,19 @@ describe('Engine', () => {
     expect(m.coords.length).toBe(m.ids.length * 2);
     expect(m.explained[0]).toBeGreaterThanOrEqual(m.explained[1]);
     expect(m.coords.every(Number.isFinite)).toBe(true);
+    // Closest letters: only for letters, never itself, never a task token.
+    const isTask = (i: number) => v.tokens[m.ids[i]].startsWith('<') && m.ids[i] !== v.eos;
+    expect(m.near.length).toBe(m.ids.length);
+    m.near.forEach((list, i) => {
+      if (isTask(i)) { expect(list).toEqual([]); return; }
+      expect(list.length).toBe(4);
+      expect(list).not.toContain(i);
+      expect(list.some(isTask)).toBe(false);
+    });
+    // How often each letter appears in the learning data.
+    expect(m.counts.length).toBe(m.ids.length);
+    expect(m.counts[m.ids.indexOf(v.id('a'))]).toBeGreaterThan(100);
+    expect(m.counts[m.ids.indexOf(v.eos)]).toBe(-1);
   });
 
   it('ticks carry the latest practice batch once per new step', () => {
