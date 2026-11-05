@@ -80,3 +80,11 @@ Conclusions:
 - `unsure` entries are still trained on, as in the experiments; dropping them is a data-review decision.
 - Check run (`npx tsx scripts/train-node.ts 5000 1`): known cs 98% / en 93%, never-seen cs 23% exact (35% incl. close), en 11%; 40 steps/s in Node.
 - **Evaluation cost:** the 355 real forms take ~250 ms, all 906 forms incl. inventions ~640 ms (Node). Evaluating everything every 50 steps would halve training speed, so the worker evaluates real forms on a schedule and inventions less often (see the worker entry).
+
+## M2 — worker and protocol
+
+- `src/train/protocol.ts` follows DESIGN §7 with the forms design: `ask{id, text, lang, form}` replaces `translate{text, to}`; snapshots, weights, letter map, Teach and namer messages come with M3–M6. Answers carry a **badge** (`real` / `hidden` / `invention` / `free`), the real answer for real and hidden words, top-5 guesses per letter (incl. "end of word"), the copy-vs-write share, attention maps (transferred) and the confidence.
+- The loop lives in `src/train/engine.ts` (no worker globals; a host passes `post`, `schedule`, `now`), so tests drive it in Node with a fake clock. `worker.ts` only wires it up and yields through a `MessageChannel` (nested `setTimeout(0)` is clamped to 4 ms).
+- **Loop:** slices of ~12 ms of training, then yield. `max` speed trains back-to-back; a numeric speed earns steps over time (at most a quarter second banked), and the first step happens immediately on Play.
+- **Evaluation schedule:** real forms every 100 steps (or every 3 s at slow speeds), inventions every 500 steps, plus on init / reset / `step` / `evaluate`. At ~40 steps/s this costs about 10% of training time instead of ~50% for "everything every 50 steps".
+- Ticks: at most every 50 ms, carrying every batch loss since the last tick (the UI draws the loss chart from these).
