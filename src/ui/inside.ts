@@ -16,7 +16,6 @@ const MODES: InspectMode[] = ['weights', 'delta', 'grad'];
 function group(name: string): string {
   if (/^enc(\d|Norm)/.test(name)) return 'encoder';
   if (/^dec(\d|Norm)/.test(name)) return 'decoder';
-  if (name.startsWith('copy')) return 'copy';
   return 'letters';
 }
 
@@ -116,8 +115,7 @@ export class InsideTab {
       if (!parts.has(p)) parts.set(p, []);
       parts.get(p)!.push(card);
     }
-    // Letters and copying are small: they share the first row.
-    const order = ['letters', 'copy', 'encoder', 'decoder'];
+    const order = ['letters', 'encoder', 'decoder'];
     const sorted = [...groups].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
     this.body.replaceChildren(...sorted.map(([g, parts]) => h('section', { class: `panel group ${g}` },
       h('h2', {}, t(`inside.group.${g}`)),
@@ -149,8 +147,8 @@ export class InsideTab {
     const v = c.data![row * c.info.cols + col];
     const r = axisText(c.info.rowKind, row, this.ready!.tokens), k = axisText(c.info.colKind, col, this.ready!.tokens);
     // A layer's matrix connects an incoming number (row) to an outgoing one (column).
-    const layer = /^(dim|hidden)$/.test(c.info.rowKind) && /^(dim|hidden|none)$/.test(c.info.colKind);
-    const where = layer ? `${r} → ${k || t('axis.single')}` : [r, k].filter(Boolean).join(', ');
+    const layer = /^(dim|hidden)$/.test(c.info.rowKind) && /^(dim|hidden)$/.test(c.info.colKind);
+    const where = layer ? `${r} → ${k}` : [r, k].filter(Boolean).join(', ');
     return `${roleLabel(c.info)} — ${where}: ${fmt(v)}`;
   }
 

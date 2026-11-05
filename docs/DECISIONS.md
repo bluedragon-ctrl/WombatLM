@@ -214,3 +214,10 @@ The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–
 - Removed `unsure` (19 entries), `formsAlt` (16 accepted alternative forms, e.g. koťátko, cub) and `alt` (9 alternative names, e.g. kocour for kočka, rhino) from the data, the code and the Learning data tab. The main words are unchanged.
 - Every question now has exactly one right answer: `judge(output, answer)` is right / one letter off ("close") / wrong. `Task.accepted` and `AnswerMsg.answer.accepted` are gone (`answer.word`). The Ask tab recognises an animal only by its name.
 - The validator rejects any field other than `id`, `names`, `split`, `forms`, `kindOverride`, so old fields in a data file are reported, not silently ignored.
+
+## Copy mechanism removed
+
+- **Removed completely** (user decision): the pointer-style copy attention, the write-or-copy gate, the ops `pointerMix` and `nllFromProbs`, the `copy` option of `TranslatorConfig`, `TranslationTrace.writeShare`, `StepGuess.write`, and in the UI the "copied / wrote" strip under the guess bars, the tinted "copied" answer tokens, the "Where it copies from" attention grid and the "Copying" group on the Inside tab.
+- **Why:** this is a teaching demo and should be as simple as possible. Real language models have no copy mechanism; plain attention learns to copy. The experiments above showed the mechanism does not help generalisation (never-seen Czech 8/26 without it vs 7–8/26 with it); copy practice is what makes never-seen forms work, and it stays.
+- **Cost:** known-form accuracy drops a little (measured earlier at 5 000 steps: Czech 89/102 vs 96/102, English 124/147 vs 131–141/147). Accepted: accuracy is a guide, not a gate. Re-measured with the app's trainer (`scripts/train-node.ts 5000 1`, seed 1): known Czech 91% (was 98%), English 92% (was 93%); never-seen Czech 19% (was 23%), within the ±2-word noise of the small never-seen set. The cross-attention grid still shows the stem being copied.
+- **Parameters:** 24 727 (was 26 872) with the 55-token vocabulary.

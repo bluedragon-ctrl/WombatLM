@@ -342,7 +342,6 @@ export class Engine {
       return {
         chosen: charOf(chosen),
         top: cands.slice(0, 5).map((i) => ({ char: charOf(i), p: p[i] })),
-        write: trace.writeShare?.[t],
       };
     });
     const attention: AttentionMap[] = Object.entries(trace.attention).map(([name, a]) => ({ name, ...a }));

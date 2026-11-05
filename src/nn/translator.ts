@@ -11,12 +11,12 @@
  * One embedding table is shared by encoder input, decoder input and the
  * output layer ("tied"), so there is a single "letter map" to look at.
  */
-import { add, bmm, crossEntropy, dropout, gather, matmul, nllFromProbs, pointerMix, reshape, scale, softmax } from './ops';
+import { add, crossEntropy, dropout, gather, matmul } from './ops';
 import { Rng } from './rng';
 import { growVocab } from './serialize';
 import { Tensor } from './tensor';
 import {
-  Block, KV, LayerNorm, Linear, NEG, ParamSet, Trace, argmax, causalMask, keyPaddingMask, rowSoftmax,
+  Block, KV, LayerNorm, ParamSet, Trace, argmax, causalMask, keyPaddingMask, rowSoftmax,
 } from './transformer';
 
 export interface TranslatorConfig {
@@ -30,8 +30,6 @@ export interface TranslatorConfig {
   maxLen: number;
   /** Dropout probability used while training (0 = off). */
   dropout?: number;
-  /** Copy mechanism: the model may point at an input letter and copy it. */
-  copy?: boolean;
   /**
    * Start the output with the target token (e.g. <cs:female>) instead of
    * <bos>, so the decoder always sees what it was asked to write.
@@ -99,17 +97,15 @@ export function makeBatch(examples: readonly Example[], ids: SpecialIds): Batch 
 }
 
 /**
- * For each row of `scores` ([N, V], probabilities when `isProbs`, else
- * logits), the probability of the target token (NaN where the target is
- * padding).
+ * For each row of `logits` ([N, V]), the probability of the target token
+ * (NaN where the target is padding).
  */
-export function rightTokenProbs(scores: Tensor, targets: Int32Array, padId: number, isProbs: boolean, out: Float32Array): void {
-  const V = scores.shape[1];
-  const d = scores.data;
+export function rightTokenProbs(logits: Tensor, targets: Int32Array, padId: number, out: Float32Array): void {
+  const V = logits.shape[1];
+  const d = logits.data;
   for (let i = 0; i < targets.length; i++) {
     if (targets[i] === padId) { out[i] = NaN; continue; }
     const o = i * V;
-    if (isProbs) { out[i] = d[o + targets[i]]; continue; }
     let max = -Infinity;
     for (let j = 0; j < V; j++) if (d[o + j] > max) max = d[o + j];
     let sum = 0;
@@ -138,8 +134,6 @@ export interface TranslationTrace {
    * signal"): `enc.in` (letters + positions), `enc0.out`, …, `dec.in`, `dec0.out`, ….
    */
   activations: Record<string, { T: number; d: number; data: Float32Array }>;
-  /** Copy mechanism only: per step, how much the model wrote itself (1) vs copied (0). */
-  writeShare?: number[];
 }
 
 export class Translator {
@@ -153,10 +147,6 @@ export class Translator {
   readonly encNorm: LayerNorm;
   readonly decNorm: LayerNorm;
   readonly outBias: Tensor;
-  /** Copy mechanism (optional): query, key and the write-or-copy gate. */
-  readonly copyQ: Linear | null = null;
-  readonly copyK: Linear | null = null;
-  readonly copyGate: Linear | null = null;
   /** Random numbers for dropout (separate from initialisation so runs stay reproducible). */
   private dropRng: Rng;
   /** True only inside `loss()`: dropout is active. */
@@ -176,11 +166,6 @@ export class Translator {
     this.dec = Array.from({ length: decLayers }, (_, i) => new Block(ps, `dec${i}`, d, heads, ffn, true, encLayers + decLayers));
     this.decNorm = new LayerNorm(ps, 'decNorm', d);
     this.outBias = ps.fill('outBias', [V], 0, { rows: 'none', cols: 'token', role: 'outBias' });
-    if (config.copy) {
-      this.copyQ = new Linear(ps, 'copy.q', d, d, { role: 'copyQ' });
-      this.copyK = new Linear(ps, 'copy.k', d, d, { role: 'copyK' });
-      this.copyGate = new Linear(ps, 'copy.gate', d, 1, { role: 'copyGate', cols: 'none' });
-    }
   }
 
   get vocabSize(): number {
@@ -218,12 +203,8 @@ export class Translator {
     return this.encNorm.forward(x);
   }
 
-  /**
-   * Decoder with teacher forcing. Returns output scores [B*Tt, V]: logits
-   * without the copy mechanism, probabilities with it. Either way the
-   * highest score is the model's choice.
-   */
-  decode(memory: Tensor, src: Int32Array, srcValid: Uint8Array, tgtIn: Int32Array, B: number, Ts: number, Tt: number, trace?: Trace): Tensor {
+  /** Decoder with teacher forcing. Returns output logits [B*Tt, V]. */
+  decode(memory: Tensor, srcValid: Uint8Array, tgtIn: Int32Array, B: number, Ts: number, Tt: number, trace?: Trace): Tensor {
     let y = this.embed(tgtIn, B, Tt, this.decPos);
     trace?.set('dec.in', y);
     const selfMask = causalMask(B, Tt);
@@ -232,7 +213,7 @@ export class Translator {
       const kv = block.cross!.keysValues(memory, B, Ts);
       y = block.forward(y, B, Tt, selfMask, { kv, mask: crossMask }, trace, this.drop);
     }
-    return this.output(this.decNorm.forward(y), this.copyKeys(memory, B, Ts), src, srcValid, B, Tt, Ts, trace);
+    return this.project(this.decNorm.forward(y));
   }
 
   /** Hidden states -> scores for every token (tied with the embedding table). */
@@ -240,32 +221,10 @@ export class Translator {
     return add(matmul(h, this.tokEmb, true), this.outBias);
   }
 
-  /** Keys the copy mechanism points at: [B, Ts, d] (null without copying). */
-  private copyKeys(memory: Tensor, B: number, Ts: number): Tensor | null {
-    return this.copyK ? reshape(this.copyK.forward(memory), [B, Ts, this.config.dModel]) : null;
-  }
-
-  /**
-   * Final hidden states h [B*Tq, d] -> output scores. With the copy
-   * mechanism: attend over the input letters (never the target token or
-   * padding), then mix "write" and "copy" with a learned gate.
-   */
-  private output(h: Tensor, keys: Tensor | null, src: Int32Array, srcValid: Uint8Array, B: number, Tq: number, Ts: number, trace?: Trace): Tensor {
-    const logits = this.project(h);
-    if (!keys || !this.copyQ || !this.copyGate) return logits;
-    const d = this.config.dModel;
-    const q = reshape(this.copyQ.forward(h), [B, Tq, d]);
-    const attn = softmax(scale(bmm(q, keys, true), 1 / Math.sqrt(d)), copyMask(srcValid, B, Tq, Ts)); // [B, Tq, Ts]
-    const gate = this.copyGate.forward(h); // [B*Tq, 1]
-    trace?.set('copy', attn);
-    trace?.set('copyGate', gate);
-    return pointerMix(logits, reshape(attn, [B * Tq, Ts]), src, Tq, gate);
-  }
-
-  /** Output scores [B*Tt, V] (logits, or probabilities with the copy mechanism). */
+  /** Output logits [B*Tt, V]. */
   logits(batch: Batch, trace?: Trace): Tensor {
     const memory = this.encode(batch.src, batch.srcValid, batch.B, batch.Ts, trace);
-    return this.decode(memory, batch.src, batch.srcValid, this.decoderInput(batch), batch.B, batch.Ts, batch.Tt, trace);
+    return this.decode(memory, batch.srcValid, this.decoderInput(batch), batch.B, batch.Ts, batch.Tt, trace);
   }
 
   /** Decoder input; with `targetStart` the first token is the target token instead of <bos>. */
@@ -276,7 +235,6 @@ export class Translator {
     return tgtIn;
   }
 
-  /** Mean cross-entropy over all real target characters. */
   /**
    * The training loss: the average mistake over every letter of the batch.
    * If `tokenP` is given ([B*Tt]), it receives for each position the
@@ -286,9 +244,9 @@ export class Translator {
   loss(batch: Batch, padId: number, tokenP?: Float32Array): Tensor {
     this.training = true;
     try {
-      const scores = this.logits(batch);
-      if (tokenP) rightTokenProbs(scores, batch.tgtOut, padId, !!this.config.copy, tokenP);
-      return this.config.copy ? nllFromProbs(scores, batch.tgtOut, padId) : crossEntropy(scores, batch.tgtOut, padId);
+      const logits = this.logits(batch);
+      if (tokenP) rightTokenProbs(logits, batch.tgtOut, padId, tokenP);
+      return crossEntropy(logits, batch.tgtOut, padId);
     } finally {
       this.training = false;
     }
@@ -305,7 +263,6 @@ export class Translator {
     const memory = this.encode(batch.src, batch.srcValid, B, Ts);
     const crossMask = keyPaddingMask(batch.srcValid, B, 1, Ts);
     const crossKV: KV[] = this.dec.map((blk) => blk.cross!.keysValues(memory, B, Ts));
-    const keys = this.copyKeys(memory, B, Ts);
     const caches = this.dec.map(() => ({ kv: null as KV | null }));
     const V = this.vocabSize;
     const out: number[][] = Array.from({ length: B }, () => []);
@@ -315,7 +272,7 @@ export class Translator {
     for (let t = 0; t < steps; t++) {
       let y = add(gather(this.tokEmb, current), gather(this.decPos, new Int32Array(B).fill(t)));
       this.dec.forEach((blk, l) => { y = blk.step(y, B, caches[l], { kv: crossKV[l], mask: crossMask }); });
-      const logits = this.output(this.decNorm.forward(y), keys, batch.src, batch.srcValid, B, 1, Ts);
+      const logits = this.project(this.decNorm.forward(y));
       const next = new Int32Array(B);
       let allDone = true;
       for (let b = 0; b < B; b++) {
@@ -347,26 +304,13 @@ export class Translator {
     const logits = this.logits(batch, trace);
     const V = this.vocabSize;
     const nSteps = finished ? batch.Tt : batch.Tt - 1;
-    const probs = Array.from({ length: nSteps }, (_, t) =>
-      this.config.copy ? logits.data.slice(t * V, (t + 1) * V) : rowSoftmax(logits.data, t, V));
+    const probs = Array.from({ length: nSteps }, (_, t) => rowSoftmax(logits.data, t, V));
     const attention: TranslationTrace['attention'] = {};
     const activations: TranslationTrace['activations'] = {};
-    let writeShare: number[] | undefined;
     for (const [name, t] of trace) {
-      if (name === 'copyGate') writeShare = Array.from(t.data.subarray(0, nSteps), (x) => 1 / (1 + Math.exp(-x)));
-      else if (t.shape.length === 3) attention[name] = { heads: t.shape[0], Tq: t.shape[1], Tk: t.shape[2], data: t.data.slice() };
+      if (t.shape.length === 3) attention[name] = { heads: t.shape[0], Tq: t.shape[1], Tk: t.shape[2], data: t.data.slice() };
       else activations[name] = { T: t.shape[0], d: t.shape[1], data: t.data.slice() };
     }
-    return { input: [target, ...src], output, finished, probs, attention, activations, writeShare };
+    return { input: [target, ...src], output, finished, probs, attention, activations };
   }
-}
-
-/**
- * [B, Tq, Ts] mask for the copy mechanism: it may point at input letters
- * only, never at the target token (position 0) or padding.
- */
-function copyMask(srcValid: Uint8Array, B: number, Tq: number, Ts: number): Float32Array {
-  const m = keyPaddingMask(srcValid, B, Tq, Ts);
-  for (let b = 0; b < B; b++) for (let q = 0; q < Tq; q++) m[(b * Tq + q) * Ts] = NEG;
-  return m;
 }

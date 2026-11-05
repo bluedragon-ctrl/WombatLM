@@ -13,7 +13,7 @@ export interface HeatmapLayout {
   cellH: number;
 }
 
-/** Cell size: small for big matrices, larger for thin ones (vectors, the copy gate). */
+/** Cell size: small for big matrices, larger for thin ones (vectors). */
 export function heatmapLayout(rows: number, cols: number, cell = 5): HeatmapLayout {
   return { rows, cols, cellW: cols === 1 ? 12 : cell, cellH: rows === 1 ? 12 : cell };
 }

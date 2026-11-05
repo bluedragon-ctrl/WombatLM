@@ -13,7 +13,7 @@ describe('FormTrainer', () => {
     expect(forms.length).toBeGreaterThan(200);
     expect(forms.every((t) => t.animal.split === 'train' && t.form !== 'name' && t.from === t.to)).toBe(true);
     expect(copies.every((t) => t.form === 'name' && t.source === t.answer)).toBe(true);
-    expect(tr.model.config.copy && tr.model.config.targetStart).toBe(true);
+    expect(tr.model.config.targetStart).toBe(true);
   });
 
   it('is deterministic for a seed', () => {
@@ -105,7 +105,6 @@ describe('FormTrainer', () => {
     const c = confidence(trace, tr.vocab.eos);
     expect(c).toBeGreaterThan(0);
     expect(c).toBeLessThanOrEqual(1);
-    expect(trace.writeShare).toBeDefined();
   });
 });
 

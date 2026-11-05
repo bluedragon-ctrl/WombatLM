@@ -1,6 +1,6 @@
 /**
  * Word forms on the full base dataset, with "copy the name" practice.
- *   npx tsx scripts/experiments/forms-full.ts [steps] [seed] [dropout] [copyWeight] [copyMechanism 0|1] [targetStart 0|1]
+ *   npx tsx scripts/experiments/forms-full.ts [steps] [seed] [dropout] [copyWeight] [targetStart 0|1]
  */
 import { Tape } from '../../src/nn/autograd';
 import { Adam } from '../../src/nn/optim';
@@ -14,15 +14,14 @@ const steps = Number(process.argv[2] ?? 5000);
 const seed = Number(process.argv[3] ?? 1);
 const drop = Number(process.argv[4] ?? 0.1);
 const copyWeight = Number(process.argv[5] ?? 1);
-const copyMechanism = process.argv[6] === '1';
-const targetStart = process.argv[7] === '1';
+const targetStart = process.argv[6] === '1';
 const ds = new Dataset(baseBundle());
 const v = ds.vocab;
 const ids = { pad: v.pad, bos: v.bos, eos: v.eos };
 const train = ds.formTasks((a) => a.split === 'train');
 const test = ds.formTasks((a) => a.split === 'unseen');
 const copies = ds.nameTasks((a) => a.split === 'train', true);
-const model = new Translator({ ...TRANSLATOR_DEFAULTS, vocabSize: v.size, dropout: drop, copy: copyMechanism, targetStart }, seed);
+const model = new Translator({ ...TRANSLATOR_DEFAULTS, vocabSize: v.size, dropout: drop, targetStart }, seed);
 const opt = new Adam(model.params.list, { lr: 3e-3 });
 const rng = new Rng(seed + 7);
 const ex = (t: Task) => ({ target: ds.targetId(t.to, t.form), src: v.encodeWord(t.source), tgt: v.encodeWord(t.answer) });

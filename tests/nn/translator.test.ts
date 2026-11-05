@@ -92,8 +92,8 @@ describe('translator', () => {
     expect(cross.Tk).toBe(4);
   });
 
-  it('with the copy mechanism: gradients match, it overfits, and cached decoding agrees', () => {
-    const cfg = { ...tinyConfig, copy: true, targetStart: true };
+  it('with target-token start: gradients match, it overfits, and cached decoding agrees', () => {
+    const cfg = { ...tinyConfig, targetStart: true };
     const small = new Translator(cfg, 4);
     const batch = makeBatch(pairs.slice(0, 2), ids);
     const { maxError, worst } = gradCheck(() => small.loss(batch, ids.pad), small.params.list, {
@@ -106,8 +106,7 @@ describe('translator', () => {
     const inputs = pairs.map((p) => ({ target: p.target, src: p.src }));
     expect(model.greedy(inputs, ids)).toEqual(pairs.map((p) => p.tgt));
     const tr = model.inspect(3, [5, 6, 7], ids);
-    expect(tr.writeShare).toHaveLength(4);
-    expect(tr.attention.copy.Tq).toBe(4);
+    expect(tr.probs).toHaveLength(4);
     tr.probs.forEach((p) => expect(p.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 4));
   });
 

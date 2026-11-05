@@ -19,7 +19,7 @@ A tiny neural network that learns **animal word forms** (male / female / young) 
 
 **Goals**
 - Show how a model learns: weights changing, mistakes going down, attention forming, letters organising themselves.
-- Show **token-by-token generation**: for every letter, the model's top guesses and how sure it is; which letters it copied from the input and which it wrote itself.
+- Show **token-by-token generation**: for every letter, the model's top guesses and how sure it is, and (in the attention grid) which input letters it looked at while writing it.
 - Make **memorisation vs. generalisation** visible. Czech forms mostly follow patterns (tygr → tygřice, slon → slonice), so the model partly generalises to never-seen animals, with believable over-regularised mistakes (vlk → *vlkice* instead of vlčice). English forms are irregular (cub, calf, foal), so the model must memorise them and fails on never-seen ones. The contrast between the two languages is the lesson.
 - Show **hallucination**: a model always answers, even when no real answer exists (žirafa has no Czech young-animal word), and it can be confident about it.
 - Show that a trained model can be **taught new things later** (new animals, a new kind of task) and what happens to old knowledge when it is (forgetting).
@@ -78,7 +78,7 @@ Runtime dependencies: none. Dev dependencies: vite, typescript, vitest, tsx, @pl
 │  ├─ nn/                          ✔ the "brain": pure, no DOM
 │  │  ├─ tensor.ts autograd.ts ops.ts optim.ts rng.ts vocab.ts
 │  │  ├─ transformer.ts            attention, blocks, KV cache
-│  │  ├─ translator.ts             encoder–decoder (+ copy mechanism)
+│  │  ├─ translator.ts             encoder–decoder
 │  │  ├─ serialize.ts              weights <-> binary (f32/f16/int8), vocab growth
 │  │  ├─ pca.ts                    ✔ 2-D PCA + Procrustes (letter map)
 │  │  └─ namer.ts                  ◌ decoder-only "invent an animal" model
@@ -183,7 +183,7 @@ In Teach mode a user can type an animal with forms. Stored in `localStorage` as 
 ## 5. The neural-network library (`src/nn`) — done in M1
 
 - **Autograd:** tape-based reverse mode over dense `Float32Array` tensors (row-major, up to 3-D). Plain loops; readable first, fast enough second.
-- **Ops:** `matmul`/`bmm`, `add` (broadcast bias), `mul`, `scale`, `gather`, `layerNorm`, `gelu`, `softmax` (with additive mask), `transpose`, `reshape`/heads, `concat`, `crossEntropy` (ignore `<pad>`, fused log-softmax), `dropout`, and for the copy mechanism `pointerMix` and `nllFromProbs`.
+- **Ops:** `matmul`/`bmm`, `add` (broadcast bias), `mul`, `scale`, `gather`, `layerNorm`, `gelu`, `softmax` (with additive mask), `transpose`, `reshape`/heads, `concat`, `crossEntropy` (ignore `<pad>`, fused log-softmax), `dropout`.
 - **Correctness:** every op gradient-checked; the full model gradient-checked at a tiny size; overfit test; determinism test; cached decoding checked against full recomputation.
 - **Optimiser:** Adam (β1 0.9, β2 0.98, ε 1e-9), optional AdamW weight decay, global gradient-norm clipping at 1.0, linear warm-up over 100 steps, then constant LR. Default LR 3e-3.
 - **Serialisation:** f32 / f16 / int8 (per-matrix scale), with vocabulary remapping on load.
@@ -203,19 +203,16 @@ In Teach mode a user can type an animal with forms. Stored in `localStorage` as 
 | positions | learned, 22, separate tables for encoder and decoder |
 | norm | pre-LayerNorm, final LayerNorm |
 | embeddings | **one shared table** for encoder input, decoder input and output projection (tied), plus an output bias. This keeps a single "letter map". |
-| copy mechanism | on (section 6.2) |
 | decoder start | the target token (`<cs:female>`), not `<bos>` |
 | dropout | 0.1 while training |
-| parameters | **26 872** |
+| parameters | **24 727** |
 
 **Input:** the target token followed by the name: `<cs:female> t y g r`. The target token says what to write (language + form). **Output:** `t y g ř i c e <eos>`, greedy decoding with a key/value cache, max 21 steps.
 
 Why the decoder starts from the target token: without it the model often mixed up forms (čáp → male *čápice*). Seeing "what to write" at every output step fixes that.
 
-### 6.2 Copy mechanism
-A single-head attention from the final decoder state over the input letters (never the target token or padding) plus a learned **write-or-copy gate** g: `p = g·softmax(logits) + (1−g)·copy`. Loss is the NLL of the mixed distribution. +2 145 parameters.
-
-Mainly a **teaching visual**: for every output letter the UI shows whether the model copied it from the input or wrote it itself (tygr|ice: the stem is copied, the ending written). It also keeps known-form accuracy up while copy practice is on. It does not by itself improve generalisation.
+### 6.2 No copy mechanism: copying is learned
+The model has **no special copy machinery**. Keeping the stem (tygr → tygr|ice) is learned by ordinary cross-attention, the same way real language models learn to copy. The cross-attention grid shows it: while writing the stem the model looks at the matching input letter. An earlier version had a pointer-style copy mechanism with a write-or-copy gate; it was removed to keep the model simple (see `docs/DECISIONS.md`).
 
 ### 6.3 Training
 - **Batch mix:** word-form tasks of train-split animals (both languages, all forms) mixed **1:1 with copy practice** (`<cs> tygr → tygr` for every train-split name). Copy practice is what makes never-seen forms work: it teaches "keep the stem".
@@ -258,7 +255,7 @@ Built (M2):
 - `ready`: seed, parameter count, languages, forms, animal list (names, forms, split), vocabulary tokens.
 - `tick` (≤ 20 Hz): step, running, speed, loss EMA, LR, batch size, gradient norm, measured steps/s, and **every batch loss since the previous tick** (the loss chart is drawn from these).
 - `eval`: step, scores per language, per-form results (`TaskResult`: animal, language, form, output, status, split, kind), whether inventions are included, and how long it took.
-- `answer`: the output word, whether it finished, the input tokens, **per letter the top-5 candidates with probabilities and the write-vs-copy share**, the confidence, **all attention maps** (transferred buffers), the badge and, for real/hidden, the accepted answers and status.
+- `answer`: the output word, whether it finished, the input tokens, **per letter the top-5 candidates with probabilities**, the confidence, **all attention maps** (transferred buffers), the badge and, for real/hidden, the accepted answers and status.
 - `error`.
 
 Built (learning vs answering): `tick.practice` — the latest training batch: step, batch size, batch loss and up to 32 examples of **learning data** (source, form, language, right answer) and, when the brain answered them **before** the step, its answers with ✓/≈/✗ and how many were right. Answering first costs one greedy pass, so the engine does it on Step and at slow speeds (≤ 5 steps/s) always, and at higher speeds only while the Practice tab is open (`watchPractice{on}`, main → worker), at most every 500 ms.
@@ -291,7 +288,7 @@ Desktop layout, ≥ 1280 wide. Top bar: logo · tabs **Forms · Inside the brain
 │                      │                                    │              │
 │ ANIMALS  all|known|  │ GUESS BARS per letter              │              │
 │  never seen|wrong    │ t ███ 99% … ř ██ 71% e ▌ 12% …     │              │
-│      male female young│ copied copied … wrote wrote       │              │
+│      male female young│                                    │              │
 │ tygr ✓tygr ✓tygřice ✓│                                    │              │
 │ vlk⌗ ✓vlk ≈vlkice ✗… │ ATTENTION GRID (M3)                │              │
 │ žirafa ✨… ✨… ✨…     │                                    │              │
@@ -305,15 +302,15 @@ Desktop layout, ≥ 1280 wide. Top bar: logo · tabs **Forms · Inside the brain
 - **Write it slowly:** replays the current answer letter by letter (400 ms/letter): guess-bar columns and the linked attention rows appear one at a time, caption "reading the animal → writing letter 3 of 7".
 - **Question box:** text input, **language picker** and **form picker** (both built from the data files). Typing a name from another language switches the language (forms stay within one language) and the hint says "looks like Czech" or "not an animal from the data".
 - **Answer:** the generated word, the badge (section 6.4), the confidence meter. **A hidden answer is shown uncoloured until Reveal**, because a green or red word would give it away.
-- **Guess bars:** the main visual. For each output letter, the top-5 candidates (including "end of word") with bars; the chosen one highlighted; under each column a strip showing **copied vs wrote**. M3: hovering a column highlights the matching attention row.
+- **Guess bars:** the main visual. For each output letter, the top-5 candidates (including "end of word") with bars; the chosen one highlighted. M3: hovering a column highlights the matching attention row.
 - **Animal list:** per selected language, one row per animal with columns male / female / young showing the model's current answer with ✓ ≈ ✗ ✨, a dashed "never seen" badge, filters all / known / never seen / wrong. Clicking a row or cell puts it in the question box. Tooltips show real words only for known animals.
 - **Scoreboard:** lines over time for the selected language: known (solid), never-seen pattern / partly / irregular (dashed and dotted, so colour is never the only cue). A table below shows the latest numbers for every language, with the "right or one letter off" row in bold. This chart *is* the memorise-vs-generalise lesson, and the Czech-vs-English difference is visible side by side.
 - **Loss chart:** EMA-smoothed batch loss, labelled "Mistakes"; linear in plain mode, log y-axis in expert mode.
-- **Attention grid (M3):** cells shaded 0–1, one grid per head, letters on the axes (cross-attention: output letters × input tokens; the copy attention as its own grid). Expert mode adds decoder and encoder self-attention.
+- **Attention grid (M3):** cells shaded 0–1, one grid per head, letters on the axes (cross-attention: output letters × input tokens). Expert mode adds decoder and encoder self-attention.
 - **Letter map (M3):** PCA of the shared embedding table, dots labelled with the letter; vowels, consonants, Czech-only letters and target tokens use different markers and colours. PCA axes are sign-aligned and Procrustes-rotated to the previous frame; points lerp between updates.
 
 ### 8.2 Inside the brain (M3)
-- A grid of **weight heatmaps**, one per matrix (letter table 55×32, Q/K/V/O per attention, FFN in/out, copy head), labelled in plain words ("letter table", "what to look for (Q)", …) with the technical name in expert mode.
+- A grid of **weight heatmaps**, one per matrix (letter table 55×32, Q/K/V/O per attention, FFN in/out), labelled in plain words ("letter table", "what to look for (Q)", …) with the technical name in expert mode.
 - Diverging palette: blue negative, white zero, red positive; symmetric scale per matrix (99th percentile of |w|).
 - Mode toggle: **Weights** / **Change in the last steps** (default: raw weights look like noise, changes show learning) / **Gradient**.
 - Hovering a cell shows its value and its meaning when known ("letter 'ž', dimension 7").
@@ -380,7 +377,7 @@ Each milestone ends with tests green, `npm run build` passing, and a merged pull
 
 **M1: The brain library.** ✅ Done. Scaffold, `src/nn` (tensors, autograd, ops, Adam, RNG, vocabulary, translator, serialisation, vocab growth), gradient checks, overfit and determinism tests.
 
-**M2: Training in the browser.** ✅ Done (pending the user's data review). Dataset v2 with forms + validator + review doc, generalisation experiments, copy mechanism and target-token start, `FormTrainer` with copy practice, engine + worker + protocol, minimal UI (controls, question box with pickers, badge, confidence, guess bars with copied/wrote, loss chart, scoreboard, animal list), Playwright smoke test. Measured: ~38 steps/s; known cs 98% / en 93%; never-seen Czech pattern forms partly right.
+**M2: Training in the browser.** ✅ Done (pending the user's data review). Dataset v2 with forms + validator + review doc, generalisation experiments, copy mechanism (later removed) and target-token start, `FormTrainer` with copy practice, engine + worker + protocol, minimal UI (controls, question box with pickers, badge, confidence, guess bars, loss chart, scoreboard, animal list), Playwright smoke test. Measured: ~38 steps/s; known cs 98% / en 93%; never-seen Czech pattern forms partly right.
 
 **M3: Seeing inside.** ✅ Done (PR, pending review). Attention grids (cross, copy, self in expert mode) linked to the guess bars by hover; letter map (PCA + Procrustes + lerp); "Inside the brain" tab with weight / change / gradient heatmaps; `inspect`/`weights`/`letterMap` messages; tabs in the UI.
 ✔ Playwright screenshots of each panel at step 0 and after training, reviewed visually.
@@ -455,7 +452,7 @@ Adding a language = an entry in `languages.json`, its letters in `vocab.json` (i
 ## 16. Open items for later (not v1)
 - Translation as a Teach scenario (section 8.3), including zero-shot directions once there are 3+ languages.
 - Comparison mode: the same data on a no-attention model to show why attention helps.
-- "Break the brain": zero out a weight, a head or the copy gate and see what fails (ablation).
+- "Break the brain": zero out a weight or a head and see what fails (ablation).
 - Beam search / top-3 decodings for the inventions gallery.
 - WebGPU acceleration (not needed at this size).
 - Shareable links to a trained model state.

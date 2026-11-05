@@ -107,7 +107,7 @@ export const TRAINER_DEFAULTS = {
   lr: 3e-3,
   batchSize: 16,
   copyWeight: 1,
-  config: { copy: true, targetStart: true, dropout: 0.1 } as Partial<Omit<TranslatorConfig, 'vocabSize'>>,
+  config: { targetStart: true, dropout: 0.1 } as Partial<Omit<TranslatorConfig, 'vocabSize'>>,
 };
 
 export interface TrainerOptions {
