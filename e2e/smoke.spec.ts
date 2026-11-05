@@ -51,5 +51,15 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=mode-note]')).toContainText(/batch/);
   await page.click('[data-test=tab-forms]');
   await expect(page.locator('[data-test=bars]')).toBeVisible();
+
+  // The Learning data tab: everything it learns from; a click asks on the Forms tab.
+  await page.click('[data-test=tab-data]');
+  await expect(page.locator('[data-test=data-summary]')).toContainText(/learning examples/);
+  await expect(page.locator('[data-test=data-table] tr.kept td.hidden').first()).toBeVisible();
+  await page.click('[data-test=data-reveal]');
+  await expect(page.locator('[data-test=data-table] tr.kept td.hidden')).toHaveCount(0);
+  await page.locator('[data-test=data-table] td.learned:not(.name)').first().click();
+  await expect(page.locator('[data-test=bars]')).toBeVisible();
+  await expect(page.locator('[data-test=output] .badge')).toContainText(/.+/);
   expect(errors).toEqual([]);
 });

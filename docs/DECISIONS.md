@@ -137,3 +137,14 @@ User feedback: "it is not clear when it learns (builds weights) and when it gene
 - **Speed with answering first** (same setup as above, final version): Forms tab 35–37 training steps/s, wall-clock 31.5; Practice tab open 33–37, wall-clock 31.5. No slowdown.
 - **Write it slowly** replays the `answer` already received (no new request); hovering is disabled during the replay, and changing the question stops it.
 - **Frozen brain** test: `ask` ×5, `evaluate` with inventions and `inspect` leave every weight bit-identical, and the next training step equals that of a twin engine that never answered (so optimiser state and random numbers are untouched too).
+
+## Tab reorganisation, step 1: Learning data tab (user request)
+
+User: "I do not fully understand tabs shown, so I would like to reorganise them a bit in several steps. 1. One tab with Learning data, so people can see what are actually source data engine is learning from."
+
+- **New tab "Learning data"** (`src/ui/dataTab.ts`), placed after Forms: Forms · Learning data · Practice · Inside the brain. Forms stays the opening tab; further reordering is left for the next steps.
+- **What it shows is exactly what the trainer samples from** (`FormTrainer.defaultMix`): word-form tasks (name → male / female / young, main answer only) and "copy the name" tasks of train-split animals. A unit test (`tests/ui/dataTab.test.ts`) checks the tab's counts against `trainTasks()` / `copyTasks()`, in total and per language. Base pack: 529 examples (249 word forms + 280 copy the name) from 140 animals; 11 never-seen animals kept aside.
+- **One table per data language** (language picker), animal name first (the copy practice), then the three forms. Learning examples are yellow (the same colour as "right answer (learning data)" on the Practice tab); a dash means no real word, so nothing to learn there. Filter all / learns from / never seen, and a search box.
+- **Never-seen animals are listed, greyed, with their answers hidden** behind "show the never-seen answers" (like the reveal on the Forms tab), so the tab does not give away the test. Searching does not match hidden answers.
+- **Clicking a word asks the brain** that question on the Forms tab, linking "learning data" to "answering".
+- Alternative accepted spellings (`formsAlt`, `alt`) are not shown: they are used only for judging answers, never trained on.

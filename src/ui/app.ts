@@ -1,7 +1,9 @@
 /**
- * The app: two tabs.
+ * The app: four tabs.
  * - Forms: controls, the question box with form and language pickers, guess
  *   bars, attention grids, letter map, loss chart, scoreboard, animal list.
+ * - Learning data: everything the brain learns from (see dataTab.ts).
+ * - Practice: the latest batch, and what it answered before learning from it.
  * - Inside the brain: weight heatmaps (see inside.ts).
  *
  * All training happens in the worker; this file only sends messages and
@@ -18,10 +20,11 @@ import { parentWidth, prepare } from '../viz/canvas';
 import { setUiLang, t, uiLang, UI_LANGUAGES } from './i18n';
 import { h } from './dom';
 import { InsideTab } from './inside';
+import { DataTab } from './dataTab';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
-type Tab = 'forms' | 'practice' | 'inside';
-const TABS: Tab[] = ['forms', 'practice', 'inside'];
+type Tab = 'forms' | 'data' | 'practice' | 'inside';
+const TABS: Tab[] = ['forms', 'data', 'practice', 'inside'];
 /** Look-inside requests: at most one in flight, at most this often. */
 const INSPECT_MS = 250;
 /** "Write it slowly": time per letter, and the "reading the animal" pause before the first one. */
@@ -101,6 +104,7 @@ export class App {
   private attGrids: AttGrid[] = [];
   private attKeys = '';
   private inside: InsideTab;
+  private dataTab: DataTab;
   private letterMap!: LetterMapView;
   private inspectId = 0;
   private inspectPending: number | null = null;
@@ -113,6 +117,7 @@ export class App {
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => this.onMessage(e.data);
     this.worker.onerror = (e) => this.showError(e.message);
     this.inside = new InsideTab(() => this.requestInspect(true));
+    this.dataTab = new DataTab((text, lang, form) => { this.setTab('forms'); this.setQuestion({ text, lang, form }); });
     this.els = this.build();
     this.letterMap = new LetterMapView(this.els.mapCanvas, () => Math.min(360, parentWidth(this.els.mapCanvas, 320)));
     window.addEventListener('resize', () => { this.invalidate('loss', 'scores'); this.letterMap.draw(); });
@@ -140,6 +145,7 @@ export class App {
         this.els.seed.value = String(msg.seed);
         this.letterMap.reset();
         this.inside.setReady(msg);
+        this.dataTab.setReady(msg);
         this.renderPickers();
         this.ask();
         this.requestInspect(true);
@@ -315,7 +321,7 @@ export class App {
     }
     this.inspectDirty = false;
     this.lastInspect = performance.now();
-    if (this.tab === 'practice') return; // nothing inside the brain to show there
+    if (this.tab === 'practice' || this.tab === 'data') return; // nothing inside the brain to show there
     const inside = this.tab === 'inside';
     const matrixIds = inside ? this.inside.wanted() : [];
     if (inside && !matrixIds.length) return;
@@ -346,6 +352,7 @@ export class App {
     }
     this.els.formsMain.hidden = tab !== 'forms';
     this.els.practiceMain.hidden = tab !== 'practice';
+    this.els.dataMain.hidden = tab !== 'data';
     this.els.insideMain.hidden = tab !== 'inside';
     if (tab === 'practice') this.invalidate('practice');
     this.send({ type: 'watchPractice', on: tab === 'practice' });
@@ -490,17 +497,19 @@ export class App {
         cycleB.note,
         practiceList));
     const insideMain = h('main', { class: 'inside-main', hidden: true }, this.inside.el);
+    const dataMain = h('main', { class: 'data-main', hidden: true }, this.dataTab.el);
 
     this.root.replaceChildren(
       h('header', {}, h('h1', {}, t('title')), h('span', { class: 'sub' }, t('subtitle')), tabs, params, uiSwitch),
       error,
       formsMain,
+      dataMain,
       practiceMain,
       insideMain,
     );
     return {
       play, speed, seed, status, input, langPick, formPick, hint, output, bars, barsWrap, attention, mapCanvas, mapNote, tabs, formsMain, insideMain,
-      stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp, practiceMain,
+      stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp, practiceMain, dataMain,
       playButtons: [play, play2], learnings: [learning, learning2], cycles: [cycleA, cycleB],
       lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
     };

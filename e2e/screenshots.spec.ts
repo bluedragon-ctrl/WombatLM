@@ -94,6 +94,9 @@ test('learning vs answering', async ({ page }) => {
   await expect(page.locator('[data-test=cycle-practice] .stage.current[data-stage=answer]')).toBeVisible();
   await page.locator('main.practice-main').screenshot({ path: `${LDIR}/11-practice-tab-answer.png` });
   await expect(page.locator('[data-test=cycle-practice] .stage.current')).toHaveCount(0, { timeout: 5_000 });
+  // The Learning data tab: everything it learns from.
+  await page.click('[data-test=tab-data]');
+  await page.locator('main.data-main').screenshot({ path: `${LDIR}/12-learning-data-tab.png` });
   await page.click('[data-test=tab-forms]');
   // Write it slowly.
   await page.click('[data-test=slow]');

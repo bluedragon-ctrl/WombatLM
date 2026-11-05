@@ -200,3 +200,28 @@ main.practice-main { padding: 14px 20px; max-width: 1240px; }
 .practice-table .word-own.correct { color: var(--correct); }
 .practice-table .word-own.close { color: var(--close); }
 .practice-table .word-own.wrong { color: var(--wrong); }
+
+/* Learning data tab: everything the brain learns from */
+main.data-main { padding: 14px 20px; max-width: 1240px; }
+.data-summary { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: baseline; margin-bottom: 10px; }
+.data-summary .stat { font-size: 14px; color: var(--muted); }
+.data-summary .stat b { font-size: 20px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.data-summary .stat.kept b { color: var(--muted); }
+.data-summary p { flex-basis: 100%; margin: 0; }
+.data-controls .picker { margin-bottom: 0; }
+.data-controls .data-search { width: 180px; }
+.data-legend { display: flex; gap: 14px; margin-bottom: 8px; }
+.data-legend span, .data-table td.cell { padding: 2px 8px; border-radius: 4px; }
+.data-legend .learned, .data-table td.learned { background: #fffbeb; box-shadow: inset 0 0 0 1px #fde68a; color: var(--ink); }
+.data-legend .missing, .data-table td.missing { color: #cbd5e1; }
+.data-legend .kept { border: 1px dashed var(--muted); }
+.data-table { max-height: calc(100vh - 330px); min-height: 300px; overflow-y: auto; }
+.data-table table { border-collapse: separate; border-spacing: 4px 3px; font-size: 15px; }
+.data-table th { position: sticky; top: 0; background: var(--panel); text-align: left; color: var(--muted); font-weight: 500; font-size: 13px; padding: 2px 8px; }
+.data-table td.cell { cursor: pointer; white-space: nowrap; min-width: 90px; }
+.data-table td.missing, .data-table td.hidden { cursor: default; }
+.data-table td.name { font-weight: 600; }
+.data-table td.learned:hover { background: #fef3c7; }
+.data-table tr.kept td.cell:not(.missing) { color: var(--muted); }
+.data-table tr.kept td.kept:not(.hidden):hover { background: #f1f5f9; }
+.data-table .never { margin-left: 6px; font-size: 11px; font-weight: 500; padding: 0 5px; border: 1px dashed var(--muted); border-radius: 8px; color: var(--muted); }
