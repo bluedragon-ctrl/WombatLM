@@ -12,8 +12,10 @@ import { Vocab } from '../nn/vocab';
 import { nearestRows, pca2 } from '../nn/pca';
 import { FormTrainer, PracticeBatch, TRAINER_DEFAULTS, confidence, judge } from './trainer';
 import type {
-  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, FromWorker, InspectMode, LossPoint, MatrixInfo, Speed, StepGuess, ToWorker,
+  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, ExplainGuess, ExplainMsg, FromWorker, InspectMode, LossPoint, MatrixChange, MatrixInfo, Speed,
+  StepGuess, ToWorker,
 } from './protocol';
+import { rowSoftmax } from '../nn/transformer';
 
 export interface EngineHost {
   post(msg: FromWorker, transfer?: Transferable[]): void;
@@ -64,6 +66,9 @@ export class Engine {
   /** For `inspect` in delta mode: weights at the previous request, and the change found then. */
   private deltaBase = new Map<string, { step: number; data: Float32Array }>();
   private lastDelta = new Map<string, { steps: number; data: Float32Array }>();
+  /** For the change summary (`weights.summary`): all weights at the previous request, and the change found then. */
+  private summaryBase: { step: number; data: Float32Array[] } | null = null;
+  private lastSummary: MatrixChange[] | null = null;
   /** Weights before the latest training step (reused buffers), so the first delta request has something to show. */
   private beforeStep: Float32Array[] | null = null;
   /** Step of the latest practice batch sent in a tick (sent once per new step). */
@@ -183,6 +188,9 @@ export class Engine {
         if (msg.matrixIds.length) this.sendWeights(msg.id, msg.matrixIds, msg.mode);
         if (msg.letterMap) this.sendLetterMap(msg.id);
         break;
+      case 'explain':
+        this.explain(msg.id, msg.text, msg.lang, msg.form, msg.position);
+        break;
     }
   }
 
@@ -196,6 +204,8 @@ export class Engine {
     this.lastInventionStep = -1;
     this.deltaBase.clear();
     this.lastDelta.clear();
+    this.summaryBase = null;
+    this.lastSummary = null;
     this.beforeStep = null;
     this.lastPracticeStep = -1;
     this.answered = undefined;
@@ -400,7 +410,65 @@ export class Engine {
       steps = Math.max(steps, delta.steps);
       return { name, data: delta.data.slice() };
     });
-    this.host.post({ type: 'weights', id, step, mode, steps, matrices }, matrices.map((m) => m.data.buffer as ArrayBuffer));
+    this.host.post({ type: 'weights', id, step, mode, steps, matrices, summary: this.summary() }, matrices.map((m) => m.data.buffer as ArrayBuffer));
+  }
+
+  /**
+   * How much every matrix changed since the previous summary (the first one:
+   * in the latest step). If nothing was trained in between, the previous
+   * change again.
+   */
+  private summary(): MatrixChange[] {
+    const list = this.trainer.model.params.list;
+    const step = this.trainer.step;
+    const norm2 = (a: Float32Array) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * a[i]; return Math.sqrt(s); };
+    const change = (a: Float32Array, b: Float32Array | undefined) => {
+      if (!b || b.length !== a.length) return 0;
+      let s = 0;
+      for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; s += d * d; }
+      return Math.sqrt(s);
+    };
+    const base = this.summaryBase;
+    if (base && base.data.length === list.length && base.step === step && this.lastSummary) return this.lastSummary;
+    let from: Float32Array[] | null, steps: number;
+    if (base && base.data.length === list.length && base.step < step) { from = base.data; steps = step - base.step; }
+    else { from = step > 0 ? this.beforeStep : null; steps = from ? 1 : 0; }
+    const out = list.map((p, i) => ({ name: p.name, norm: norm2(p.data), change: from ? change(p.data, from[i]) : 0, steps }));
+    this.summaryBase = { step, data: list.map((p) => p.data.slice()) };
+    this.lastSummary = out;
+    return out;
+  }
+
+  /** "Look inside one letter" (see nn/explain.ts). */
+  private explain(id: number, text: string, lang: string, form: string, position: number): void {
+    const vocab = this.dataset.vocab;
+    const word = Vocab.normalize(text);
+    const ex = this.trainer.explain(word, lang, form, position);
+    const model = this.trainer.model;
+    const tokens = vocab.tokens;
+    const charOf = (i: number) => (i === vocab.eos ? '' : tokens[i]);
+    const finished = ex.output.length < model.config.maxLen - 1;
+    const probs = rowSoftmax(ex.logits, 0, ex.logits.length);
+    const cands: number[] = [];
+    for (let i = 0; i < probs.length; i++) if (i === vocab.eos || vocab.isChar(i)) cands.push(i);
+    cands.sort((a, b) => probs[b] - probs[a]);
+    const d = ex.final.length;
+    const guesses: ExplainGuess[] = cands.slice(0, 5).map((tok) => ({
+      char: charOf(tok), token: tok, p: probs[tok], score: ex.logits[tok],
+      row: model.tokEmb.data.slice(tok * d, (tok + 1) * d),
+      contrib: ex.final.map((v, i) => v * model.tokEmb.data[tok * d + i]), bias: model.outBias.data[tok],
+    }));
+    const p = ex.position;
+    const input = [this.dataset.targetId(lang, form), ...vocab.encodeWord(word).slice(0, model.config.maxLen - 2)];
+    const msg: ExplainMsg = {
+      type: 'explain', id, step: this.trainer.step, text: word, lang, form, output: vocab.decode(ex.output),
+      columns: finished ? ex.output.length + 1 : ex.output.length, position: p,
+      chosen: p < ex.output.length ? charOf(ex.output[p]) : '',
+      input: input.map((i) => tokens[i]), inputIds: input,
+      decIn: ex.decIn.map((i) => tokens[i]), decInIds: ex.decIn,
+      start: ex.start, stages: ex.stages, final: ex.final, guesses,
+    };
+    this.host.post(msg);
   }
 
   /** PCA of the letter table: characters, end of word and the task tokens. */

@@ -27,6 +27,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 | Build time (user) | **Done in PRs.** Quiet learning switch + real (wall-clock) speed (PR #7); "Learn until" step goal, default 5,000 (training stops by itself). Measured: known forms ~99 % by 7,500 steps, nothing gained after; bigger batches need far fewer steps (possible later WebGPU experiment). See DECISIONS. |
 | Mistake per line (user) | **Done in a PR.** Practice table: mistake (loss) per example, letters tinted by their own mistake, an explanation how the step's mistake is the average over all letters. See DECISIONS. |
 | Letter map explained (user) | **Done in a PR.** What-to-notice text first (how it is made behind "?"), click or type a letter to see its 4 closest letters on all 32 numbers (centred cosine), rare letters flagged. See DECISIONS. |
+| Inside the model explained (user) | **Done** (branch `claude/epic-darwin-rcolin`). "Where is it learning?" diagram (change per step per part, one scale, lines over time), "Look inside one letter" (every number on the way to one answer letter, what each step adds, exact where-it-comes-from sums on click, used weights outlined in the heatmaps; also from a click on the guess bars), heatmaps with letter/position labels, one shared colour scale (toggle), plain-language tooltips, number × number matrices as thumbnails in plain mode. See DECISIONS. |
 | M4 time travel | **Next.** |
 | M5–M7 | Not started. |
 
@@ -40,7 +41,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 ## Notes for M4
 
 - `inspect` already serves any parameter by name; for time travel the engine needs a separate **view model** (DESIGN §7.3) and `inspect`/`ask`/`letterMap` must read from it while a snapshot is shown. `ParamSet.snapshot()`/`load()` exist.
-- The change mode keeps per-matrix baselines in the engine (`deltaBase`, `lastDelta`, `beforeStep`); seeking must clear them like `reset` does.
+- The change mode keeps per-matrix baselines in the engine (`deltaBase`, `lastDelta`, `beforeStep`, and `summaryBase`/`lastSummary` for the change summary); seeking must clear them like `reset` does. `explain` must also read from the view model.
 - Panels request data only while visible: the Model learning tab asks for the letter map and turns on `watchPractice`, the Inside tab asks for the heatmaps (`App.requestInspect`, at most one in flight, every 250 ms), the Test tab turns on testing (`watchTests`).
 - The UI is in `src/ui/app.ts` (tabs, Model learning, Ask, Test), `src/ui/dataTab.ts` (Learning data tab) and `src/ui/inside.ts` (Inside tab); visuals in `src/viz/` (`attentionGrid`, `letterMap`, `weightHeatmap`).
 - `npm run screenshots` regenerates the PR screenshots in `docs/screenshots/m3/` and `docs/screenshots/learn-vs-answer/` (opt-in, ~3 min).
@@ -50,6 +51,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 
 - **Data review:** no flags any more (one right word per answer; fix or delete doubtful words in the JSON); regenerate the table with `npm run validate-data -- --review` → `docs/DATA_REVIEW.md` (deferred by the user: "data tuning later").
 - **Czech UI copy:** Ask tab review: `form.name` ("stejné jméno"), `form.tip.*`, reworded `ask.help`, `ask.title` ("Odpovídání"), `build.title` ("Učení").
+- **Czech UI copy:** new in the Inside-the-model PR: `inside.guide`, `inside.heatTitle`, `inside.shared*`, `inside.rate`, `inside.val.*`, `tip.*`, `flow.*`, `explain.*`, `ask.lookInside`, `signal.decRow`.
 - **Czech UI copy:** new in the build-time PRs: `quiet.*`, `wallPerSec`, `goal.*`, `practice.col.loss`, `practice.end`, `practice.letterTip`, `practice.lossTip`, `practice.lossExplain`; letter map PR: `map.help`, `map.how`, `map.note`, `map.pick`, `map.near`, `map.rare`, `map.clear`.
 - **Czech UI copy (earlier):** `src/ui/i18n/cs.json` (M3 added ~70 strings: tabs, attention, letter map, Inside the model; the learning-vs-answering PR added 42: `tab.practice`, `build.*`, `learning.*`, `practice.*`, `cycle.*`, `ask.*`, `stamp.*`, `slow.*`; the Learning data tab added 26: `tab.data`, `data.*`; the tab reorganisation added `tab.test`, `tab.learn`, `tab.ask`, `test.*`, `askStatus.*` and reworded `data.explain`, `data.help`).
 - **M3 review:** the PR's screenshots and questions.

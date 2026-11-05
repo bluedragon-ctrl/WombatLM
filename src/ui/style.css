@@ -123,8 +123,8 @@ canvas { display: block; }
 .card canvas.heat { cursor: crosshair; border: 1px solid var(--line); }
 .strip-body { display: flex; gap: 4px; }
 .strip-labels { display: flex; flex-direction: column; font-size: 11px; padding-top: 1px; }
-.strip-labels div { height: 12px; line-height: 12px; width: 14px; text-align: center; }
-.tooltip { position: fixed; z-index: 10; pointer-events: none; background: #111827; color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 6px; max-width: 360px; }
+.strip-labels div { height: 12px; line-height: 12px; min-width: 14px; text-align: right; white-space: nowrap; }
+.tooltip { position: fixed; z-index: 10; pointer-events: none; background: #111827; color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 6px; max-width: 360px; white-space: pre-line; }
 .tooltip[hidden] { display: none; }
 
 /* Learning vs answering: two numbered phases */
@@ -342,3 +342,60 @@ button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* The example panel stays in view while the data scrolls. */
 .data-layout > .example { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow-y: auto; }
+
+/* Inside the model: "where is it learning?" */
+.legend .shared { margin-left: 18px; color: var(--ink); }
+.flow { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+.flow-col { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #fafbfc; }
+.flow-col h3 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+.flow-arrow { align-self: center; font-size: 22px; color: var(--muted); }
+.flow-end { align-self: center; max-width: 160px; font-size: 13px; color: var(--muted); }
+.flow-box { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "name name" "track val" "spark spark"; gap: 3px 8px; width: 230px; text-align: left; padding: 6px 8px; background: #fff; }
+.flow-box:hover { border-color: var(--accent); }
+.flow-box .name { grid-area: name; font-weight: 600; font-size: 13px; }
+.flow-box .track { grid-area: track; align-self: center; height: 8px; background: #eef2f7; border-radius: 4px; overflow: hidden; }
+.flow-box .fill { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+.flow-box .val { grid-area: val; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.flow-box .spark { grid-area: spark; }
+.card.thumb canvas.heat { cursor: help; }
+
+/* Inside the model: "look inside one letter" */
+.xpick { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0 8px; }
+.xpick .from { font-size: 18px; color: var(--muted); margin-right: 6px; }
+.xletter { min-width: 34px; font-size: 18px; font-weight: 600; padding: 2px 8px; }
+.xcaption { font-size: 15px; margin: 6px 0 2px; }
+.xstages { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 10px; }
+.xstage { display: grid; grid-template-columns: 28px 260px auto 170px; gap: 6px 14px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); }
+.xstage .num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: #dbeafe; color: var(--accent); font-weight: 700; font-size: 13px; }
+.xtext h3 { font-size: 14px; margin: 2px 0 4px; }
+.xtext p { margin: 0; }
+.xstrips { display: flex; flex-direction: column; gap: 6px; }
+.xstrip-row { display: flex; align-items: center; gap: 8px; }
+.xstrip-row .xlabel { width: 150px; flex: none; text-align: right; }
+.xstrip { cursor: pointer; }
+.xchange { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; }
+.xchange .track { display: block; height: 8px; background: #eef2f7; border-radius: 4px; overflow: hidden; }
+.xchange .fill { display: block; height: 100%; background: #f59e0b; }
+.xatt-wrap { display: flex; flex-direction: column; gap: 3px; }
+.xatt-head { display: flex; align-items: center; gap: 3px; }
+.xatt-head .xlabel { width: 150px; flex: none; text-align: right; margin-right: 5px; }
+.xatt { display: inline-flex; flex-direction: column; align-items: center; min-width: 26px; padding: 1px 3px; border: 1px solid var(--line); border-radius: 4px; line-height: 1.1; }
+.xatt b { font-size: 14px; }
+.xatt small { font-size: 10px; opacity: 0.8; }
+.xguesses { display: flex; flex-direction: column; gap: 3px; margin-left: 158px; max-width: 420px; }
+.xguess { display: grid; grid-template-columns: 24px 160px 44px auto; align-items: center; gap: 8px; text-align: left; padding: 2px 6px; background: #fff; }
+.xguess b { font-size: 15px; text-align: center; }
+.xguess .track { display: block; height: 10px; background: #eef2f7; border-radius: 4px; overflow: hidden; }
+.xguess .fill { display: block; height: 100%; background: var(--accent); }
+.xguess.chosen { box-shadow: inset 0 0 0 2px var(--accent); }
+.xguess.on { background: #fef3c7; }
+.xdetail { grid-column: 2 / -1; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+.xdetail p { margin: 0 0 6px; }
+.xcontrib { border-collapse: collapse; font-size: 13px; }
+.xcontrib td { padding: 1px 8px; }
+.xcontrib td.bar { width: 160px; }
+.xcontrib td.val { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.xcontrib .sbar { display: block; height: 10px; border-radius: 2px; }
+.xcontrib .sbar.pos { background: rgb(178, 24, 43); }
+.xcontrib .sbar.neg { background: rgb(33, 102, 172); }
+.xcontrib tr.total td { border-top: 1px solid var(--line); font-weight: 600; }

@@ -173,8 +173,11 @@ export class FeedForward {
     this.down = new Linear(ps, `${name}.down`, hidden, d, { role: 'ffnDown', rows: 'hidden', std: outStd });
   }
 
-  forward(x: Tensor): Tensor {
-    return this.down.forward(gelu(this.up.forward(x)));
+  /** With `trace`, records the thinking units (after GELU) as `${traceName}.hidden`. */
+  forward(x: Tensor, trace?: Trace, traceName?: string): Tensor {
+    const hidden = gelu(this.up.forward(x));
+    if (trace && traceName) trace.set(`${traceName}.hidden`, hidden);
+    return this.down.forward(hidden);
   }
 }
 
@@ -207,13 +210,23 @@ export class Block {
     x: Tensor, B: number, T: number, selfMask: Float32Array | undefined,
     memory?: { kv: KV; mask: Float32Array | undefined }, trace?: Trace, drop: (t: Tensor) => Tensor = (t) => t,
   ): Tensor {
+    // With a trace, every step's input (after its volume knobs) and what it adds
+    // are recorded too, for "look inside one letter" (see explain.ts).
+    const n = this.name;
     const h1 = this.ln1.forward(x);
-    x = add(x, drop(this.self.attend(h1, this.self.keysValues(h1, B, T), B, T, selfMask, trace, `${this.name}.self`)));
+    trace?.set(`${n}.ln1`, h1);
+    const sa = this.self.attend(h1, this.self.keysValues(h1, B, T), B, T, selfMask, trace, `${n}.self`);
+    trace?.set(`${n}.self.add`, sa);
+    x = add(x, drop(sa));
     if (this.cross && this.lnCross && memory) {
-      x = add(x, drop(this.cross.attend(this.lnCross.forward(x), memory.kv, B, T, memory.mask, trace, `${this.name}.cross`)));
+      const ca = this.cross.attend(this.lnCross.forward(x), memory.kv, B, T, memory.mask, trace, `${n}.cross`);
+      trace?.set(`${n}.cross.add`, ca);
+      x = add(x, drop(ca));
     }
-    x = add(x, drop(this.ffn.forward(this.ln2.forward(x))));
-    trace?.set(`${this.name}.out`, x);
+    const fa = this.ffn.forward(this.ln2.forward(x), trace, `${n}.ffn`);
+    trace?.set(`${n}.ffn.add`, fa);
+    x = add(x, drop(fa));
+    trace?.set(`${n}.out`, x);
     return x;
   }
 

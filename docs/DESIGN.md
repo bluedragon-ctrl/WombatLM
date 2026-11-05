@@ -79,6 +79,7 @@ Runtime dependencies: none. Dev dependencies: vite, typescript, vitest, tsx, @pl
 │  │  ├─ tensor.ts autograd.ts ops.ts optim.ts rng.ts vocab.ts
 │  │  ├─ transformer.ts            attention, blocks, KV cache
 │  │  ├─ translator.ts             encoder–decoder
+│  │  ├─ explain.ts                ✔ "look inside one letter": every number of one position, split into its sources
 │  │  ├─ serialize.ts              weights <-> binary (f32/f16/int8), vocab growth
 │  │  ├─ pca.ts                    ✔ 2-D PCA + Procrustes (letter map)
 │  │  └─ namer.ts                  ◌ decoder-only "invent an animal" model
@@ -96,10 +97,12 @@ Runtime dependencies: none. Dev dependencies: vite, typescript, vitest, tsx, @pl
 │  │  ├─ canvas.ts colors.ts       ✔ HiDPI setup, shared palettes
 │  │  ├─ guessBars.ts lineChart.ts ✔
 │  │  ├─ attentionGrid.ts letterMap.ts weightHeatmap.ts   ✔ (M3)
+│  │  ├─ vectorStrip.ts            ✔ one list of numbers as squares
 │  │  └─ timeline.ts               ◌
 │  ├─ ui/
 │  │  ├─ app.ts style.css          ✔ the app: tabs, Forms tab
 │  │  ├─ inside.ts dom.ts          ✔ Inside the brain tab, DOM helpers
+│  │  ├─ explainView.ts            ✔ "look inside one letter"
 │  │  ├─ i18n/{cs,en}.json, index.ts ✔
 │  │  └─ tabs, tour, help          ◌
 │  └─ main.ts                      ✔
@@ -316,6 +319,9 @@ Desktop layout, ≥ 1280 wide. Top bar: logo · tabs **Forms · Inside the brain
 - Hovering a cell shows its value and its meaning when known ("letter 'ž', dimension 7").
 - Header: "This brain has 26 872 numbers. ChatGPT-class models have hundreds of billions."
 - Expert: "follow the signal" for the current word: activations through each layer as heatmap strips (the `answer` trace already has them in the worker).
+- **"Where is it learning?"** (added after review): the model's parts as a diagram in signal order, each with its change per step (one scale for all) and a line over time; click to jump to its heatmaps.
+- **"Look inside one letter"** (added after review): for one letter of the current answer, every number of its position on the way through the decoder (goes in → each step adds → guess), with exact "where it comes from" sums on click and the used weights outlined in the heatmaps. Computed on request (`explain`). See DECISIONS.
+- Heatmaps: letters / positions on the axes, a shared colour scale by default, plain-language tooltips, thumbnails for number × number matrices in plain mode.
 
 ### 8.3 Teach (M5)
 The point: a trained model can learn new things, and it can forget old ones.
