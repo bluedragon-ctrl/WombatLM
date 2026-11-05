@@ -234,3 +234,7 @@ The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–
 - **The intro fits every view.** It no longer says "marked in yellow" (only the overview table has yellow) or that every question has a right answer (604 have none). The "?" help says the yellow is in the overview table.
 - **One word: "never seen".** "Kept aside" / "stranou" is gone; the legend says "never seen (only tested)". `unseen` appears only where the data records show the field; "hidden" only for answers that are not revealed.
 - Not changed: narrow screens. Mobile/tablet is a non-goal (DESIGN.md: desktop ≥ 1280×720); checked at 1280×720.
+
+## Ask the model tab: fewer unclear controls (review)
+- **"Keep answering while it learns" removed.** Training controls moved to the Model learning tab, so the toggle only mattered if training was left running while on the Ask tab, and with "Learn until" it stops by itself. While the model learns, the answer stays marked out of date with "Ask again"; it refreshes by itself when training pauses.
+- **"copy the name" became "same name"** (cs "stejné jméno"). As a button it read like a clipboard action. It is the copy-practice task (`<cs> slon → slon`), kept because copying vs inventing is part of the story. Every form button now has a tooltip (`form.tip.*`) saying what it asks for.

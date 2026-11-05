@@ -128,7 +128,7 @@ Total: **55 tokens**. Code never assumes 55 or a fixed set of languages. Max wor
 ### 4.2 Forms
 `data/forms.json` = `["name", "male", "female", "young"]`.
 - `male`, `female`, `young` are the word forms the model learns, within one language.
-- `name` means "copy the name" (`<cs> slon → slon`). It is used as **copy practice** during training (section 6.3) and is offered in the UI as a form you can ask for.
+- `name` means "copy the name" (`<cs> slon → slon`). It is used as **copy practice** during training (section 6.3) and is offered on the Ask tab as the form "same name" (with a tooltip saying what it does).
 
 ### 4.3 Animal file format (version 2)
 ```json
@@ -264,7 +264,7 @@ Built (M3): `weights` (requested matrices as transferable `Float32Array`s: the w
 
 Planned: `snapshotIndex` in M4.
 
-**Learning and answering are separate.** Only `play` / `step` change the weights; `ask`, `evaluate` and `inspect` only read them (tested bit for bit). While training runs, the UI does **not** re-ask its question: the answer stays, marked out of date, until the user pauses, presses "Ask again" or turns on "keep answering while it learns" (then it re-asks after each tick, at most one request in flight). When paused it re-asks after every step. Only visible panels request data.
+**Learning and answering are separate.** Only `play` / `step` change the weights; `ask`, `evaluate` and `inspect` only read them (tested bit for bit). While training runs, the UI does **not** re-ask its question: the answer stays, marked out of date, until training pauses or the user presses "Ask again" (at most one request in flight). When paused it re-asks after every step. Only visible panels request data.
 
 ### 7.3 Snapshots and time travel (M4)
 - Save a full weight snapshot at steps 0, 1, 2, 4, 8, … (log-spaced) and every 100 steps after that, capped at 300 (≈ 27k × 4 B ≈ 110 KB each; drop every other old one when full).
