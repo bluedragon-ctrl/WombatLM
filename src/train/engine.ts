@@ -3,14 +3,20 @@
  * training loop in short time slices (so messages such as `pause` are handled
  * promptly), tests every animal on a schedule while the Test tab is open and answers questions.
  *
+ * A test of every animal takes up to about a second, so it runs as a
+ * background job: it answers with a frozen copy of the weights (taken when the
+ * test starts) a few questions at a time, taking turns with training slices
+ * and messages.
+ *
  * It does not touch worker globals: `worker.ts` passes in how to post
  * messages and how to schedule the next slice, so tests can drive it in Node.
  */
-import { Dataset, Animal } from '../data/dataset';
+import { Dataset, Animal, type Task } from '../data/dataset';
 import { baseBundle } from '../data/bundle';
 import { Vocab } from '../nn/vocab';
 import { nearestRows, pca2 } from '../nn/pca';
 import { FormTrainer, PracticeBatch, TRAINER_DEFAULTS, confidence, judge } from './trainer';
+import { Translator } from '../nn/translator';
 import type {
   Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, ExplainGuess, ExplainMsg, FromWorker, InspectMode, LossPoint, MatrixChange, MatrixInfo, Speed,
   StepGuess, ToWorker,
@@ -36,6 +42,8 @@ export const EVAL = {
 
 /** Work per slice before yielding to the message queue. */
 const SLICE_MS = 12;
+/** Test questions answered at a time by the background test (a few ms each). */
+const EVAL_CHUNK = 32;
 const TICK_MS = 50;
 /** Wall-clock speed is measured over windows of at least this long. */
 const WALL_WINDOW_MS = 1000;
@@ -87,6 +95,12 @@ export class Engine {
   private quiet = false;
   /** Learn until this step, then stop by itself (null = no limit). */
   goal: number | null = null;
+  /** The test in progress (see `startEval`), answered a chunk at a time. */
+  private evalJob: { step: number; inventions: boolean; tasks: Task[]; outputs: string[]; ms: number } | null = null;
+  /** Frozen copy of the weights the test in progress answers with (reused between tests). */
+  private evalModel: Translator | null = null;
+  /** A chunk of the test is scheduled. */
+  private evalScheduled = false;
   /** Wall-clock speed: steps and time at the start of the current measuring window. */
   private wallMark: { t: number; step: number } | null = null;
   private wallStepsPerSec = 0;
@@ -118,7 +132,7 @@ export class Engine {
           tokens: this.dataset.vocab.tokens.slice(),
           matrices: this.matrices(),
         });
-        if (this.watchTests) this.evaluate(true);
+        if (this.watchTests) this.startEval(true);
         this.tick(true);
         break;
       case 'play':
@@ -138,7 +152,7 @@ export class Engine {
         break;
       case 'step':
         for (let i = 0; i < msg.n; i++) this.trainOne();
-        if (this.watchTests) this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
+        if (this.watchTests) this.startEval(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
         this.tick(true);
         break;
       case 'setSpeed':
@@ -153,20 +167,20 @@ export class Engine {
         break;
       case 'reset':
         this.reset(msg.seed);
-        if (this.watchTests) this.evaluate(true);
+        if (this.watchTests) this.startEval(true);
         this.tick(true);
         break;
       case 'ask':
         this.answer(msg.id, msg.text, msg.lang, msg.form);
         break;
       case 'evaluate':
-        this.evaluate(msg.inventions ?? false);
+        this.startEval(msg.inventions ?? false);
         break;
       case 'watchTests':
         this.watchTests = msg.on;
         // Test now if this model has not been tested yet (with the inventions if they are out of date).
         if (msg.on && this.lastEvalStep !== this.trainer.step) {
-          this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps || this.lastInventionStep < 0);
+          this.startEval(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps || this.lastInventionStep < 0);
         }
         break;
       case 'watchPractice':
@@ -202,6 +216,7 @@ export class Engine {
     this.stepsPerSec = 0;
     this.lastEvalStep = -1;
     this.lastInventionStep = -1;
+    this.evalJob = null; // a test of the old model is no longer wanted
     this.deltaBase.clear();
     this.lastDelta.clear();
     this.summaryBase = null;
@@ -223,7 +238,7 @@ export class Engine {
    */
   private finish(test = this.quiet): void {
     this.stop();
-    if (test && this.watchTests && this.lastEvalStep !== this.trainer.step) this.evaluate(true);
+    if (test && this.watchTests && this.lastEvalStep !== this.trainer.step) this.startEval(true);
     this.tick(true);
   }
 
@@ -285,8 +300,8 @@ export class Engine {
     if (this.goalReached()) { this.finish(true); return; } // stops by itself
     this.lastSlice = start;
     const sinceEval = this.trainer.step - this.lastEvalStep;
-    if (this.watchTests && !this.quiet && (sinceEval >= EVAL.everySteps || (sinceEval > 0 && start - this.lastEvalTime >= EVAL.everyMs))) {
-      this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
+    if (this.watchTests && !this.quiet && !this.evalJob && (sinceEval >= EVAL.everySteps || (sinceEval > 0 && start - this.lastEvalTime >= EVAL.everyMs))) {
+      this.startEval(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
     }
     this.tick(false);
     const wait = this.speed === 'max' ? 0 : Math.max(4, Math.min(100, 1000 / this.speed));
@@ -329,13 +344,67 @@ export class Engine {
     this.wallMark = { t: now, step };
   }
 
-  private evaluate(inventions: boolean): void {
-    const t0 = this.host.now();
-    const ev = this.trainer.evaluate({ inventions });
-    this.lastEvalStep = this.trainer.step;
+  /**
+   * Start testing the current model (in the background, see `evalWork`).
+   * A test still in progress is replaced (keeping its inventions), unless it
+   * already tests this step with everything asked for.
+   */
+  private startEval(inventions: boolean): void {
+    const tr = this.trainer;
+    const prev = this.evalJob;
+    if (prev && prev.step === tr.step && (prev.inventions || !inventions)) return;
+    const inv = inventions || (prev?.inventions ?? false);
+    this.evalJob = { step: tr.step, inventions: inv, tasks: tr.evalTasks(inv), outputs: [], ms: 0 };
+    this.freezeWeights();
+    this.lastEvalStep = tr.step;
+    if (inv) this.lastInventionStep = tr.step;
+    this.scheduleEval();
+  }
+
+  /** Copy the current weights into the model the test answers with. */
+  private freezeWeights(): void {
+    const live = this.trainer.model;
+    const list = live.params.list;
+    const frozen = this.evalModel?.params.list;
+    if (!frozen || frozen.length !== list.length || frozen.some((p, i) => p.size !== list[i].size)) {
+      this.evalModel = new Translator(live.config, 0);
+    }
+    this.evalModel!.params.load(list.map((p) => p.data));
+  }
+
+  private scheduleEval(): void {
+    if (this.evalScheduled || !this.evalJob) return;
+    this.evalScheduled = true;
+    this.host.schedule(() => {
+      this.evalScheduled = false;
+      try {
+        this.evalWork();
+      } catch (e) {
+        this.evalJob = null;
+        this.host.post({ type: 'error', message: e instanceof Error ? e.message : String(e) });
+      }
+      this.scheduleEval();
+    }, 0);
+  }
+
+  /**
+   * Answer test questions for about one slice, then yield. Sends the result
+   * once every question is answered.
+   */
+  private evalWork(): void {
+    const job = this.evalJob;
+    if (!job) return;
+    const start = this.host.now();
+    do {
+      const part = job.tasks.slice(job.outputs.length, job.outputs.length + EVAL_CHUNK);
+      job.outputs.push(...this.trainer.runTasks(part, this.evalModel!));
+    } while (job.outputs.length < job.tasks.length && this.host.now() - start < SLICE_MS);
+    job.ms += this.host.now() - start;
+    if (job.outputs.length < job.tasks.length) return;
+    this.evalJob = null;
     this.lastEvalTime = this.host.now();
-    if (inventions) this.lastInventionStep = this.trainer.step;
-    this.host.post({ type: 'eval', step: ev.step, scores: ev.scores, results: ev.results, inventions, ms: this.lastEvalTime - t0 });
+    const ev = this.trainer.scoreTasks(job.tasks, job.outputs, job.step);
+    this.host.post({ type: 'eval', step: ev.step, scores: ev.scores, results: ev.results, inventions: job.inventions, ms: job.ms });
   }
 
   private answer(id: number, text: string, lang: string, form: string): void {
