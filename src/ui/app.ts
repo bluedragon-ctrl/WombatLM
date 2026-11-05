@@ -27,7 +27,7 @@ import { h } from './dom';
 import { InsideTab } from './inside';
 import { DataTab } from './dataTab';
 import { shortLabel, tokenChip, tokenIndex, tokenName, toTok } from './tokens';
-import { EOS } from '../nn/vocab';
+import { EOS, Vocab } from '../nn/vocab';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
 type Tab = 'data' | 'learn' | 'ask' | 'inside' | 'test';
@@ -124,6 +124,8 @@ export class App {
   private answer?: AnswerMsg;
   private askId = 0;
   private askInFlight = false;
+  /** Id of the last request sent; while it equals askId, the reply on its way is for the current question. */
+  private sentId = 0;
   private askDirty = false;
   private revealed = false;
   private expert = false;
@@ -167,6 +169,8 @@ export class App {
   private inspectTimer = 0;
   /** Latest "look inside one letter" request (older replies are dropped). */
   private explainId = 0;
+  /** What the word hint shows now (it is rebuilt only when this changes). */
+  private hintKey = '';
 
   constructor(private root: HTMLElement) {
     this.worker = new Worker(new URL('../train/worker.ts', import.meta.url), { type: 'module' });
@@ -198,6 +202,7 @@ export class App {
     switch (msg.type) {
       case 'ready':
         this.ready = msg;
+        this.hintKey = '';
         this.tokenIdx = tokenIndex(msg.tokens);
         this.losses = [];
         this.evals = [];
@@ -248,7 +253,8 @@ export class App {
         break;
       case 'answer':
         this.askInFlight = false;
-        if (msg.id === this.askId) {
+        // "Answer slowly" writes the newest reply: when another request is queued, wait for it.
+        if (msg.id === this.askId && !(this.slowWanted && this.askDirty)) {
           const prev = this.answer;
           // Same question, new model: the answer refreshed because the model changed.
           if (prev && prev.step !== msg.step && prev.text === msg.text && prev.lang === msg.lang && prev.form === msg.form) this.stampFlash = true;
@@ -337,6 +343,9 @@ export class App {
     this.stopSlow();
     this.slowWanted = slowly;
     this.revealed = false;
+    // A reply already on its way was asked before this press: drop it and ask anew.
+    this.askId++;
+    this.askDirty = false;
     this.ask();
     this.invalidate('answer');
   }
@@ -365,7 +374,6 @@ export class App {
   }
 
   private stopSlow(): void {
-    this.slowWanted = false;
     if (!this.slow) return;
     window.clearTimeout(this.slow.timer);
     this.slow = null;
@@ -389,7 +397,8 @@ export class App {
     if (this.askInFlight) { this.askDirty = true; return; }
     this.askDirty = false;
     this.askInFlight = true;
-    this.send({ type: 'ask', id: ++this.askId, ...this.question });
+    this.sentId = ++this.askId;
+    this.send({ type: 'ask', id: this.sentId, ...this.question });
   }
 
   /**
@@ -529,7 +538,7 @@ export class App {
 
     const input = h('input', { type: 'text', id: 'ask-word', class: 'ask', placeholder: t('askPlaceholder'), spellcheck: 'false', autocomplete: 'off', 'data-test': 'ask' });
     input.oninput = () => this.setQuestion({ text: input.value }, true);
-    input.onkeydown = (e) => { if (e.key === 'Enter') this.answerNow(false); };
+    input.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing && !e.repeat) this.answerNow(false); };
     const langPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('language') });
     const formPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('form') });
     // Under the word: is it an animal from the data, in this language? (before answering)
@@ -755,19 +764,22 @@ export class App {
     if (!typed) this.els.input.value = this.question.text;
     this.revealed = false;
     this.stopSlow();
+    this.slowWanted = false;
+    // Any reply on its way was for another question: drop it.
+    this.askId++;
+    this.askDirty = false;
     if (answer) this.ask();
     else if (this.answer) {
-      // The answer on screen was for another question: take it away, and drop any reply on its way.
+      // The answer on screen was for another question: take it away (on the Inside tab too).
       this.answer = undefined;
-      this.askId++;
-      this.askDirty = false;
+      this.inside.setAnswer(undefined);
     }
     this.invalidate('answer', 'stamp', 'animals');
   }
 
   /** The typed word: an animal of the chosen language, of another language, or not from the data. */
   private wordKind(): { kind: 'empty' | 'known' | 'free' | 'other'; lang?: string } {
-    const w = this.question.text.trim().toLowerCase().normalize('NFC');
+    const w = Vocab.normalize(this.question.text);
     if (!w || !this.ready) return { kind: 'empty' };
     const animals = this.ready.animals;
     if (animals.some((a) => a.names[this.question.lang] === w)) return { kind: 'known' };
@@ -830,15 +842,15 @@ export class App {
     if (document.activeElement !== input) input.value = this.question.text;
     for (const b of langPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.lang === this.question.lang);
     for (const b of formPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.form === this.question.form);
-    const langName = (code: string) => this.ready?.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
-    this.renderWordHint(hint, langName);
+    this.renderWordHint(hint);
     const hasText = !!this.question.text.trim();
     this.els.answerNowBtn.disabled = !hasText;
     this.els.slowBtn.disabled = !hasText && !this.slow;
     this.els.slowBtn.textContent = this.slow ? t('slow.stop') : t('ask.slow');
     this.els.slowBtn.classList.toggle('on', !!this.slow);
     const a = this.shown();
-    const waiting = !a && (this.askInFlight || this.askDirty);
+    // Only a request for the current question counts: a dropped one will not answer.
+    const waiting = !a && ((this.askInFlight && this.sentId === this.askId) || this.askDirty);
     this.els.prompt.hidden = !!a;
     this.els.prompt.textContent = waiting ? t('ask.thinking') : t('ask.prompt');
     this.els.results.hidden = !a;
@@ -879,7 +891,7 @@ export class App {
     output.replaceChildren(h('div', { class: 'answer-line' }, ...parts), badge, meter);
     if (this.hoverStep !== null && this.hoverStep >= a.steps.length) this.hoverStep = null;
     drawGuessBars(bars, a.steps, this.hoverStep, writing, shortLabel);
-    this.renderTokens(a, writing, langName);
+    this.renderTokens(a, writing);
     this.renderSlowCaption(a);
     this.renderAttention();
   }
@@ -889,9 +901,9 @@ export class App {
    * and the answer as it writes it (letters + end), each with its number.
    * Answer tokens line up with the guess-bar columns (hover links them).
    */
-  private renderTokens(a: AnswerMsg, writing: number | undefined, langName: (code: string) => string): void {
+  private renderTokens(a: AnswerMsg, writing: number | undefined): void {
     const idx = this.tokenIdx;
-    const opts = { expert: this.expert, numbers: this.tokenNumbers, langName };
+    const opts = { expert: this.expert, numbers: this.tokenNumbers, langName: (c: string) => this.langName(c) };
     const reads = a.input.map((tok) => tokenChip(toTok(tok, idx), opts));
     const steps = writing !== undefined ? a.steps.slice(0, writing) : a.steps;
     const writes = steps.map((s, i) => {
@@ -1000,16 +1012,20 @@ export class App {
   }
 
   /** Under the word box: what kind of word it is, before the model answers. */
-  private renderWordHint(hint: HTMLElement, langName: (code: string) => string): void {
+  private renderWordHint(hint: HTMLElement): void {
     const w = this.wordKind();
+    // Rebuilt only when it changes: the hint is read aloud (aria-live), and a rebuilt button swallows clicks.
+    const key = `${w.kind}|${w.lang ?? ''}|${this.question.lang}|${uiLang()}`;
+    if (key === this.hintKey) return;
+    this.hintKey = key;
     hint.className = `hint word-hint ${w.kind}`;
     if (w.kind === 'empty') { hint.replaceChildren(); return; }
-    if (w.kind === 'known') { hint.replaceChildren(t('ask.word.known', { lang: langName(this.question.lang) })); return; }
+    if (w.kind === 'known') { hint.replaceChildren(t('ask.word.known', { lang: this.langName(this.question.lang) })); return; }
     if (w.kind === 'free') { hint.replaceChildren(t('ask.word.free')); return; }
     const lang = w.lang!;
-    const sw = h('button', { class: 'link small', 'data-test': 'switch-lang' }, t('ask.word.switch', { lang: langName(lang) }));
+    const sw = h('button', { class: 'link small', 'data-test': 'switch-lang' }, t('ask.word.switch', { lang: this.langName(lang) }));
     sw.onclick = () => this.setQuestion({ lang });
-    hint.replaceChildren(t('ask.word.other', { lang: langName(lang) }), ' ', sw);
+    hint.replaceChildren(t('ask.word.other', { lang: this.langName(lang) }), ' ', sw);
   }
 
   /**
@@ -1117,13 +1133,12 @@ export class App {
       practiceList.replaceChildren(h('p', { class: 'empty small' }, t('practice.empty')));
       return;
     }
-    const langName = (code: string) => this.ready!.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
     const answered = p.rightCount !== undefined;
     const summary = [t('practice.step', { step: p.step.toLocaleString(uiLang()) })];
     if (answered && phase >= 3) summary.push(t('practice.sumRight', { right: p.rightCount!, n: p.examples.length }));
     if (phase >= 3) summary.push(t('cycle.measureVal', { loss: p.loss.toFixed(2) }));
     const rows = p.examples.map((ex) => {
-      const task = ex.form === 'name' ? t('practice.copy') : `${t(`form.${ex.form}`)} · ${langName(ex.lang)}`;
+      const task = ex.form === 'name' ? t('practice.copy') : `${t(`form.${ex.form}`)} · ${this.langName(ex.lang)}`;
       const answerCell = h('td', { class: 'answer' });
       if (phase >= 2 && ex.answer !== undefined) {
         const judged = phase >= 3;
