@@ -235,5 +235,9 @@
   "example.explain": "Tento jeden příklad je {n} tipů. Před každým tipem model vidí správnou odpověď až dosud (řádek nahoře) a musí uhodnout další token (řádek dole): stejná odpověď, posunutá o jedno. Ztráta (loss) říká, jak moc se v těchto {n} tipech v průměru mýlí. Všechny se kontrolují najednou, v jednom kroku učení.",
   "example.guessTip": "Vidí „{sofar}“, musí uhodnout „{next}“",
   "example.kept": "Nikdy neviděné zvíře: model se z něj nikdy neučí. Je odložené stranou na testování modelu, takže tu nejsou žádné tipy k učení.",
-  "example.ask": "Zeptej se modelu na tuto otázku"
+  "example.ask": "Zeptej se modelu na tuto otázku",
+  "wallPerSec": "skutečně {n} kroků/s",
+  "quiet.label": "Tiché učení (rychlejší)",
+  "quiet.help": "Během učení vynechá obrázky: žádné testování, žádné odpovídání na dávku předem, žádná mapa písmen ani váhy. Po zastavení se vše zase aktualizuje.",
+  "quiet.note": "Tiché učení je zapnuté: obrázky počkají, až učení zastavíš."
 }

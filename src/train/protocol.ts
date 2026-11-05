@@ -44,6 +44,12 @@ export type ToWorker =
    */
   | { type: 'watchPractice'; on: boolean }
   /**
+   * Quiet learning: while training runs, skip everything that is only for
+   * the pictures (testing every animal, answering the batch first). Ticks
+   * still come, so the speed can be compared with and without the pictures.
+   */
+  | { type: 'quiet'; on: boolean }
+  /**
    * Look inside: the listed weight matrices (answered with `weights`, empty
    * list = none) and, if `letterMap`, the letter map (answered with `letterMap`).
    * `id` is echoed back.
@@ -119,6 +125,14 @@ export interface TickMsg {
   gradNorm: number;
   /** Measured training speed (steps per second of training time, excluding evaluation). */
   stepsPerSec: number;
+  /**
+   * Real speed while running: steps per second of wall-clock time over the
+   * last second or so, including testing, answering and looking inside
+   * (0 until measured).
+   */
+  wallStepsPerSec: number;
+  /** Quiet learning is on (see `quiet`). */
+  quiet: boolean;
   /** Raw batch losses of every step since the previous tick. */
   losses: LossPoint[];
   /**

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { baseBundle } from '../../src/data/bundle';
 import { Dataset } from '../../src/data/dataset';
-import { Engine, EngineHost } from '../../src/train/engine';
+import { EVAL, Engine, EngineHost } from '../../src/train/engine';
 import type { AnswerMsg, EvalMsg, FromWorker, LetterMapMsg, ReadyMsg, TickMsg, WeightsMsg } from '../../src/train/protocol';
 
 const ds = new Dataset(baseBundle());
@@ -243,6 +243,38 @@ describe('Engine', () => {
     expect(ticks.length).toBeGreaterThan(0);
     expect(ticks.every((t) => t.practice!.rightCount !== undefined)).toBe(true);
     e.handle({ type: 'pause' });
+  });
+
+  it('quiet learning skips tests and answering first while running, and catches up on pause', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3, speed: 'max' });
+    e.handle({ type: 'watchTests', on: true });
+    e.handle({ type: 'watchPractice', on: true });
+    e.handle({ type: 'quiet', on: true });
+    expect((h.of('tick').at(-1) as TickMsg).quiet).toBe(true);
+    const evals = h.of('eval').length;
+    e.handle({ type: 'play' });
+    while (e.trainer.step < EVAL.everySteps + 5) h.runDue(1);
+    expect(h.of('eval')).toHaveLength(evals); // no test while running quietly
+    expect(h.of('tick').some((t) => t.practice)).toBe(false);
+    e.handle({ type: 'pause' });
+    expect(h.of('eval').at(-1)!.step).toBe(e.trainer.step); // tested on pause
+  });
+
+  it('reports the real (wall-clock) speed while running', () => {
+    const sent: FromWorker[] = [];
+    const tasks: (() => void)[] = [];
+    let clock = 0;
+    const e = new Engine({ post: (m) => sent.push(m), schedule: (fn) => tasks.push(fn), now: () => (clock += 20) }, ds);
+    e.handle({ type: 'init', seed: 3, speed: 'max' });
+    e.handle({ type: 'play' });
+    for (let i = 0; i < 40 && tasks.length; i++) tasks.shift()!();
+    const ticks = sent.filter((m): m is TickMsg => m.type === 'tick');
+    const wall = ticks.at(-1)!.wallStepsPerSec;
+    expect(wall).toBeGreaterThan(0);
+    // Wall-clock time includes everything, so it is never faster than the clock allows.
+    expect(wall).toBeLessThanOrEqual(1000 / 20);
   });
 
   it('answering and evaluating never change the model', () => {

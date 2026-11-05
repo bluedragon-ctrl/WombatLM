@@ -35,6 +35,8 @@ export const EVAL = {
 /** Work per slice before yielding to the message queue. */
 const SLICE_MS = 12;
 const TICK_MS = 50;
+/** Wall-clock speed is measured over windows of at least this long. */
+const WALL_WINDOW_MS = 1000;
 /** How many examples of the latest batch a tick carries. */
 export const PRACTICE_SAMPLE = 32;
 /** While the Model learning tab is open and training is fast: answers before a step at most this often. */
@@ -74,6 +76,11 @@ export class Engine {
    * default (beginners only learn and ask); `evaluate` still tests on request.
    */
   private watchTests = false;
+  /** Quiet learning: skip work that is only for the pictures while training runs. */
+  private quiet = false;
+  /** Wall-clock speed: steps and time at the start of the current measuring window. */
+  private wallMark: { t: number; step: number } | null = null;
+  private wallStepsPerSec = 0;
 
   constructor(private host: EngineHost, dataset?: Dataset) {
     this.dataset = dataset ?? new Dataset(baseBundle());
@@ -110,6 +117,8 @@ export class Engine {
           this.running = true;
           this.budget = 1; // the first step happens right away, even at slow speeds
           this.lastSlice = this.host.now();
+          this.wallMark = null;
+          this.wallStepsPerSec = 0;
           const gen = ++this.generation;
           this.host.schedule(() => this.slice(gen), 0);
         }
@@ -117,6 +126,8 @@ export class Engine {
         break;
       case 'pause':
         this.stop();
+        // Quiet learning skipped the tests while running: catch up now.
+        if (this.quiet && this.watchTests && this.lastEvalStep !== this.trainer.step) this.evaluate(true);
         this.tick(true);
         break;
       case 'step':
@@ -155,6 +166,12 @@ export class Engine {
       case 'watchPractice':
         this.watchPractice = msg.on;
         if (msg.on) { this.lastPracticeStep = -1; this.tick(true); } // send the current batch with own answers now
+        break;
+      case 'quiet':
+        this.quiet = msg.on;
+        this.wallMark = null; // measure the new setting from scratch
+        this.wallStepsPerSec = 0;
+        this.tick(true);
         break;
       case 'inspect':
         if (msg.matrixIds.length) this.sendWeights(msg.id, msg.matrixIds, msg.mode);
@@ -196,7 +213,7 @@ export class Engine {
    */
   private answerFirst(): number {
     if (!this.fastRun()) return PRACTICE_SAMPLE;
-    if (!this.watchPractice) return 0;
+    if (!this.watchPractice || this.quiet) return 0;
     const now = this.host.now();
     if (now - this.lastOwnAt < OWN_EVERY_MS) return 0;
     this.lastOwnAt = now;
@@ -235,7 +252,7 @@ export class Engine {
     }
     this.lastSlice = start;
     const sinceEval = this.trainer.step - this.lastEvalStep;
-    if (this.watchTests && (sinceEval >= EVAL.everySteps || (sinceEval > 0 && start - this.lastEvalTime >= EVAL.everyMs))) {
+    if (this.watchTests && !this.quiet && (sinceEval >= EVAL.everySteps || (sinceEval > 0 && start - this.lastEvalTime >= EVAL.everyMs))) {
       this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
     }
     this.tick(false);
@@ -248,21 +265,35 @@ export class Engine {
     if (!force && now - this.lastTick < TICK_MS) return;
     this.lastTick = now;
     const tr = this.trainer;
+    this.measureWall(now);
     // The latest batch it practised on (only when there is a new one).
     let practice: PracticeBatch | undefined;
     if (this.watchPractice && this.fastRun()) {
       // Model learning tab open at high speed: show the latest batch it answered (kept
       // until sent, since later steps of the same tick would replace it).
       if (this.answered && this.answered.step !== this.lastPracticeStep) practice = this.answered;
-    } else if (tr.step !== this.lastPracticeStep) {
+    } else if (tr.step !== this.lastPracticeStep && !(this.quiet && this.running)) {
       practice = tr.practice(PRACTICE_SAMPLE) ?? undefined;
     }
     if (practice) this.lastPracticeStep = practice.step;
     this.host.post({
       type: 'tick', step: tr.step, running: this.running, speed: this.speed, lossEma: tr.lossEma,
-      lr: this.lr, batchSize: tr.batchSize, gradNorm: tr.lastGradNorm, stepsPerSec: this.stepsPerSec, losses: this.losses, practice,
+      lr: this.lr, batchSize: tr.batchSize, gradNorm: tr.lastGradNorm, stepsPerSec: this.stepsPerSec,
+      wallStepsPerSec: this.wallStepsPerSec, quiet: this.quiet, losses: this.losses, practice,
     });
     this.losses = [];
+  }
+
+  /** Real speed: steps per wall-clock second, measured over windows of about a second while running. */
+  private measureWall(now: number): void {
+    const step = this.trainer.step;
+    if (!this.running) { this.wallMark = null; return; }
+    if (!this.wallMark || step < this.wallMark.step) { this.wallMark = { t: now, step }; return; }
+    const dt = now - this.wallMark.t;
+    if (dt < WALL_WINDOW_MS) return;
+    const sps = ((step - this.wallMark.step) * 1000) / dt;
+    this.wallStepsPerSec = this.wallStepsPerSec === 0 ? sps : 0.5 * this.wallStepsPerSec + 0.5 * sps;
+    this.wallMark = { t: now, step };
   }
 
   private evaluate(inventions: boolean): void {

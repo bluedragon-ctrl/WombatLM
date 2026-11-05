@@ -69,6 +69,9 @@ const SCORE_LINES = ['known', 'pattern', 'partly', 'irregular'] as const;
 /** Examples of the latest batch a tick carries at most (engine PRACTICE_SAMPLE). */
 const PRACTICE_SHOWN = 32;
 
+/** Training runs with quiet learning on: the pictures wait. */
+const quietRun = (tk: TickMsg | undefined) => !!tk?.quiet && !!tk.running;
+
 const resultKey = (id: string, lang: string, form: string) => `${id}|${lang}|${form}`;
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '–' : `${Math.round(v * 100)} %`);
 
@@ -165,7 +168,8 @@ export class App {
         this.requestInspect(true);
         this.invalidate('controls', 'loss', 'scores', 'animals');
         break;
-      case 'tick':
+      case 'tick': {
+        const prevTick = this.tick;
         if (this.tick && msg.step < this.tick.step) {
           this.losses = []; this.evals = []; this.results.clear();
           this.letterMap.reset();
@@ -179,13 +183,20 @@ export class App {
         this.losses.push(...msg.losses);
         if (this.losses.length > 40000) this.losses = this.losses.filter((_, i) => i % 2 === 0);
         if (msg.practice) this.onPractice(msg.practice, msg);
-        if (msg.losses.length) this.requestInspect();
-        // Answering is separate from learning: while the model learns, the answer
-        // waits (marked as out of date) unless the user asked for live answers.
-        if (this.answer && this.answer.step !== msg.step && (!msg.running || this.live)) this.ask();
+        {
+          // Quiet learning: no pictures while it learns; catch up when it pauses.
+          const quietNow = msg.quiet && msg.running;
+          const justPaused = !msg.running && !!prevTick?.running;
+          if (!quietNow && (msg.losses.length || justPaused)) this.requestInspect(justPaused);
+          // Answering is separate from learning: while the model learns, the answer
+          // waits (marked as out of date) unless the user asked for live answers.
+          if (this.answer && this.answer.step !== msg.step && (!msg.running || (this.live && !msg.quiet))) this.ask();
+        }
+        this.els.learnMain.classList.toggle('quiet', quietRun(msg));
         this.invalidate('controls', 'loss', 'stamp');
         if (!msg.running && this.practice) this.invalidate('practice');
         break;
+      }
       case 'eval':
         this.onEval(msg);
         break;
@@ -405,6 +416,10 @@ export class App {
     const seed = h('input', { type: 'number', min: 1, step: 1, class: 'seed', 'aria-label': t('seed') });
     const reset = h('button', {}, t('reset'));
     reset.onclick = () => this.send({ type: 'reset', seed: Number(seed.value) || 1 });
+    const quietBox = h('input', { type: 'checkbox', 'data-test': 'quiet' });
+    quietBox.onchange = () => this.send({ type: 'quiet', on: quietBox.checked });
+    const quietLabel = h('label', { class: 'row small quiet-toggle', title: t('quiet.help') }, quietBox, ' ', t('quiet.label'));
+    const quietNote = h('p', { class: 'quiet-note small', 'data-test': 'quiet-note' }, t('quiet.note'));
     const expertBox = h('input', { type: 'checkbox', 'data-test': 'expert' });
     expertBox.onchange = () => {
       this.expert = expertBox.checked;
@@ -517,6 +532,7 @@ export class App {
           h('div', { class: 'phase-head' }, h('h2', {}, t('build.title')), help(t('build.help'))),
           h('div', { class: 'row' }, play, step1, step10),
           h('label', { class: 'row' }, t('speed'), ' ', speed),
+          quietLabel,
           h('div', { class: 'row' }, h('label', {}, t('seed'), ' ', seed), reset),
           expertPanel,
           status,
@@ -529,6 +545,7 @@ export class App {
         h('section', { class: 'panel phase build' },
           h('div', { class: 'phase-head' }, h('h2', {}, t('practice.title')), practiceHelp),
           h('p', { class: 'practice-explain' }, t('practice.explain')),
+          quietNote,
           practiceList)),
       h('aside', { class: 'right' },
         h('section', { class: 'panel map' },
@@ -651,6 +668,7 @@ export class App {
     if (!tk) return;
     const parts = [t('stepLabel', { step: tk.step.toLocaleString(uiLang()) })];
     if (tk.stepsPerSec > 0) parts.push(t('stepsPerSec', { n: tk.stepsPerSec.toFixed(0) }));
+    if (tk.running && tk.wallStepsPerSec > 0) parts.push(t('wallPerSec', { n: tk.wallStepsPerSec.toFixed(0) }));
     if (tk.lossEma !== null) parts.push(`loss ${tk.lossEma.toFixed(3)}`);
     this.els.status.textContent = parts.join(' · ');
     this.els.askStatusText.textContent = t(tk.running ? 'askStatus.learning' : 'askStatus.paused', { step: tk.step.toLocaleString(uiLang()) });
@@ -884,7 +902,7 @@ export class App {
       });
       note.textContent = fast ? t('cycle.running', { n: Math.round(tk!.stepsPerSec) }) : t('cycle.hint');
     }
-    if (this.tab !== 'learn') return; // the examples are drawn only while their tab is visible
+    if (this.tab !== 'learn' || quietRun(tk)) return; // drawn only while visible, and not during quiet learning
     practiceHelp.querySelector('p')!.textContent = t('practice.help', { shown: Math.min(PRACTICE_SHOWN, p?.batchSize ?? 16), batch: p?.batchSize ?? 16 });
 
     // The learning data, revealed with the stages: questions and right answers,
