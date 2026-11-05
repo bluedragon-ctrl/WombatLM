@@ -28,6 +28,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 | Mistake per line (user) | **Done in a PR.** Practice table: mistake (loss) per example, letters tinted by their own mistake, an explanation how the step's mistake is the average over all letters. See DECISIONS. |
 | Letter map explained (user) | **Done in a PR.** What-to-notice text first (how it is made behind "?"), click or type a letter to see its 4 closest letters on all 32 numbers (centred cosine), rare letters flagged. See DECISIONS. |
 | Inside the model explained (user) | **Done** (branch `claude/epic-darwin-rcolin`). "Where is it learning?" diagram (change per step per part, one scale, lines over time), "Look inside one letter" (every number on the way to one answer letter, what each step adds, exact where-it-comes-from sums on click, used weights outlined in the heatmaps; also from a click on the guess bars), heatmaps with letter/position labels, one shared colour scale (toggle), plain-language tooltips, number × number matrices as thumbnails in plain mode. See DECISIONS. |
+| Slovak and German (user) | **Done** (branch `claude/gallant-tesla-msdpx7`, first draft of the data). `data/animals.sk.json`, `data/animals.de.json` merged into the base animals by id (`LANGUAGE_PACKS`), 8 new letters, 71 tokens. Measured: d_model 32 is big enough (4 languages 95–99 % known at 30 000 steps, same as d 48), but it needs ~4× the steps. See DECISIONS. |
 | M4 time travel | **Next.** |
 | M5–M7 | Not started. |
 
@@ -36,7 +37,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 - **Trainer:** `src/train/trainer.ts` (`FormTrainer`, `TRAINER_DEFAULTS`, `scoreResults`, `confidence`). Node run: `npx tsx scripts/train-node.ts 5000 1`.
 - **Worker:** `src/train/engine.ts` holds the loop and message handling (testable with a fake host, see `tests/train/engine.test.ts`); `worker.ts` only wires it up; messages in `protocol.ts`.
 - **UI:** `src/ui/app.ts` (one class, vanilla DOM), visuals in `src/viz/` (Canvas 2D), strings in `src/ui/i18n/{en,cs}.json`. Elements used by tests have `data-test` attributes.
-- **Data:** `data/animals.base.json` (151 animals, 92 with forms, 11 never-seen). `Dataset.formTasks()`, `missingFormTasks()` (inventions), `nameTasks(…, true)` (copy practice), `formKind()`.
+- **Data:** `data/animals.base.json` (151 animals, cs + en, 92 with forms, 11 never-seen); Slovak and German in `data/animals.sk.json`, `data/animals.de.json`. `Dataset.formTasks()`, `missingFormTasks()` (inventions), `nameTasks(…, true)` (copy practice), `formKind()`.
 
 ## Notes for M4
 
@@ -48,6 +49,8 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 - Time travel must respect the learning/answering split: a seeked snapshot is a frozen brain too, so the step label under the answer ("Answer from the brain at step N") should show the snapshot's step, and the practice strip should be hidden or say it is history.
 
 ## Waiting for the user
+
+- **Slovak and German:** review of `data/animals.sk.json` and `data/animals.de.json` by a fluent speaker (`docs/DATA_REVIEW.md` has the tables); decide the "Learn until" default / options for four languages (5 000 steps gives known English ~40–50 %; ~30 000 for 95 %+).
 
 - **Data review:** no flags any more (one right word per answer; fix or delete doubtful words in the JSON); regenerate the table with `npm run validate-data -- --review` → `docs/DATA_REVIEW.md` (deferred by the user: "data tuning later").
 - **Czech UI copy:** Ask tab review: `form.name` ("stejné jméno"), `form.tip.*`, reworded `ask.help`, `ask.title` ("Odpovídání"), `build.title` ("Učení").
@@ -63,13 +66,15 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 ## Useful commands
 
 ```
-npm test                                   # vitest (95 tests)
+npm test                                   # vitest (105 tests)
 npm run build                              # typecheck + vite build
 npm run e2e                                # Playwright smoke test (builds + previews on :4173)
 npm run screenshots                        # PR screenshots (docs/screenshots/m3, docs/screenshots/learn-vs-answer)
 npm run dev                                # the app
 npm run validate-data [-- --review]        # data linter (+ review table)
 npx tsx scripts/train-node.ts 5000 1       # the app's trainer in Node
+npx tsx scripts/experiments/languages.ts cs,en,sk,de 10000 1 32 16
+    # langs steps seed dModel batch [lr]: accuracy per language at 4 checkpoints
 npx tsx scripts/experiments/forms-full.ts 5000 1 0.1 1 1
     # steps seed dropout copyPracticeWeight targetStart
 ```

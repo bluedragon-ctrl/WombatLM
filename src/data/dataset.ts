@@ -322,13 +322,17 @@ export function validatePacks(
   };
   for (const pack of packs) {
     if (!pack.pack || !Array.isArray(pack.animals)) { errors.push(`pack ${pack.pack}: malformed`); continue; }
-    let trained = 0, unseen = 0;
+    let trained = 0, unseen = 0, added = 0;
     for (const a of pack.animals) {
       const where = `${pack.pack}/${a.id}`;
       if (!a.id) errors.push(`${pack.pack}: animal without id`);
       if (a.unseen !== undefined && a.unseen !== true) errors.push(`${where}: "unseen" must be true or left out`);
-      if (a.unseen) unseen++; else trained++;
       const prevPack = ids.get(a.id);
+      // Animals an earlier pack introduced keep its trained / never-seen split.
+      if (prevPack === undefined) {
+        added++;
+        if (a.unseen) unseen++; else trained++;
+      }
       // The same id in another pack is allowed only to add new languages.
       if (prevPack === pack.pack) errors.push(`${where}: duplicate id`);
       ids.set(a.id, pack.pack);
@@ -351,7 +355,7 @@ export function validatePacks(
         }
       }
     }
-    if (pack.animals.length >= minSplit && (!trained || !unseen)) {
+    if (added >= minSplit && (!trained || !unseen)) {
       errors.push(`pack ${pack.pack}: needs both trained and "unseen": true animals`);
     }
   }

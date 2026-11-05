@@ -12,8 +12,9 @@ describe('data files', () => {
     expect(validatePacks(allPacks(), vocab, codes, bundle.forms)).toEqual([]);
   });
 
-  it('vocabulary: 4 specials + 43 characters + one target token per language × form', () => {
-    expect(vocab.size).toBe(4 + 43 + codes.length * bundle.forms.length);
+  it('vocabulary: 4 specials + the characters + one target token per language × form', () => {
+    expect(bundle.vocabSpec.chars.length).toBe(51);
+    expect(vocab.size).toBe(4 + 51 + codes.length * bundle.forms.length);
   });
 
   it('base set: ~150 animals, every language has never-seen forms of every kind', () => {
@@ -59,7 +60,7 @@ describe('validation catches problems', () => {
   it('reports bad characters, case, length and duplicates', () => {
     const errs = validatePacks([pack([
       { id: 'a', names: { cs: 'Kočka', en: 'cat' } },
-      { id: 'a', names: { cs: 'pes', en: 'dög' } },
+      { id: 'a', names: { cs: 'pes', en: 'døg' } },
       { id: 'b', names: { cs: 'pes', en: 'x'.repeat(21) } },
     ])], vocab, codes, bundle.forms);
     expect(errs.some((e) => e.includes('lower-case'))).toBe(true);
@@ -67,6 +68,14 @@ describe('validation catches problems', () => {
     expect(errs.some((e) => e.includes('outside the vocabulary'))).toBe(true);
     expect(errs.some((e) => e.includes('longer than'))).toBe(true);
     expect(errs.some((e) => e.includes('also used by'))).toBe(true);
+  });
+
+  it('a pack that only adds languages keeps the earlier trained / never-seen split', () => {
+    const animals = (p: string, extra: object) => Array.from({ length: 8 }, (_, i) => ({ id: `a${i}`, names: { [p]: `x${'y'.repeat(i)}` }, ...(i === 0 ? extra : {}) }));
+    const base: Pack = { pack: 'base', version: 1, title: {}, animals: animals('cs', { unseen: true }) };
+    const lang: Pack = { pack: 'lang', version: 1, title: {}, animals: animals('de', {}) };
+    expect(validatePacks([base, lang], vocab, codes, bundle.forms)).toEqual([]);
+    expect(validatePacks([lang], vocab, codes, bundle.forms)).toContain('pack lang: needs both trained and "unseen": true animals');
   });
 
   it('rejects fields that are no longer used (one right word per answer)', () => {
@@ -98,7 +107,9 @@ describe('merging', () => {
   it('builds tasks in both directions', () => {
     const ds = new Dataset(bundle);
     const cat = ds.nameTasks((a) => a.id === 'cat');
-    expect(cat.map((t) => `${t.source}->${t.answer}`).sort()).toEqual(['cat->kočka', 'kočka->cat']);
+    const pairs = cat.map((t) => `${t.source}->${t.answer}`);
+    expect(pairs).toHaveLength(codes.length * (codes.length - 1));
+    expect(pairs).toEqual(expect.arrayContaining(['cat->kočka', 'kočka->cat', 'mačka->katze', 'katze->mačka']));
   });
 
   it('builds word-form tasks within each language', () => {
@@ -106,7 +117,9 @@ describe('merging', () => {
     const cat = ds.formTasks((a) => a.id === 'cat');
     expect(cat.map((t) => `${t.to}:${t.form} ${t.source}->${t.answer}`).sort()).toEqual([
       'cs:female kočka->kočka', 'cs:male kočka->kocour', 'cs:young kočka->kotě',
+      'de:female katze->katze', 'de:male katze->kater', 'de:young katze->kätzchen',
       'en:female cat->queen', 'en:male cat->tom', 'en:young cat->kitten',
+      'sk:female mačka->mačka', 'sk:male mačka->kocúr', 'sk:young mačka->mačiatko',
     ]);
   });
 });

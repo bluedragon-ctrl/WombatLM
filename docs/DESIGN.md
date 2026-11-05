@@ -62,10 +62,11 @@ Runtime dependencies: none. Dev dependencies: vite, typescript, vitest, tsx, @pl
 /
 ├─ index.html                      ✔
 ├─ data/
-│  ├─ languages.json               ✔ data languages (cs, en)
+│  ├─ languages.json               ✔ data languages (cs, en, sk, de)
 │  ├─ vocab.json                   ✔ characters + special tokens
 │  ├─ forms.json                   ✔ ["name", "male", "female", "young"]
-│  ├─ animals.base.json            ✔ base dataset, 151 animals
+│  ├─ animals.base.json            ✔ base dataset, 151 animals (cs, en)
+│  ├─ animals.sk.json, .de.json    ✔ Slovak / German names and forms for the base animals
 │  └─ packs/                       ✔ ocean, insects, farm-babies (rework in M5)
 ├─ public/replay/                  ◌ baked pretrained runs (section 9)
 ├─ scripts/
@@ -121,10 +122,10 @@ Rule: `src/nn` and `src/data` must not import DOM or worker code, so the same co
 Lower-case, Unicode NFC. Defined in `data/vocab.json`, not hard-coded:
 
 - 4 special tokens: `<pad> <bos> <eos> <unk>`
-- 43 characters: `a–z`, Czech letters `á č ď é ě í ň ó ř š ť ú ů ý ž`, space, hyphen
-- one **target token per (form, language)**: `<cs> <en>` (form `name`), `<cs:male> <en:male>`, `<cs:female> <en:female>`, `<cs:young> <en:young>`. Built form-major from `forms.json` × `languages.json`, so adding a form only appends tokens.
+- 51 characters: `a–z`, Czech letters `á č ď é ě í ň ó ř š ť ú ů ý ž`, Slovak `ä ĺ ľ ô ŕ`, German `ö ü ß` (`ä` shared), space, hyphen
+- one **target token per (form, language)**: `<cs> <en> <sk> <de>` (form `name`), `<cs:male> … <de:male>`, `<cs:female> … <de:female>`, `<cs:young> … <de:young>`. Built form-major from `forms.json` × `languages.json`, so adding a form only appends tokens.
 
-Total: **55 tokens**. Code never assumes 55 or a fixed set of languages. Max word length 20 characters, max sequence length 22. Input outside the vocabulary maps to `<unk>`.
+Total: **71 tokens** (55 with cs and en only). Code never assumes 71 or a fixed set of languages. Max word length 20 characters, max sequence length 22. Input outside the vocabulary maps to `<unk>`.
 
 **Growing the vocabulary** (`growVocab` in `src/nn/serialize.ts`): new tokens are appended, the embedding table gains new rows, all existing weights stay. Models remap embeddings by token text, so the order is not load-bearing. Used for Teach scenarios and new languages.
 
@@ -168,15 +169,17 @@ How a form relates to its name, computed (`formKind()` in `src/data/dataset.ts`)
 Used for colours, the scoreboard lines and the explanations. Thresholds live in one place (`FORM_KIND_THRESHOLDS`).
 
 ### 4.5 Base dataset
-151 animals: mammals, birds, reptiles, fish, insects, sea animals. 92 have forms (Czech 49 animals / 128 forms, English 87 / 174). 11 never-seen animals (53 forms), chosen so every language has never-seen forms of every kind. Solid Czech male/female/young words exist for only ~50 common animals; the rest are inventions by design.
+151 animals: mammals, birds, reptiles, fish, insects, sea animals, with names in all four languages. Forms: Czech 49 animals / 128 forms, English 87 / 174, Slovak 43 / 107, German 52 / 128. 11 never-seen animals (98 forms: cs 26, en 27, sk 19, de 26), chosen so every language has never-seen forms of every kind. Solid Czech male/female/young words exist for only ~50 common animals; the rest are inventions by design.
 
-**The user (native Czech speaker) reviews the data.** `npm run validate-data -- --review` writes `docs/DATA_REVIEW.md` with every form.
+Slovak and German live in their own files (`animals.sk.json`, `animals.de.json`, packs `base-sk`, `base-de`) that only add names and forms to the base animals by id; never-seen marks come from the base pack. German nouns are lower-cased. German male/female/young words for big animals are the real compounds (*elefantenkuh*, *zebrafohlen*), not *-junges* / *-baby* phrases (those count as generic).
+
+**The user (native Czech speaker) reviews the data.** Slovak and German need a fluent reviewer (section 15). `npm run validate-data -- --review` writes `docs/DATA_REVIEW.md` with every form.
 
 ### 4.6 Extension packs (Teach mode)
 Separate files, same format. Existing: `ocean` and `insects` (names only, from the translation design) and `farm-babies` (now redundant with `young` forms). **Rework in M5** into packs with forms, e.g. "farm animals" (kůň → klisna / hříbě, horse → mare / foal) and "birds" (páv → pávice). Adding animals later means adding a JSON file, no code changes.
 
 ### 4.7 Validation (`scripts/validate-data.ts`, also a test)
-All characters in the vocabulary · lengths ≤ 20 · NFC · lower-case · no duplicate ids within a pack · no name used by two animals · forms only for languages with a name · known form names · no unknown fields · `unseen` is `true` or left out · packs of ≥ 8 animals have both trained and unseen animals.
+All characters in the vocabulary · lengths ≤ 20 · NFC · lower-case · no duplicate ids within a pack · no name used by two animals · forms only for languages with a name · known form names · no unknown fields · `unseen` is `true` or left out · packs that add ≥ 8 new animals have both trained and unseen animals (a pack that only adds languages to earlier animals keeps their split).
 
 ### 4.8 User additions
 In Teach mode a user can type an animal with forms. Stored in `localStorage` as pack `user`; export/import as JSON in the same format.
@@ -218,7 +221,7 @@ Why the decoder starts from the target token: without it the model often mixed u
 The model has **no special copy machinery**. Keeping the stem (tygr → tygr|ice) is learned by ordinary cross-attention, the same way real language models learn to copy. The cross-attention grid shows it: while writing the stem the model looks at the matching input letter. An earlier version had a pointer-style copy mechanism with a write-or-copy gate; it was removed to keep the model simple (see `docs/DECISIONS.md`).
 
 ### 6.3 Training
-- **Batch mix:** word-form tasks of trained animals (not `unseen`) (both languages, all forms) mixed **1:1 with copy practice** (`<cs> tygr → tygr` for every trained name). Copy practice is what makes never-seen forms work: it teaches "keep the stem".
+- **Batch mix:** word-form tasks of trained animals (not `unseen`) (all languages, all forms) mixed **1:1 with copy practice** (`<cs> tygr → tygr` for every trained name). Copy practice is what makes never-seen forms work: it teaches "keep the stem".
 - Teacher forcing, cross-entropy on target characters, batch 16, no label smoothing (so probability bars stay honest).
 - `FormTrainer` in `src/train/trainer.ts`; defaults in `TRAINER_DEFAULTS`.
 
@@ -313,7 +316,7 @@ Desktop layout, ≥ 1280 wide. Top bar: logo · tabs **Forms · Inside the brain
 - **Letter map (M3):** PCA of the shared embedding table, dots labelled with the letter; vowels, consonants, Czech-only letters and target tokens use different markers and colours. PCA axes are sign-aligned and Procrustes-rotated to the previous frame; points lerp between updates.
 
 ### 8.2 Inside the brain (M3)
-- A grid of **weight heatmaps**, one per matrix (letter table 55×32, Q/K/V/O per attention, FFN in/out), labelled in plain words ("letter table", "what to look for (Q)", …) with the technical name in expert mode.
+- A grid of **weight heatmaps**, one per matrix (letter table 71×32, Q/K/V/O per attention, FFN in/out), labelled in plain words ("letter table", "what to look for (Q)", …) with the technical name in expert mode.
 - Diverging palette: blue negative, white zero, red positive; symmetric scale per matrix (99th percentile of |w|).
 - Mode toggle: **Weights** / **Change in the last steps** (default: raw weights look like noise, changes show learning) / **Gradient**.
 - Hovering a cell shows its value and its meaning when known ("letter 'ž', dimension 7").
@@ -439,7 +442,9 @@ The app ships Czech and English, but the code already follows these rules:
 
 ## 15. Next step: more languages
 
-Adding a language = an entry in `languages.json`, its letters in `vocab.json` (if new), a pack with names and forms for existing animal ids, UI copy for the language name. No code changes. The same form drill runs for every language.
+Adding a language = an entry in `languages.json`, its letters in `vocab.json` (if new), a pack with names and forms for existing animal ids (listed in `LANGUAGE_PACKS`, `src/data/bundle.ts`), UI copy for the language name. No other code changes.
+
+**Status:** Slovak and German added (first draft of the data, waiting for review); measurements in `docs/DECISIONS.md` ("Slovak and German"). The same form drill runs for every language.
 
 **Recommended order:**
 1. **Slovak (sk):** close to Czech, similar form patterns (tiger → tigrica, mačka → mačiatko). New letters `ä ĺ ľ ŕ ô`. Shows that a related language is learned quickly.
