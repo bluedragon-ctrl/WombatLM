@@ -42,6 +42,20 @@ input.seed { width: 80px; }
 .askbox input.ask { font-size: 22px; width: 260px; padding: 6px 10px; }
 .picker { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .hint { color: var(--muted); font-size: 13px; min-height: 18px; }
+/* Ask the model: 1 language, 2 animal, 3 which word, then the two answer buttons */
+.ask-form { display: grid; gap: 10px; margin: 4px 0 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.ask-field { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: start; gap: 10px; }
+.ask-label { font-weight: 600; font-size: 14px; color: var(--muted); padding-top: 7px; }
+.ask-control .picker { margin-bottom: 0; }
+.askbox .word-hint { margin-top: 4px; }
+.word-hint.known { color: #15803d; }
+.word-hint.other { color: #92400e; }
+.word-hint .link { padding: 0 2px; }
+.ask-buttons { display: flex; gap: 10px; padding-left: 130px; }
+button.big { font-size: 16px; padding: 8px 18px; }
+button:disabled { opacity: 0.5; cursor: default; }
+.ask-prompt { color: var(--muted); margin: 6px 0 10px; }
+.ask-prompt[hidden], .ask-results[hidden], .att-grids[hidden] { display: none; }
 .output { margin: 8px 0 12px; min-height: 90px; }
 .answer-line { display: flex; align-items: baseline; gap: 10px; }
 .answer-line .from { font-size: 20px; color: var(--muted); }
@@ -173,8 +187,10 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 .output.stale .word, .output.stale .meter, .bars-wrap.stale, .att-grids.stale { opacity: 0.4; filter: grayscale(0.8); transition: opacity 0.3s; }
 .guess-head h2 { margin: 0; }
 .guess-head { margin: 4px 0 6px; }
-.slow-caption { font-size: 13px; color: var(--muted); }
-.slow-caption.active { color: var(--accent); font-weight: 600; }
+.slow-caption { display: none; }
+.slow-caption.active { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; padding: 8px 12px; border-radius: 8px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
+.slow-caption strong { font-size: 15px; }
+.slow-caption .detail { font-size: 13px; }
 .word .cursor { color: var(--accent); font-weight: 400; font-size: 0.7em; animation: blink 0.8s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 

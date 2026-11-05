@@ -29,6 +29,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 | Letter map explained (user) | **Done in a PR.** What-to-notice text first (how it is made behind "?"), click or type a letter to see its 4 closest letters on all 32 numbers (centred cosine), rare letters flagged. See DECISIONS. |
 | Inside the model explained (user) | **Done** (branch `claude/epic-darwin-rcolin`). "Where is it learning?" diagram (change per step per part, one scale, lines over time), "Look inside one letter" (every number on the way to one answer letter, what each step adds, exact where-it-comes-from sums on click, used weights outlined in the heatmaps; also from a click on the guess bars), heatmaps with letter/position labels, one shared colour scale (toggle), plain-language tooltips, number × number matrices as thumbnails in plain mode. See DECISIONS. |
 | Slovak and German (user) | **Done** (branch `claude/gallant-tesla-msdpx7`, first draft of the data). `data/animals.sk.json`, `data/animals.de.json` merged into the base animals by id (`LANGUAGE_PACKS`), 8 new letters, 71 tokens. Measured: d_model 32 is big enough (4 languages 95–99 % known at 30 000 steps, same as d 48), but it needs ~4× the steps. See DECISIONS. |
+| Ask form (user) | **Done** (branch `ccr-a4ae8508-s8hr46`). Ask tab: 1. Language · 2. Animal · 3. Which word, then **Answer now** / **✍️ Answer slowly** (letter by letter with a "what the model is doing" box); answers only when asked; no silent language switch. See DECISIONS. |
 | M4 time travel | **Next.** |
 | M5–M7 | Not started. |
 
@@ -53,6 +54,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 - **Slovak and German:** review of `data/animals.sk.json` and `data/animals.de.json` by a fluent speaker (`docs/DATA_REVIEW.md` has the tables); decide the "Learn until" default / options for four languages (5 000 steps gives known English ~40–50 %; ~30 000 for 95 %+).
 
 - **Data review:** no flags any more (one right word per answer; fix or delete doubtful words in the JSON); regenerate the table with `npm run validate-data -- --review` → `docs/DATA_REVIEW.md` (deferred by the user: "data tuning later").
+- **Czech UI copy:** Ask form PR: `ask.step.*`, `ask.now*`, `ask.slow*`, `ask.prompt`, `ask.thinking`, `ask.word.*`, `att.prompt`, `slow.*` (reworded), `ask.help` (reworded).
 - **Czech UI copy:** Ask tab review: `form.name` ("stejné jméno"), `form.tip.*`, reworded `ask.help`, `ask.title` ("Odpovídání"), `build.title` ("Učení").
 - **Czech UI copy:** new in the Inside-the-model PR: `inside.guide`, `inside.heatTitle`, `inside.shared*`, `inside.rate`, `inside.val.*`, `tip.*`, `flow.*`, `explain.*`, `ask.lookInside`, `signal.decRow`.
 - **Czech UI copy:** new in the build-time PRs: `quiet.*`, `wallPerSec`, `goal.*`, `practice.col.loss`, `practice.end`, `practice.letterTip`, `practice.lossTip`, `practice.lossExplain`; letter map PR: `map.help`, `map.how`, `map.note`, `map.pick`, `map.near`, `map.rare`, `map.clear`.

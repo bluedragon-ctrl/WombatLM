@@ -77,16 +77,34 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.locator('[data-test=token-numbers]').check();
   await expect(page.locator('[data-test=tokens-in] .tok.num').first()).toHaveText(/^\d+$/);
   await page.locator('[data-test=token-numbers]').uncheck();
+  // A new question is answered only when asked: language, word, which word, then a button.
   await page.fill('[data-test=ask]', 'zø');
+  await expect(page.locator('[data-test=ask-prompt]')).toBeVisible();
+  await expect(page.locator('[data-test=output] .word')).toHaveCount(0);
+  await expect(page.locator('[data-test=word-hint]')).toContainText(/Not an animal/);
+  await page.locator('[data-test=ask]').press('Enter');
   await expect(page.locator('[data-test=tokens-unk]')).toContainText('ø');
   await expect(page.locator('[data-test=tokens-in] .tok-unk')).toHaveCount(1);
+  await page.fill('[data-test=ask]', '');
+  await expect(page.locator('[data-test=answer-now]')).toBeDisabled();
+  // A word of another language: offered, not switched behind your back.
+  await page.fill('[data-test=ask]', 'cat');
+  await expect(page.locator('[data-test=word-hint]')).toContainText(/in the English learning data/);
+  await page.click('[data-test=switch-lang]');
+  await expect(page.locator('.askbox [data-lang=en]')).toHaveClass(/on/);
+  await expect(page.locator('[data-test=word-hint]')).toContainText(/from the learning data/);
+  await page.locator('.askbox [data-lang=cs]').click();
   await page.fill('[data-test=ask]', 'kočka');
   await page.locator('[data-form=young]').click();
+  await page.click('[data-test=answer-now]');
   await expect(page.locator('[data-test=output] .from')).toContainText('kočka');
   await expect(page.locator('canvas.bars')).toBeVisible();
-  await page.click('[data-test=slow]');
-  await expect(page.locator('[data-test=slow-caption]')).toContainText(/writing letter 1 of/, { timeout: 3_000 });
-  await page.click('[data-test=slow]');
+  // Answer slowly: what the model is doing, letter by letter; the same button stops it.
+  await page.click('[data-test=answer-slow]');
+  await expect(page.locator('[data-test=slow-caption]')).toContainText(/Reading the animal/, { timeout: 3_000 });
+  await expect(page.locator('[data-test=slow-caption]')).toContainText(/Writing letter 1 of.*it writes/s, { timeout: 4_000 });
+  await expect(page.locator('[data-test=answer-slow]')).toContainText('Stop');
+  await page.click('[data-test=answer-slow]');
   await expect(page.locator('[data-test=slow-caption]')).toHaveText('');
   await expect(page.locator('[data-test=attention] canvas')).toHaveCount(2);
 
