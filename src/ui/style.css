@@ -546,3 +546,17 @@ main.ask-main > .journey { grid-column: 1 / -1; }
 .practice-table.checked table { font-size: 13px; }
 .practice-table.checked td { padding: 3px 6px; }
 .practice-table.checked .example .task { display: block; margin-left: 0; }
+
+/* Inside the model: the brain scan */
+.inside [hidden] { display: none !important; }
+.scan-flow { margin-top: 8px; }
+.scan-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 6px 8px; background: #fff; text-align: left; }
+.scan-tile:hover { border-color: var(--accent); }
+.scan-tile .name { font-weight: 600; font-size: 13px; }
+.scan-tile .share { color: var(--muted); font-variant-numeric: tabular-nums; }
+.scan-canvas { display: block; border-radius: 3px; cursor: crosshair; }
+.scan-legend { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.glow-bar { display: inline-block; width: 180px; height: 10px; border-radius: 5px; }
+.scan-verdict { margin: 8px 0 4px; font-weight: 600; }
+.scan-verdict:empty { display: none; }
+.numbers-toggle { margin-top: 6px; }

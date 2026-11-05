@@ -130,15 +130,20 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=slow-caption]')).toHaveText('');
   await expect(page.locator('[data-test=attention] canvas')).toHaveCount(2);
 
-  // Inside the model: heatmaps.
+  // Inside the model: the brain scan, one tile per part of the model.
   await page.click('[data-test=tab-inside]');
+  await expect(page.locator('[data-test=scan] .scan-tile')).toHaveCount(7);
+  await expect(page.locator('[data-test=scan] .scan-tile').first()).toContainText(/2,343 numbers/);
+  await expect(page.locator('[data-test=scan-verdict]')).not.toBeEmpty();
+  // Plain mode: the heatmaps are folded away until a part of the scan is clicked.
+  await expect(page.locator('[data-test=heatmaps]')).toBeHidden();
+  await page.locator('[data-test=scan] .scan-tile[data-box=letters]').click();
   await expect(page.locator('[data-test=heatmaps] canvas[data-matrix=tokEmb]')).toBeVisible();
   await expect(page.locator('[data-test=mode-note]')).toContainText(/moved/);
   await page.click('[data-mode=grad]');
   await expect(page.locator('[data-test=mode-note]')).toContainText(/batch/);
-  // Where is it learning: one box per part of the model, with a change per step.
-  await expect(page.locator('[data-test=overview] .flow-box')).toHaveCount(7);
-  await expect(page.locator('[data-test=overview] .flow-box').first()).toContainText(/per step/);
+  await expect(page.locator('[data-test=scan] .scan-tile').first()).toContainText(/of the push/);
+  await expect(page.locator('[data-test=overview]')).toBeHidden();
 
   // Look inside one letter: from a click on a guess-bar column.
   await page.click('[data-test=tab-ask]');
@@ -152,8 +157,10 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=explain-ladder]')).toContainText(/How sure it is/);
   await expect(page.locator('[data-test=explain-lens]')).toHaveCount(4);
   await expect(page.locator('canvas[data-strip]')).toHaveCount(0);
-  // Expert: every number, and where it comes from.
+  // Expert: every number, and where it comes from; how fast each part changes.
   await page.locator('[data-test=expert]').check();
+  await expect(page.locator('[data-test=overview] .flow-box')).toHaveCount(7);
+  await expect(page.locator('[data-test=overview] .flow-box').first()).toContainText(/per step/);
   await page.locator('canvas[data-strip="dec0.cross:add"]').click({ position: { x: 7, y: 7 } });
   await expect(page.locator('[data-test=explain-detail]')).toContainText(/Where it comes from/);
   await page.locator('[data-test=explain-guesses] button').first().click();
