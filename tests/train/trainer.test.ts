@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { baseBundle } from '../../src/data/bundle';
 import { Dataset } from '../../src/data/dataset';
 import { FormTrainer, SCORE_KEYS, TaskResult, confidence, judge, scoreResults } from '../../src/train/trainer';
+import { changeStats, explainNumber, topNumbers } from '../../src/train/stepDetail';
 
 const ds = new Dataset(baseBundle());
 
@@ -130,5 +131,62 @@ describe('scoring', () => {
     expect(s.unseen).toBeCloseTo(1 / 3);
     expect(s.close).toBeCloseTo(2 / 3);
     expect(s.old).toBe(0.5);
+  });
+
+  describe('one step recorded in detail', () => {
+    it('trains exactly like an ordinary step', () => {
+      const a = new FormTrainer(ds, { seed: 9 });
+      const b = new FormTrainer(ds, { seed: 9 });
+      for (let i = 0; i < 5; i++) { a.trainStep(); b.trainStep(); }
+      expect(b.trainStep(16, true)).toBe(a.trainStep(16));
+      for (let i = 0; i < 3; i++) expect(b.trainStep()).toBe(a.trainStep());
+      a.model.params.list.forEach((p, i) => expect(Array.from(b.model.params.list[i].data)).toEqual(Array.from(p.data)));
+      expect(b.record).toBeNull(); // only the detailed step is recorded
+    });
+
+    it("splits every number's gradient exactly into the examples' shares and recomputes its nudge", () => {
+      const tr = new FormTrainer(ds, { seed: 2 });
+      for (let i = 0; i < 20; i++) tr.trainStep();
+      tr.trainStep(0, true);
+      const r = tr.record!;
+      expect(r.step).toBe(21);
+      expect(r.perExample).toHaveLength(16);
+      tr.model.params.list.forEach((p, pi) => {
+        for (let i = 0; i < p.size; i += 11) {
+          let sum = 0;
+          for (const ex of r.perExample!) sum += ex[pi][i];
+          expect(sum).toBeCloseTo(r.grad[pi][i], 6);
+          const w = explainNumber(r, pi, i, p.shape.length > 1);
+          expect(w.after).toBeCloseTo(p.data[i], 6);
+          expect(w.before).toBe(r.before[pi][i]);
+        }
+      });
+      // Warm-up: the rate used is smaller than the one set.
+      expect(r.lr).toBeCloseTo(r.baseLr * 21 / r.warmupSteps, 8);
+    });
+
+    it('measures the same batch before and after the step (no dropout) for the practice table', () => {
+      const tr = new FormTrainer(ds, { seed: 6 });
+      for (let i = 0; i < 40; i++) tr.trainStep();
+      tr.trainStep(16, true);
+      const p = tr.practice(16)!;
+      expect(p.check!.lossAfter).toBeLessThan(p.check!.lossBefore);
+      expect(p.check!.lettersUp + p.check!.lettersDown).toBeLessThanOrEqual(p.letterCount);
+      for (const ex of p.examples) {
+        expect(ex.check!.before).toHaveLength(ex.letters.length);
+        expect(ex.check!.after).toHaveLength(ex.letters.length);
+        expect(ex.check!.status).toBe(judge(ex.check!.answer, ex.target));
+      }
+      expect(p.check!.rightAfter).toBe(p.examples.filter((e) => e.check!.status === 'correct').length);
+      tr.trainStep();
+      expect(tr.practice()!.check).toBeUndefined();
+    });
+
+    it('finds the biggest numbers and summarises the change', () => {
+      const a = [Float32Array.from([1, -5, 2]), Float32Array.from([4])];
+      expect(topNumbers(a, (p, i) => a[p][i], 2)).toEqual([{ param: 0, index: 1 }, { param: 1, index: 0 }]);
+      const s = changeStats([Float32Array.from([0, 0, 0])], [Float32Array.from([0, 0.5, -2])]);
+      expect(s).toEqual({ total: 3, moved: 2, max: 2, median: 0.5 });
+    });
   });
 });

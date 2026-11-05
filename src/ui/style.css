@@ -165,7 +165,7 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); background: #fde68a; } 100% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); } }
 
 /* One learning step: four stages */
-.cycle { list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 0; margin: 6px 0 2px; counter-reset: none; }
+.cycle { list-style: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 0; margin: 6px 0 2px; counter-reset: none; }
 .cycle .stage { position: relative; border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; font-size: 12px; color: var(--muted); background: #fafafa; min-height: 62px; }
 .cycle .stage .num { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 1px solid #cbd5e1; text-align: center; line-height: 16px; font-size: 11px; margin-right: 4px; }
 .cycle .stage .what { font-weight: 600; }
@@ -414,3 +414,112 @@ header .params { text-align: right; }
 .xcontrib .sbar.pos { background: rgb(178, 24, 43); }
 .xcontrib .sbar.neg { background: rgb(33, 102, 172); }
 .xcontrib tr.total td { border-top: 1px solid var(--line); font-weight: 600; }
+
+/* One learning step: "check" is only done for Step ×1 */
+.cycle .stage.off { border-style: dashed; background: #fff; }
+
+/* Practice table: the same example after the step */
+.practice-table th.check { border-bottom-color: #16a34a; color: #15803d; }
+.practice-table td.check { background: #f0fdf4; }
+.check-cell { display: flex; flex-direction: column; gap: 1px; }
+.check-letters .let.up { box-shadow: inset 0 -2px 0 #16a34a; }
+.check-letters .let.down { box-shadow: inset 0 -2px 0 #dc2626; }
+.check-loss { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.check-loss.better { color: #15803d; }
+.check-loss.worse { color: #b91c1c; }
+.check-cell .word-own { font-size: 12px; }
+
+/* What this step changed */
+.step-detail .sd-empty { color: var(--muted); }
+.sd-flow { list-style: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; padding: 0; margin: 4px 0 10px; }
+.sd-flow li { border: 1px solid #f59e0b; background: #fffbeb; border-radius: 8px; padding: 5px 7px; font-size: 12px; color: #92400e; }
+.sd-flow li:last-child { border-color: #16a34a; background: #f0fdf4; color: #166534; }
+.sd-flow .num { display: inline-block; width: 18px; height: 18px; border-radius: 50%; background: currentColor; text-align: center; line-height: 18px; font-size: 11px; margin-right: 4px; }
+.sd-flow .num { color: #fff; background: #f59e0b; }
+.sd-flow li:last-child .num { background: #16a34a; }
+.sd-flow .what { font-weight: 600; }
+.sd-flow .val { display: block; margin-top: 3px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.sd-check { padding: 6px 10px; border-radius: 6px; background: #f0fdf4; border: 1px solid #bbf7d0; }
+.sd-list-head { align-items: center; gap: 12px; margin-top: 10px; }
+.sd-list-head h3 { margin: 0; }
+.sd-list-head .picker { margin-bottom: 0; }
+.sd-numbers { border-collapse: collapse; font-size: 13px; width: 100%; max-width: 900px; }
+.sd-numbers th { text-align: left; font-weight: 600; color: var(--muted); padding: 3px 8px; border-bottom: 2px solid var(--line); }
+.sd-numbers td { padding: 3px 8px; border-bottom: 1px solid #f1f5f9; }
+.sd-numbers .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sd-numbers td.up { color: rgb(178, 24, 43); }
+.sd-numbers td.down { color: rgb(33, 102, 172); }
+.sd-numbers tbody tr { cursor: pointer; }
+.sd-numbers tbody tr:hover { background: #f8fafc; }
+.sd-numbers tbody tr.on { background: #fef3c7; outline: 2px solid #f59e0b; }
+.sd-why { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.sd-why h3 { margin: 0 0 4px; }
+.sd-why-steps { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.sd-why-steps > li { display: flex; gap: 10px; align-items: flex-start; }
+.sd-why-steps > li > .num { flex: none; width: 22px; height: 22px; border-radius: 50%; background: #f59e0b; color: #fff; text-align: center; line-height: 22px; font-size: 12px; font-weight: 600; }
+.sd-why-steps h4 { margin: 2px 0 2px; font-size: 14px; }
+.sd-why-steps p { margin: 2px 0; }
+.sd-eq { font-family: ui-monospace, monospace; font-size: 13px; background: #f8fafc; padding: 2px 6px; border-radius: 4px; display: inline-block; white-space: pre-wrap; }
+.sd-shares .task { color: var(--muted); font-size: 12px; }
+
+/* Follow the tokens through the model */
+main.ask-main > .journey { grid-column: 1 / -1; }
+.journey[hidden] { display: none; }
+.jr-controls { align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; }
+.jr-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+.jr-pill { font-size: 12px; padding: 3px 8px; border-radius: 12px; }
+.jr-pill.done { background: #eff6ff; border-color: #bfdbfe; }
+.jr-pill.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.jr-caption { display: flex; flex-direction: column; gap: 3px; padding: 8px 12px; border-radius: 8px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; margin-bottom: 10px; font-size: 14px; }
+.jr-caption strong { font-size: 15px; }
+.jr-caption .jr-loop { color: #0f766e; font-weight: 600; }
+.jr-caption .jr-end { color: #166534; font-weight: 600; }
+.jr-diagram { display: flex; flex-direction: column; gap: 10px; overflow-x: auto; }
+.jr-lane { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.jr-lane.now { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15); }
+.jr-lane h3 { margin: 0 0 4px; font-size: 13px; }
+.jr-row { display: flex; align-items: center; gap: 6px; min-height: 34px; white-space: nowrap; }
+.jr-row.past { opacity: 0.5; }
+.jr-row.now { background: #eff6ff; border-radius: 6px; }
+.jr-row .tok { width: 112px; box-sizing: border-box; flex: none; }
+.jr-row .op { width: 14px; text-align: center; color: var(--muted); flex: none; }
+.jr-row .op.arrow { width: auto; }
+.jr-row .jr-model { font-size: 11px; color: var(--accent); padding: 0 4px; }
+.jr-head { min-height: 0; color: var(--muted); }
+.jr-hcell { display: inline-block; width: 162px; font-size: 11px; white-space: normal; }
+.jr-hcell.chipcol { width: 112px; }
+.jr-hcell.att { width: auto; }
+.jr-head .jr-model { visibility: hidden; }
+.jr-strip { flex: none; }
+.jr-loopmark { width: 14px; color: #0f766e; font-weight: 700; flex: none; text-align: center; }
+.tok.jr-fed { border-color: #0f766e; }
+.jr-out { display: inline-flex; align-items: center; gap: 4px; }
+.jr-out small { color: var(--muted); }
+.tok.jr-chosen { border-color: var(--accent); background: #eff6ff; }
+.jr-atts { display: inline-flex; gap: 2px; margin-left: 6px; }
+.jr-att { min-width: 24px; }
+.jr-detail { margin-top: 10px; }
+.jr-split { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.jr-split > .small:first-child { width: 120px; }
+.jr-word { font-size: 18px; }
+.jr-letter { display: inline-block; min-width: 20px; padding: 1px 4px; border: 1px dashed #cbd5e1; border-radius: 4px; text-align: center; }
+.jr-subs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.jr-sub { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.jr-sub h4 { margin: 0 0 4px; font-size: 13px; }
+.jr-sub .xatt-head .xlabel { width: 50px; }
+.jr-guesses { display: flex; flex-direction: column; gap: 2px; }
+.jr-guess { display: grid; grid-template-columns: 24px 1fr 56px; align-items: center; gap: 6px; font-size: 13px; }
+.jr-guess .track { height: 10px; background: #f1f5f9; border-radius: 3px; overflow: hidden; }
+.jr-guess .fill { display: block; height: 100%; background: #93c5fd; }
+.jr-guess.chosen .fill { background: var(--accent); }
+.jr-guess.chosen b { color: var(--accent); }
+.jr-atttables { display: flex; gap: 16px; flex-wrap: wrap; margin: 6px 0; }
+.jr-atttable { border-collapse: collapse; font-size: 11px; }
+.jr-atttable th { padding: 2px 5px; font-weight: 600; }
+.jr-atttable td { width: 30px; height: 22px; text-align: center; border: 1px solid #fff; }
+.jr-atttable caption { text-align: left; padding-bottom: 2px; }
+
+/* With the "after the step" column the table needs to be denser. */
+.practice-table.checked table { font-size: 13px; }
+.practice-table.checked td { padding: 3px 6px; }
+.practice-table.checked .example .task { display: block; margin-left: 0; }

@@ -95,6 +95,10 @@ export class InsideTab {
   private explain: ExplainView;
   /** Weights used by the letter in "look inside one letter", outlined in the heatmaps. */
   private marks = new Map<string, HeatmapMarks>();
+  /** A click on a number asks why it changed (set by the app). */
+  onPickNumber?: (name: string, index: number) => void;
+  /** The latest step was recorded in detail, so a click can explain a number (set by the app). */
+  canWhy = false;
 
   constructor(private onModeChange: () => void, requestExplain: (q: Question, position: number) => void) {
     this.modeNote = h('span', { class: 'small', 'data-test': 'mode-note' });
@@ -331,6 +335,12 @@ export class InsideTab {
       this.draw(c, cell);
     });
     canvas.addEventListener('mouseleave', (e) => { showTip(e, null); this.draw(c); });
+    canvas.addEventListener('click', (e) => {
+      const cell = heatmapCellAt(c.layout, e.offsetX, e.offsetY);
+      if (!cell || !this.canWhy) return;
+      showTip(e, null);
+      this.onPickNumber?.(c.info.name, cell.row * c.info.cols + cell.col);
+    });
     const label = h('div', { class: 'label' }, roleLabel(info));
     if (this.expert) label.append(h('code', {}, ` ${info.name}`));
     return h('figure', { class: `card${thumb ? ' thumb' : ''}`, 'data-matrix-card': info.name }, label, canvas,
@@ -346,6 +356,7 @@ export class InsideTab {
     const where = layer ? `${r} → ${k}` : [r, k].filter(Boolean).join(', ');
     const lines = [`${roleLabel(c.info)} — ${where}`, tipText(c.info, row, col, tokens), t(`inside.val.${this.mode}`, { v: fmt(v) })];
     if (this.expert) lines.push(`${c.info.name}[${row}, ${col}]`);
+    if (this.canWhy) lines.push(t('inside.whyClick'));
     return lines.filter(Boolean).join('\n');
   }
 

@@ -11,9 +11,13 @@ import { Tape } from '../nn/autograd';
 import type { LetterExplain } from '../nn/explain';
 import { Adam } from '../nn/optim';
 import { Rng } from '../nn/rng';
-import { Example, SpecialIds, TRANSLATOR_DEFAULTS, TranslationTrace, Translator, TranslatorConfig, makeBatch } from '../nn/translator';
+import { Batch, Example, SpecialIds, TRANSLATOR_DEFAULTS, TranslationTrace, Translator, TranslatorConfig, makeBatch, rightTokenProbs } from '../nn/translator';
 import { Vocab } from '../nn/vocab';
 import { Animal, Dataset, FormKind, Task, editDistance, formKind } from '../data/dataset';
+import type { StepRecord } from './stepDetail';
+
+/** Batches bigger than this are not split into each example's push (it costs one pass per example). */
+export const SPLIT_MAX_BATCH = 32;
 
 /**
  * correct / close (edit distance 1) / wrong for forms that exist in the data;
@@ -88,6 +92,20 @@ export interface PracticeExample {
   letters: { char: string; p: number }[];
   /** The mistake (loss) of this example: the average over its letters. */
   loss: number;
+  /**
+   * Only after a step recorded in detail (Step ×1): the same example measured
+   * the ordinary way (no dropout) just before and just after the step, and
+   * what it answers after the step.
+   */
+  check?: {
+    /** Chance of each right letter (same order as `letters`) before and after. */
+    before: number[];
+    after: number[];
+    lossBefore: number;
+    lossAfter: number;
+    answer: string;
+    status: 'correct' | 'close' | 'wrong';
+  };
 }
 
 /** The latest training batch, as the UI shows it. */
@@ -102,6 +120,16 @@ export interface PracticeBatch {
   examples: PracticeExample[];
   /** If the model answered them first: how many of the shown examples it got right. */
   rightCount?: number;
+  /** Only after a step recorded in detail: did the step help on this batch? (measured without dropout) */
+  check?: {
+    lossBefore: number;
+    lossAfter: number;
+    /** Right answers (greedy) of the shown examples after the step. */
+    rightAfter: number;
+    /** Letters of the whole batch whose right letter became more / less likely. */
+    lettersUp: number;
+    lettersDown: number;
+  };
 }
 
 /** Chosen from the experiments in docs/DECISIONS.md. */
@@ -144,6 +172,8 @@ export class FormTrainer {
   private mix: MixPart[] = [];
   /** The latest batch, and what the model answered before learning from it (if asked to). */
   private last: { step: number; tasks: Task[]; answers: string[]; loss: number; tokenP: Float32Array; Tt: number } | null = null;
+  /** The latest step, recorded in detail (only when `trainStep(…, true)`); null otherwise. */
+  record: StepRecord | null = null;
 
   constructor(public dataset: Dataset, opts: TrainerOptions) {
     this.rng = new Rng(opts.seed ^ 0x5eed);
@@ -226,17 +256,41 @@ export class FormTrainer {
    * questions the ordinary way (greedy, no dropout, weights only read), so the
    * UI can show "learning data → what it answered → right or wrong" before
    * the mistake is measured and the numbers are nudged.
+   *
+   * With `detail`, the step is also recorded (`record`, see stepDetail.ts):
+   * the batch measured the ordinary way before and after, each example's
+   * share of every push, and Adam's memory before the nudge. The step itself
+   * (and so the training) is exactly the same as without it.
    */
-  trainStep(answerFirst = 0): number {
+  trainStep(answerFirst = 0, detail = false): number {
     if (this.mix.length === 0) throw new Error('Nothing to train on');
     const tasks = Array.from({ length: this.batchSize }, () => this.sampleTask());
     const answers = answerFirst > 0 ? this.runTasks(tasks.slice(0, answerFirst)) : [];
     const batch = makeBatch(tasks.map((t) => this.toExample(t)), this.ids);
+    const params = this.model.params;
+    const pad = this.vocab.pad;
+    let pBefore: Float32Array | null = null;
+    let before: Float32Array[] | null = null;
+    const dropState = this.model.dropoutState();
+    if (detail) {
+      pBefore = this.measure(batch);
+      before = params.snapshot();
+    }
     this.opt.zeroGrad();
     const tape = new Tape();
     const tokenP = new Float32Array(batch.B * batch.Tt);
-    const loss = tape.run(() => this.model.loss(batch, this.vocab.pad, tokenP));
+    const loss = tape.run(() => this.model.loss(batch, pad, tokenP));
     tape.backward(loss);
+    let grad: Float32Array[] = [];
+    let perExample: Float32Array[][] | null = null;
+    let mPrev: Float32Array[] = [], vPrev: Float32Array[] = [];
+    if (detail) {
+      grad = params.list.map((p) => (p.grad ? p.grad.slice() : new Float32Array(p.size)));
+      if (batch.B <= SPLIT_MAX_BATCH) perExample = this.splitPush(batch, dropState);
+      params.list.forEach((p, i) => p.ensureGrad().set(grad[i]));
+      mPrev = params.list.map((p) => this.opt.moments(p)?.m.slice() ?? new Float32Array(p.size));
+      vPrev = params.list.map((p) => this.opt.moments(p)?.v.slice() ?? new Float32Array(p.size));
+    }
     const info = this.opt.step();
     this.step++;
     this.lastLoss = loss.item();
@@ -244,7 +298,59 @@ export class FormTrainer {
     this.lastGradNorm = info.gradNorm;
     this.lossEma = this.lossEma === null ? this.lastLoss : 0.95 * this.lossEma + 0.05 * this.lastLoss;
     this.last = { step: this.step, tasks, answers, loss: this.lastLoss, tokenP, Tt: batch.Tt };
+    this.record = null;
+    if (detail) {
+      const o = this.opt.opts;
+      const pAfter = this.measure(batch);
+      this.record = {
+        step: this.step, tasks, before: before!, grad, perExample, mPrev, vPrev,
+        lr: info.lr, baseLr: o.lr, warmupSteps: o.warmupSteps, t: this.opt.t, beta1: o.beta1, beta2: o.beta2, eps: o.eps, weightDecay: o.weightDecay,
+        gradNorm: info.gradNorm, clipNorm: o.clipNorm, clip: info.gradNorm > o.clipNorm ? o.clipNorm / info.gradNorm : 1,
+        pBefore: pBefore!, pAfter, Tt: batch.Tt, lossBefore: meanLoss(pBefore!), lossAfter: meanLoss(pAfter),
+        answersAfter: this.runTasks(tasks),
+      };
+    }
     return this.lastLoss;
+  }
+
+  /** Chance of the right token at every position of the batch, measured the ordinary way (no dropout, nothing learned). */
+  private measure(batch: Batch): Float32Array {
+    const p = new Float32Array(batch.B * batch.Tt);
+    rightTokenProbs(this.model.logits(batch), batch.tgtOut, this.vocab.pad, p);
+    return p;
+  }
+
+  /**
+   * Each example's share of the push (gradient) of every number: the
+   * gradient of the batch mistake counting only that example's letters,
+   * with the same numbers switched off (dropout replayed). The shares add up
+   * to the whole push. Leaves the dropout random numbers where the step left them.
+   */
+  private splitPush(batch: Batch, dropState: number): Float32Array[][] {
+    const pad = this.vocab.pad;
+    const params = this.model.params;
+    const resume = this.model.dropoutState();
+    let N = 0;
+    for (const t of batch.tgtOut) if (t !== pad) N++;
+    const out: Float32Array[][] = [];
+    for (let b = 0; b < batch.B; b++) {
+      const tgtOut = new Int32Array(batch.tgtOut.length).fill(pad);
+      let n = 0;
+      for (let i = b * batch.Tt; i < (b + 1) * batch.Tt; i++) { tgtOut[i] = batch.tgtOut[i]; if (tgtOut[i] !== pad) n++; }
+      this.model.setDropoutState(dropState);
+      params.zeroGrad();
+      const tape = new Tape();
+      const l = tape.run(() => this.model.loss({ ...batch, tgtOut }, pad));
+      tape.backward(l);
+      const w = n / N;
+      out.push(params.list.map((p) => {
+        const g = new Float32Array(p.size);
+        if (p.grad) for (let i = 0; i < g.length; i++) g[i] = p.grad[i] * w;
+        return g;
+      }));
+    }
+    this.model.setDropoutState(resume);
+    return out;
   }
 
   /** The latest batch: its learning data and, if it answered first, its answers. Null before the first step. */
@@ -258,6 +364,13 @@ export class FormTrainer {
       const letters = chars.map((char, t) => ({ char, p: last.tokenP[i * last.Tt + t] }));
       const loss = letters.reduce((s, l) => s - Math.log(l.p + 1e-9), 0) / letters.length;
       const ex: PracticeExample = { source: task.source, lang: task.to, form: task.form, target: task.answer, letters, loss };
+      const rec = this.record?.step === last.step ? this.record : null;
+      if (rec) {
+        const b = chars.map((_, t) => rec.pBefore[i * rec.Tt + t]);
+        const a = chars.map((_, t) => rec.pAfter[i * rec.Tt + t]);
+        const answer = rec.answersAfter[i];
+        ex.check = { before: b, after: a, lossBefore: meanLoss(b), lossAfter: meanLoss(a), answer, status: judge(answer, task.answer) as 'correct' | 'close' | 'wrong' };
+      }
       if (i < last.answers.length) {
         ex.answer = last.answers[i];
         ex.status = judge(ex.answer, task.answer) as 'correct' | 'close' | 'wrong';
@@ -268,7 +381,17 @@ export class FormTrainer {
     const answered = last.answers.length >= examples.length && examples.length > 0;
     let letterCount = 0;
     for (const p of last.tokenP) if (!Number.isNaN(p)) letterCount++;
-    return { step: last.step, batchSize: last.tasks.length, loss: last.loss, letterCount, examples, ...(answered ? { rightCount: right } : {}) };
+    const out: PracticeBatch = { step: last.step, batchSize: last.tasks.length, loss: last.loss, letterCount, examples, ...(answered ? { rightCount: right } : {}) };
+    const rec = this.record?.step === last.step ? this.record : null;
+    if (rec) {
+      let up = 0, down = 0;
+      rec.pBefore.forEach((p, i) => { if (Number.isNaN(p)) return; if (rec.pAfter[i] > p) up++; else if (rec.pAfter[i] < p) down++; });
+      out.check = {
+        lossBefore: rec.lossBefore, lossAfter: rec.lossAfter, lettersUp: up, lettersDown: down,
+        rightAfter: examples.filter((e) => e.check?.status === 'correct').length,
+      };
+    }
+    return out;
   }
 
   setLearningRate(lr: number): void {
@@ -331,6 +454,13 @@ export class FormTrainer {
     const src = this.vocab.encodeWord(text).slice(0, this.model.config.maxLen - 2);
     return this.model.explain(this.dataset.targetId(lang, form), src, this.ids, position);
   }
+}
+
+/** Average mistake (−ln p) over the given chances (NaN = padding, skipped). */
+export function meanLoss(ps: ArrayLike<number>): number {
+  let s = 0, n = 0;
+  for (let i = 0; i < ps.length; i++) { if (Number.isNaN(ps[i])) continue; s -= Math.log(ps[i] + 1e-9); n++; }
+  return n ? s / n : 0;
 }
 
 /** Right, one letter off ("close") or wrong, against the one right answer. */

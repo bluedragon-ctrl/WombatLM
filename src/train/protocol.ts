@@ -66,7 +66,13 @@ export type ToWorker =
    * `position` (a guess-bar column) of the answer to this question. Answered
    * with `explain`; `id` is echoed back.
    */
-  | { type: 'explain'; id: number; text: string; lang: string; form: string; position: number };
+  | { type: 'explain'; id: number; text: string; lang: string; form: string; position: number }
+  /**
+   * Why did number `index` of parameter `name` change in the latest step?
+   * Only for a step recorded in detail (Step ×1 while paused). Answered with
+   * `why`; `id` is echoed back.
+   */
+  | { type: 'why'; id: number; name: string; index: number };
 
 /**
  * What a weight heatmap shows:
@@ -218,8 +224,22 @@ export interface AnswerMsg {
   /** Geometric mean of the chosen letters' probabilities, 0..1. */
   confidence: number;
   attention: AttentionMap[];
-  /** Hidden states along the way, for "follow the signal" (transferred buffers). */
+  /**
+   * Hidden states along the way, for "follow the signal" and "follow the
+   * tokens" (transferred buffers): enc.in, enc0.out, memory, dec.in, dec0.out, dec.final.
+   */
   activations: Activation[];
+  /** Token ids of the input (task token + letters). */
+  inputIds: number[];
+  /**
+   * The rows looked up for every token, [T × d] each: its row of the letter
+   * table and the row of its position, for the input (`encTok`, `encPos`)
+   * and for every token going into the writer (`decTok`, `decPos`: the task
+   * token, then the answer so far). Their sums are `enc.in` and `dec.in`.
+   */
+  lookup: { encTok: Float32Array; encPos: Float32Array; decTok: Float32Array; decPos: Float32Array };
+  /** How many tokens the model can choose from (every guess is a score for each of them). */
+  vocabSize: number;
   badge: Badge;
   /** For real / hidden: the real word and how the output scored. */
   answer?: { word: string; status: 'correct' | 'close' | 'wrong' };
@@ -329,4 +349,72 @@ export interface LetterMapMsg {
   counts: number[];
 }
 
-export type FromWorker = ReadyMsg | TickMsg | EvalMsg | AnswerMsg | WeightsMsg | ExplainMsg | LetterMapMsg | ErrorMsg;
+/** One number of the model, and how the latest step changed it. */
+export interface NumberRef {
+  /** Parameter name and the number's place in it (row-major), with its row and column. */
+  name: string;
+  index: number;
+  row: number;
+  col: number;
+  before: number;
+  after: number;
+  /** Its push (gradient) in the step. */
+  grad: number;
+}
+
+/**
+ * Sent after a step recorded in detail (Step ×1 while paused): what the
+ * step changed in the model. The batch before / after is in the tick's
+ * `practice.check`.
+ */
+export interface StepDetailMsg {
+  type: 'stepDetail';
+  step: number;
+  /** Learning rate used, the one set, Adam's update count and the warm-up length. */
+  lr: number;
+  baseLr: number;
+  t: number;
+  warmupSteps: number;
+  /** Length of all pushes together, the limit, and the factor every push was multiplied by (1 = not limited). */
+  gradNorm: number;
+  clipNorm: number;
+  clip: number;
+  /** How many numbers the model has, how many moved, the biggest and the median move. */
+  numbers: { total: number; moved: number; max: number; median: number };
+  /** The numbers that moved the most, and those pushed the hardest. */
+  top: { change: NumberRef[]; push: NumberRef[] };
+  /** Each example's share of a push is available (the batch was not too big). */
+  split: boolean;
+}
+
+/** One example of the batch and its share of a number's push. */
+export interface PushShare {
+  source: string;
+  lang: string;
+  form: string;
+  target: string;
+  share: number;
+}
+
+/** The whole calculation of one number's change in the latest step (see stepDetail.ts). */
+export interface WhyMsg {
+  type: 'why';
+  id: number;
+  /** Training step it explains; `missing` if that step was not recorded in detail (or is no longer the latest). */
+  step: number;
+  missing?: boolean;
+  ref?: NumberRef;
+  /** Its value now (the real result of the step). */
+  now?: number;
+  calc?: {
+    grad: number; clip: number; gradUsed: number;
+    mPrev: number; vPrev: number; m: number; v: number;
+    beta1: number; beta2: number; eps: number; t: number;
+    bc1: number; bc2: number; mHat: number; vHat: number;
+    lr: number; baseLr: number; warmupSteps: number; decay: number; move: number; after: number;
+  };
+  /** Each example's share of the push, in batch order (absent if not split). */
+  shares?: PushShare[];
+}
+
+export type FromWorker = ReadyMsg | TickMsg | EvalMsg | AnswerMsg | WeightsMsg | ExplainMsg | LetterMapMsg | StepDetailMsg | WhyMsg | ErrorMsg;

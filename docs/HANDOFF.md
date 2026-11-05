@@ -30,6 +30,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 | Inside the model explained (user) | **Done** (branch `claude/epic-darwin-rcolin`). "Where is it learning?" diagram (change per step per part, one scale, lines over time), "Look inside one letter" (every number on the way to one answer letter, what each step adds, exact where-it-comes-from sums on click, used weights outlined in the heatmaps; also from a click on the guess bars), heatmaps with letter/position labels, one shared colour scale (toggle), plain-language tooltips, number × number matrices as thumbnails in plain mode. See DECISIONS. |
 | Slovak and German (user) | **Done** (branch `claude/gallant-tesla-msdpx7`, first draft of the data). `data/animals.sk.json`, `data/animals.de.json` merged into the base animals by id (`LANGUAGE_PACKS`), 8 new letters, 71 tokens. Measured: d_model 32 is big enough (4 languages 95–99 % known at 30 000 steps, same as d 48), but it needs ~4× the steps. See DECISIONS. |
 | Ask form (user) | **Done** (branch `ccr-a4ae8508-s8hr46`). Ask tab: 1. Language · 2. Animal · 3. Which word, then **Answer now** / **✍️ Answer slowly** (letter by letter with a "what the model is doing" box); answers only when asked; no silent language switch. See DECISIONS. |
+| One step in full + tokens' way (user) | **Done** (branch `ccr-8bd786fd-ary3n5`). Step ×1 while paused records the step in detail (`src/train/stepDetail.ts`, `FormTrainer.record`, `stepDetail` / `why` messages): batch before → after (no dropout), "What this step changed" panel with each number's whole calculation (gradient split by example, clipping, Adam, result), 5th cycle stage "check", heatmap click → why. Ask tab: "Follow the tokens through the model" stepper (`src/ui/journey.ts`). See DECISIONS and `docs/REVIEW_TRANSPARENCY.md`. |
 | M4 time travel | **Next.** |
 | M5–M7 | Not started. |
 
@@ -51,6 +52,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 
 ## Waiting for the user
 
+- **Czech UI copy:** step-in-full / tokens PR: `sd.*`, `jr.*`, `cycle.check*`, `practice.check*`, `practice.nowAnswers`, `inside.whyClick`, `signal.memory`, `signal.dec.final`.
 - **Transparency review:** `docs/REVIEW_TRANSPARENCY.md` lists what a user cannot yet see in one learning step and in answering, with a suggested order (before → after the nudge, sampling/temperature, the optimiser, the generation loop). Pick what to build.
 
 - **Slovak and German:** review of `data/animals.sk.json` and `data/animals.de.json` by a fluent speaker (`docs/DATA_REVIEW.md` has the tables); decide the "Learn until" default / options for four languages (5 000 steps gives known English ~40–50 %; ~30 000 for 95 %+).
@@ -70,7 +72,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 ## Useful commands
 
 ```
-npm test                                   # vitest (105 tests)
+npm test                                   # vitest (113 tests)
 npm run build                              # typecheck + vite build
 npm run e2e                                # Playwright smoke test (builds + previews on :4173)
 npm run screenshots                        # PR screenshots (docs/screenshots/m3, docs/screenshots/learn-vs-answer)

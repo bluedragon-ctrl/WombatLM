@@ -53,7 +53,7 @@ describe('explain (look inside one letter)', () => {
     const sig = tr.activations['dec0.out'];
     const last = ex.stages[ex.stages.length - 1].x;
     for (let i = 0; i < config.dModel; i++) expect(last[i]).toBeCloseTo(sig.data[1 * sig.d + i], 4);
-    // "Follow the signal" still gets only the in/out strips.
-    expect(Object.keys(tr.activations).sort()).toEqual(['dec.in', 'dec0.out', 'enc.in', 'enc0.out']);
+    // "Follow the signal" gets the in/out strips, the encoder result and the decoder's final numbers.
+    expect(Object.keys(tr.activations).sort()).toEqual(['dec.final', 'dec.in', 'dec0.out', 'enc.in', 'enc0.out', 'memory']);
   });
 });

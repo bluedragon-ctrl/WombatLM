@@ -218,7 +218,13 @@ questions the demo raises:
 
 ---
 
-## 4. Suggested order
+## 4. Status
+
+Done in the branch `ccr-8bd786fd-ary3n5` (see DECISIONS, "One learning step in full"):
+**L1** before → after (Step ×1 only), **L2** where the gradient comes from (each example's share of a number's gradient; not yet the p − 1 / p error signal of one letter), **L3** the optimiser for one number (lr, warm-up, clipping, Adam, result; gradient length shown), **L4** dropout explained, **L5** partly (the same example measured before and after, and its new answer), **A2** the loop (↩ each written token goes back in), **A4** reading once / writing per token, **A6** the rest of the chances.
+Still open: L6–L8, A1 (sampling / temperature), A3 (force a letter), A5 (query · key scores), A7.
+
+## 5. Suggested order
 
 | # | Item | Why first | Effort |
 |---|---|---|---|

@@ -32,7 +32,18 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-test=tab-learn]');
   await expect(page.locator('[data-test=learning]')).toContainText(/not learning/);
   await page.click('text=Step ×1');
-  await expect(page.locator('[data-test=cycle] .stage.lit')).toHaveCount(4, { timeout: 5_000 });
+  // Step ×1 while paused is recorded in detail: the fifth stage checks the same examples again.
+  await expect(page.locator('[data-test=cycle] .stage.lit')).toHaveCount(5, { timeout: 5_000 });
+  await expect(page.locator('[data-test=practice] td.check .check-loss')).toHaveCount(16);
+  await expect(page.locator('[data-test=check-explain]')).toContainText(/After the step/);
+  // What this step changed: the numbers that moved, and why the first one moved, to the last digit.
+  await expect(page.locator('[data-test=sd-numbers] tbody tr')).toHaveCount(10);
+  await expect(page.locator('[data-test=sd-why]')).toContainText(/exactly the model's number now/);
+  await expect(page.locator('[data-test=sd-shares] tr')).not.toHaveCount(0);
+  await page.click('[data-list=push]');
+  await page.locator('[data-test=sd-numbers] tbody tr').nth(1).click();
+  await expect(page.locator('[data-test=sd-numbers] tbody tr.on')).toHaveCount(1);
+  await expect(page.locator('[data-test=sd-why]')).toContainText(/exactly the model's number now/);
   // The whole batch: learning data with the right answers, and what it answered before learning from them.
   await expect(page.locator('[data-test=practice] tr.ex')).toHaveCount(16);
   await expect(page.locator('[data-test=practice] td.answer .word-own')).toHaveCount(16);
@@ -59,6 +70,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-test=go-learn]');
   await page.click('[data-test=play]');
   await expect(page.locator('[data-test=status]')).toContainText(/steps\/s/, { timeout: 10_000 });
+  await expect(page.locator('[data-test=step-detail]')).toContainText(/Not shown while it learns/);
   await expect(page.locator('[data-test=learning]')).toContainText(/numbers nudged/);
   // While it learns, the answer waits and says it is out of date.
   await page.click('[data-test=tab-ask]');
@@ -99,6 +111,16 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-test=answer-now]');
   await expect(page.locator('[data-test=output] .from')).toContainText('kočka');
   await expect(page.locator('canvas.bars')).toBeVisible();
+  // Follow the tokens: tokens, letter table, reading once, then one writing pass per token.
+  await expect(page.locator('[data-test=journey-caption]')).toContainText(/becomes tokens/);
+  await page.click('[data-test=journey-next]');
+  await page.click('[data-test=journey-next]');
+  await expect(page.locator('[data-test=journey-caption]')).toContainText(/only once/);
+  await page.click('[data-test=journey-next]');
+  await expect(page.locator('[data-test=journey-caption]')).toContainText(/pass 1 of/);
+  await page.click('[data-test=journey-next]');
+  await expect(page.locator('[data-test=journey-diagram] [data-pass]')).toHaveCount(2);
+  await expect(page.locator('[data-test=journey-caption]')).toContainText(/goes in at position 2/);
   // Answer slowly: what the model is doing, letter by letter; the same button stops it.
   await page.click('[data-test=answer-slow]');
   await expect(page.locator('[data-test=slow-caption]')).toContainText(/Reading the animal/, { timeout: 3_000 });
