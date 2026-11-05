@@ -205,14 +205,14 @@ export class Block {
   /** Full-sequence forward (training, visualisation). x: [B*T, d]. */
   forward(
     x: Tensor, B: number, T: number, selfMask: Float32Array | undefined,
-    memory?: { kv: KV; mask: Float32Array | undefined }, trace?: Trace,
+    memory?: { kv: KV; mask: Float32Array | undefined }, trace?: Trace, drop: (t: Tensor) => Tensor = (t) => t,
   ): Tensor {
     const h1 = this.ln1.forward(x);
-    x = add(x, this.self.attend(h1, this.self.keysValues(h1, B, T), B, T, selfMask, trace, `${this.name}.self`));
+    x = add(x, drop(this.self.attend(h1, this.self.keysValues(h1, B, T), B, T, selfMask, trace, `${this.name}.self`)));
     if (this.cross && this.lnCross && memory) {
-      x = add(x, this.cross.attend(this.lnCross.forward(x), memory.kv, B, T, memory.mask, trace, `${this.name}.cross`));
+      x = add(x, drop(this.cross.attend(this.lnCross.forward(x), memory.kv, B, T, memory.mask, trace, `${this.name}.cross`)));
     }
-    x = add(x, this.ffn.forward(this.ln2.forward(x)));
+    x = add(x, drop(this.ffn.forward(this.ln2.forward(x))));
     trace?.set(`${this.name}.out`, x);
     return x;
   }

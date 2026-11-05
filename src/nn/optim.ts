@@ -14,6 +14,8 @@ export interface AdamOptions {
   eps: number;
   clipNorm: number;
   warmupSteps: number;
+  /** Decoupled weight decay (AdamW), applied to matrices only. 0 = off. */
+  weightDecay: number;
 }
 
 export const DEFAULT_ADAM: AdamOptions = {
@@ -23,6 +25,7 @@ export const DEFAULT_ADAM: AdamOptions = {
   eps: 1e-9,
   clipNorm: 1.0,
   warmupSteps: 100,
+  weightDecay: 0,
 };
 
 export interface StepInfo {
@@ -75,7 +78,9 @@ export class Adam {
       if (!v || v.length !== p.size) { v = new Float32Array(p.size); this.v.set(p, v); }
       const g = p.grad;
       const w = p.data;
+      const decay = p.shape.length > 1 ? 1 - lr * this.opts.weightDecay : 1;
       for (let i = 0; i < w.length; i++) {
+        if (decay !== 1) w[i] *= decay;
         const gi = g[i] * clip;
         m[i] = beta1 * m[i] + (1 - beta1) * gi;
         v[i] = beta2 * v[i] + (1 - beta2) * gi * gi;

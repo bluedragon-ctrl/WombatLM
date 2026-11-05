@@ -524,3 +524,32 @@ export function crossEntropy(logits: Tensor, targets: Int32Array, ignoreIndex = 
   });
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Regularisation
+// ---------------------------------------------------------------------------
+
+/**
+ * Dropout: during training, randomly silence a fraction `p` of the numbers
+ * (and scale the rest up so the average stays the same). This stops the
+ * model from relying on any single number, which helps it generalise.
+ * `random` returns uniform numbers in [0, 1).
+ */
+export function dropout(x: Tensor, p: number, random: () => number): Tensor {
+  if (p <= 0) return x;
+  const n = x.size;
+  const keep = 1 / (1 - p);
+  const mask = new Float32Array(n);
+  const out = Tensor.zeros(x.shape.slice());
+  for (let i = 0; i < n; i++) {
+    mask[i] = random() < p ? 0 : keep;
+    out.data[i] = x.data[i] * mask[i];
+  }
+  recordOp([x], out, () => {
+    const g = out.grad;
+    if (!g) return;
+    const gx = x.ensureGrad();
+    for (let i = 0; i < n; i++) gx[i] += g[i] * mask[i];
+  });
+  return out;
+}

@@ -11,7 +11,7 @@
  * One embedding table is shared by encoder input, decoder input and the
  * output layer ("tied"), so there is a single "letter map" to look at.
  */
-import { crossEntropy, gather, add, matmul } from './ops';
+import { crossEntropy, dropout, gather, add, matmul } from './ops';
 import { Rng } from './rng';
 import { growVocab } from './serialize';
 import { Tensor } from './tensor';
@@ -28,6 +28,8 @@ export interface TranslatorConfig {
   decLayers: number;
   /** Maximum sequence length (positions), including special tokens. */
   maxLen: number;
+  /** Dropout probability used while training (0 = off). */
+  dropout?: number;
 }
 
 export const TRANSLATOR_DEFAULTS: Omit<TranslatorConfig, 'vocabSize'> = {
@@ -119,9 +121,14 @@ export class Translator {
   readonly encNorm: LayerNorm;
   readonly decNorm: LayerNorm;
   readonly outBias: Tensor;
+  /** Random numbers for dropout (separate from initialisation so runs stay reproducible). */
+  private dropRng: Rng;
+  /** True only inside `loss()`: dropout is active. */
+  private training = false;
 
   constructor(config: TranslatorConfig, seed: number) {
     this.config = { ...config };
+    this.dropRng = new Rng(seed ^ 0xd209);
     const { vocabSize: V, dModel: d, heads, ffn, encLayers, decLayers, maxLen } = config;
     const ps = new ParamSet(new Rng(seed));
     this.params = ps;
@@ -150,18 +157,22 @@ export class Translator {
     this.config.vocabSize = newTokens.length;
   }
 
+  /** Dropout while training, identity otherwise. */
+  private readonly drop = (t: Tensor): Tensor =>
+    this.training && this.config.dropout ? dropout(t, this.config.dropout, () => this.dropRng.next()) : t;
+
   /** Token + position embeddings for [B, T] token ids. */
   private embed(tokens: Int32Array, B: number, T: number, posTable: Tensor): Tensor {
     const pos = new Int32Array(B * T);
     for (let b = 0; b < B; b++) for (let t = 0; t < T; t++) pos[b * T + t] = t;
-    return add(gather(this.tokEmb, tokens), gather(posTable, pos));
+    return this.drop(add(gather(this.tokEmb, tokens), gather(posTable, pos)));
   }
 
   /** Encoder: [B*Ts] tokens -> memory [B*Ts, d]. */
   encode(src: Int32Array, srcValid: Uint8Array, B: number, Ts: number, trace?: Trace): Tensor {
     let x = this.embed(src, B, Ts, this.encPos);
     const mask = keyPaddingMask(srcValid, B, Ts, Ts);
-    for (const block of this.enc) x = block.forward(x, B, Ts, mask, undefined, trace);
+    for (const block of this.enc) x = block.forward(x, B, Ts, mask, undefined, trace, this.drop);
     return this.encNorm.forward(x);
   }
 
@@ -172,7 +183,7 @@ export class Translator {
     const crossMask = keyPaddingMask(srcValid, B, Tt, Ts);
     for (const block of this.dec) {
       const kv = block.cross!.keysValues(memory, B, Ts);
-      y = block.forward(y, B, Tt, selfMask, { kv, mask: crossMask }, trace);
+      y = block.forward(y, B, Tt, selfMask, { kv, mask: crossMask }, trace, this.drop);
     }
     return this.project(this.decNorm.forward(y));
   }
@@ -189,7 +200,12 @@ export class Translator {
 
   /** Mean cross-entropy over all real target characters. */
   loss(batch: Batch, padId: number): Tensor {
-    return crossEntropy(this.logits(batch), batch.tgtOut, padId);
+    this.training = true;
+    try {
+      return crossEntropy(this.logits(batch), batch.tgtOut, padId);
+    } finally {
+      this.training = false;
+    }
   }
 
   /**
