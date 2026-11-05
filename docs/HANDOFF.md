@@ -28,7 +28,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 | Mistake per line (user) | **Done in a PR.** Practice table: mistake (loss) per example, letters tinted by their own mistake, an explanation how the step's mistake is the average over all letters. See DECISIONS. |
 | Letter map explained (user) | **Done in a PR.** What-to-notice text first (how it is made behind "?"), click or type a letter to see its 4 closest letters on all 32 numbers (centred cosine), rare letters flagged. See DECISIONS. |
 | Inside the model explained (user) | **Done** (branch `claude/epic-darwin-rcolin`). "Where is it learning?" diagram (change per step per part, one scale, lines over time), "Look inside one letter" (every number on the way to one answer letter, what each step adds, exact where-it-comes-from sums on click, used weights outlined in the heatmaps; also from a click on the guess bars), heatmaps with letter/position labels, one shared colour scale (toggle), plain-language tooltips, number × number matrices as thumbnails in plain mode. See DECISIONS. |
-| Translation mode (user) | **Experiment done, plan written** (`docs/TRANSLATION_PLAN.md`, results in DECISIONS). Translation comes back as a second task mode for its teaching value. Steps 1–4 not started; open questions for the user in the plan, section 4. |
+| Translation mode (user) | **Experiment done, plan written** (`docs/TRANSLATION_PLAN.md`, results in DECISIONS). Translation comes back as a second task mode for its teaching value, without copy practice (user). Steps 1–4 not started; open questions for the user in the plan, section 4. |
 | M4 time travel | **Next.** |
 | M5–M7 | Not started. |
 
