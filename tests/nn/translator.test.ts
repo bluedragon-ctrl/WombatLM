@@ -79,6 +79,20 @@ describe('translator', () => {
     }
   });
 
+  it('greedy batches: words that end early are dropped without changing the others', () => {
+    const model = new Translator({ ...tinyConfig, dModel: 16, heads: 2, targetStart: true }, 6);
+    train(model, pairs, 400);
+    // Words of different lengths (the trained ones end early, random ones run longer).
+    const rng = new Rng(8);
+    const inputs = [
+      ...pairs.map((p) => ({ target: p.target, src: p.src })),
+      ...Array.from({ length: 9 }, () => ({ target: 3 + rng.int(2), src: Array.from({ length: 1 + rng.int(5) }, () => 5 + rng.int(7)) })),
+    ];
+    const together = model.greedy(inputs, ids);
+    expect(new Set(together.map((o) => o.length)).size).toBeGreaterThan(1);
+    expect(together).toEqual(inputs.map((i) => model.greedy([i], ids)[0]));
+  });
+
   it('inspect returns one probability row per output step and attention maps', () => {
     const model = new Translator({ ...tinyConfig, dModel: 16, heads: 2, ffn: 32 }, 1);
     train(model, pairs, 400);

@@ -259,37 +259,47 @@ export class Translator {
 
   /**
    * Greedy decoding for many inputs at once, using a key/value cache so each
-   * step only computes the newest position. Returns generated ids (no <eos>).
+   * step only computes the newest position. Words that have ended (<eos>) are
+   * dropped from the batch, so later steps only compute the words still being
+   * written. Returns generated ids (no <eos>).
    */
   greedy(inputs: readonly { target: number; src: number[] }[], ids: SpecialIds, maxSteps = this.config.maxLen - 1): number[][] {
     if (inputs.length === 0) return [];
     const batch = makeBatch(inputs.map((i) => ({ ...i, tgt: [] })), ids);
     const { B, Ts } = batch;
+    const H = this.config.heads;
     const memory = this.encode(batch.src, batch.srcValid, B, Ts);
-    const crossMask = keyPaddingMask(batch.srcValid, B, 1, Ts);
-    const crossKV: KV[] = this.dec.map((blk) => blk.cross!.keysValues(memory, B, Ts));
+    let crossMask = keyPaddingMask(batch.srcValid, B, 1, Ts);
+    let crossKV: KV[] = this.dec.map((blk) => blk.cross!.keysValues(memory, B, Ts));
     const caches = this.dec.map(() => ({ kv: null as KV | null }));
     const V = this.vocabSize;
     const out: number[][] = Array.from({ length: B }, () => []);
-    const done = new Uint8Array(B);
+    /** Which inputs are still being written (row i of the current batch is input alive[i]). */
+    let alive = Array.from({ length: B }, (_, b) => b);
     let current = this.decoderInput({ ...batch, Tt: 1, tgtIn: new Int32Array(B).fill(ids.bos) });
     const steps = Math.min(maxSteps, this.config.maxLen);
     for (let t = 0; t < steps; t++) {
-      let y = add(gather(this.tokEmb, current), gather(this.decPos, new Int32Array(B).fill(t)));
-      this.dec.forEach((blk, l) => { y = blk.step(y, B, caches[l], { kv: crossKV[l], mask: crossMask }); });
+      const n = alive.length;
+      let y = add(gather(this.tokEmb, current), gather(this.decPos, new Int32Array(n).fill(t)));
+      this.dec.forEach((blk, l) => { y = blk.step(y, n, caches[l], { kv: crossKV[l], mask: crossMask }); });
       const logits = this.project(this.decNorm.forward(y));
-      const next = new Int32Array(B);
-      let allDone = true;
-      for (let b = 0; b < B; b++) {
-        const id = argmax(logits.data, b * V, V);
-        next[b] = id;
-        if (done[b]) continue;
-        if (id === ids.eos) done[b] = 1;
-        else out[b].push(id);
-        if (!done[b]) allDone = false;
+      const keep: number[] = [];
+      const next: number[] = [];
+      for (let i = 0; i < n; i++) {
+        const id = argmax(logits.data, i * V, V);
+        if (id === ids.eos) continue;
+        out[alive[i]].push(id);
+        keep.push(i);
+        next.push(id);
       }
-      if (allDone) break;
-      current = next;
+      if (keep.length === 0) break;
+      if (keep.length < n) {
+        alive = keep.map((i) => alive[i]);
+        crossKV = crossKV.map((kv) => ({ k: keepRows(kv.k, keep, H), v: keepRows(kv.v, keep, H) }));
+        for (const c of caches) c.kv = { k: keepRows(c.kv!.k, keep, H), v: keepRows(c.kv!.v, keep, H) };
+        crossMask = keepMaskRows(crossMask, keep, Ts);
+      }
+      current = Int32Array.from(next);
     }
     return out;
   }
@@ -332,6 +342,24 @@ export class Translator {
     const p = Math.max(0, Math.min(position, batch.Tt - 1));
     return explainLetter(this, trace, Array.from(this.decoderInput(batch)), p, logits.data.subarray(p * this.vocabSize, (p + 1) * this.vocabSize), output);
   }
+}
+
+/**
+ * Keep only some batch rows of a [B*group, ...] tensor (rows of the same
+ * input come in groups, e.g. one per attention head). Inference only.
+ */
+function keepRows(t: Tensor, keep: readonly number[], group: number): Tensor {
+  const per = (t.size / t.shape[0]) * group;
+  const out = Tensor.zeros([keep.length * group, ...t.shape.slice(1)]);
+  keep.forEach((k, j) => out.data.set(t.data.subarray(k * per, (k + 1) * per), j * per));
+  return out;
+}
+
+/** Keep only some batch rows of a [B, 1, Tk] attention mask. */
+function keepMaskRows(mask: Float32Array, keep: readonly number[], Tk: number): Float32Array {
+  const out = new Float32Array(keep.length * Tk);
+  keep.forEach((k, j) => out.set(mask.subarray(k * Tk, (k + 1) * Tk), j * Tk));
+  return out;
 }
 
 /** Trace entries that "follow the signal" shows (the rest are for `explain`). */

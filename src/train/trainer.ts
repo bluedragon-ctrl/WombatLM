@@ -292,9 +292,19 @@ export class FormTrainer {
    * `inventions`, also ask for the forms the data does not have.
    */
   evaluate(opts: { inventions?: boolean; model?: Translator } = {}): EvalResult {
+    const tasks = this.evalTasks(opts.inventions ?? false);
+    return this.scoreTasks(tasks, this.runTasks(tasks, opts.model), this.step);
+  }
+
+  /** The questions `evaluate` asks (so they can also be answered a few at a time). */
+  evalTasks(inventions: boolean): Task[] {
     const tasks = this.dataset.formTasks();
-    if (opts.inventions) tasks.push(...this.dataset.missingFormTasks());
-    const outputs = this.runTasks(tasks, opts.model);
+    if (inventions) tasks.push(...this.dataset.missingFormTasks());
+    return tasks;
+  }
+
+  /** Score the answers to `evalTasks` given by the model at `step`. */
+  scoreTasks(tasks: readonly Task[], outputs: readonly string[], step: number): EvalResult {
     const results: TaskResult[] = tasks.map((t, i) => ({
       id: t.animal.id,
       lang: t.to,
@@ -307,7 +317,7 @@ export class FormTrainer {
       kind: t.answer ? formKind(t.source, t.answer) : undefined,
     }));
     const packs = new Map(this.dataset.animals.map((a) => [a.id, a.pack]));
-    return { step: this.step, scores: scoreResults(results, (id) => this.freshPacks.has(packs.get(id) ?? '')), results };
+    return { step, scores: scoreResults(results, (id) => this.freshPacks.has(packs.get(id) ?? '')), results };
   }
 
   /** Ask for one word form of free text, with full visualisation data. */

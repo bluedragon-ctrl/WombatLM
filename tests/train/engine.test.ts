@@ -24,8 +24,10 @@ function fakeHost() {
       t.fn();
     }
   };
+  /** Run queued work (background tests) until nothing is left. Only while not training. */
+  const settle = () => { for (let i = 0; i < 1000 && tasks.length; i++) runDue(1); };
   const of = <T extends FromWorker['type']>(type: T) => sent.filter((m) => m.type === type) as Extract<FromWorker, { type: T }>[];
-  return { host, sent, tasks, runDue, of };
+  return { host, sent, tasks, runDue, settle, of };
 }
 
 describe('Engine', () => {
@@ -57,18 +59,45 @@ describe('Engine', () => {
     const e = new Engine(h.host, ds);
     e.handle({ type: 'init', seed: 3 });
     e.handle({ type: 'watchTests', on: true });
-    const first = h.of('eval')[0] as EvalMsg;
+    expect(h.of('eval')).toHaveLength(0); // the test runs in the background…
+    h.settle();
+    const first = h.of('eval')[0] as EvalMsg; // …and reports when done
     expect(first.step).toBe(0);
     expect(first.inventions).toBe(true);
     e.handle({ type: 'watchTests', on: true }); // already tested at this step: no new test
+    h.settle();
     expect(h.of('eval')).toHaveLength(1);
     e.handle({ type: 'step', n: 2 });
+    h.settle();
     expect(h.of('eval').at(-1)!.step).toBe(2);
     e.handle({ type: 'watchTests', on: false });
     e.handle({ type: 'step', n: 2 });
+    h.settle();
     expect(h.of('eval').at(-1)!.step).toBe(2);
     e.handle({ type: 'evaluate' }); // on request
+    h.settle();
     expect(h.of('eval').at(-1)!.step).toBe(4);
+  });
+
+  it('a test answers with the weights of the step it started at, while training goes on', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    const twin = new Engine(fakeHost().host, ds);
+    e.handle({ type: 'init', seed: 4 });
+    twin.handle({ type: 'init', seed: 4 });
+    e.handle({ type: 'step', n: 30 });
+    twin.handle({ type: 'step', n: 30 });
+    e.handle({ type: 'evaluate', inventions: true });
+    h.runDue(1); // part of the test…
+    e.handle({ type: 'step', n: 5 }); // …then more training before it finishes
+    h.settle();
+    const ev = h.of('eval');
+    expect(ev).toHaveLength(1);
+    expect(ev[0].step).toBe(30);
+    const expected = twin.trainer.evaluate({ inventions: true });
+    expect(ev[0].results.map((r) => r.output)).toEqual(expected.results.map((r) => r.output));
+    expect(ev[0].scores).toEqual(expected.scores);
+    expect(e.trainer.step).toBe(35);
   });
 
   it('play runs slices until pause; stale slices do nothing', () => {
@@ -308,12 +337,14 @@ describe('Engine', () => {
     e.handle({ type: 'watchPractice', on: true });
     e.handle({ type: 'quiet', on: true });
     expect((h.of('tick').at(-1) as TickMsg).quiet).toBe(true);
+    h.settle();
     const evals = h.of('eval').length;
     e.handle({ type: 'play' });
     while (e.trainer.step < EVAL.everySteps + 5) h.runDue(1);
     expect(h.of('eval')).toHaveLength(evals); // no test while running quietly
     expect(h.of('tick').some((t) => t.practice)).toBe(false);
     e.handle({ type: 'pause' });
+    h.settle();
     expect(h.of('eval').at(-1)!.step).toBe(e.trainer.step); // tested on pause
   });
 
