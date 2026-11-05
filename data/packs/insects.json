@@ -1,0 +1,28 @@
+{
+  "pack": "insects",
+  "version": 1,
+  "title": {"cs": "Hmyz a další drobotina", "en": "Insects and creepy-crawlies"},
+  "animals": [
+    {"id": "ladybird", "names": {"cs": "beruška", "en": "ladybird"}, "split": "train"},
+    {"id": "grasshopper", "names": {"cs": "kobylka", "en": "grasshopper"}, "split": "train"},
+    {"id": "cricket", "names": {"cs": "cvrček", "en": "cricket"}, "split": "train"},
+    {"id": "dragonfly", "names": {"cs": "vážka", "en": "dragonfly"}, "split": "train"},
+    {"id": "beetle", "names": {"cs": "brouk", "en": "beetle"}, "split": "train"},
+    {"id": "wasp", "names": {"cs": "vosa", "en": "wasp"}, "split": "train"},
+    {"id": "hornet", "names": {"cs": "sršeň", "en": "hornet"}, "split": "unseen"},
+    {"id": "moth", "names": {"cs": "můra", "en": "moth"}, "split": "train"},
+    {"id": "flea", "names": {"cs": "blecha", "en": "flea"}, "split": "train"},
+    {"id": "louse", "names": {"cs": "veš", "en": "louse"}, "split": "train"},
+    {"id": "cockroach", "names": {"cs": "šváb", "en": "cockroach"}, "split": "train"},
+    {"id": "termite", "names": {"cs": "termit", "en": "termite"}, "split": "unseen"},
+    {"id": "mantis", "names": {"cs": "kudlanka", "en": "mantis"}, "split": "train"},
+    {"id": "scorpion", "names": {"cs": "štír", "en": "scorpion"}, "split": "train"},
+    {"id": "tick", "names": {"cs": "klíště", "en": "tick"}, "split": "train"},
+    {"id": "bumblebee", "names": {"cs": "čmelák", "en": "bumblebee"}, "split": "train"},
+    {"id": "firefly", "names": {"cs": "světluška", "en": "firefly"}, "split": "train"},
+    {"id": "centipede", "names": {"cs": "stonožka", "en": "centipede"}, "split": "train"},
+    {"id": "mosquito", "names": {"cs": "komár", "en": "mosquito"}, "split": "train"},
+    {"id": "cicada", "names": {"cs": "cikáda", "en": "cicada"}, "split": "unseen"},
+    {"id": "locust", "names": {"cs": "saranče", "en": "locust"}, "split": "train"}
+  ]
+}
