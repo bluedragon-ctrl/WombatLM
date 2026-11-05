@@ -201,19 +201,18 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 
 /* Learning data tab: everything the model learns from */
 main.data-main { padding: 14px 20px; max-width: 1600px; }
-.data-summary { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: baseline; margin-bottom: 10px; }
-.data-summary .stat { font-size: 14px; color: var(--muted); }
-.data-summary .stat b { font-size: 20px; color: var(--ink); font-variant-numeric: tabular-nums; }
-.data-summary .stat.kept b { color: var(--muted); }
-.data-summary p { flex-basis: 100%; margin: 0; }
+.data-summary { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; align-items: baseline; margin-bottom: 10px; font-size: 14px; color: var(--muted); }
+.data-summary .sum-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.data-summary b { font-size: 17px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .data-controls .picker { margin-bottom: 0; }
 .data-controls .data-search { width: 180px; }
-.data-legend { display: flex; gap: 14px; margin-bottom: 8px; }
+.data-legend { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 6px; }
+.data-legend .count { color: var(--muted); padding-left: 0; }
 .data-legend span, .data-table td.cell { padding: 2px 8px; border-radius: 4px; }
 .data-legend .learned, .data-table td.learned { background: #fffbeb; box-shadow: inset 0 0 0 1px #fde68a; color: var(--ink); }
 .data-legend .missing, .data-table td.missing { color: #cbd5e1; }
 .data-legend .kept { border: 1px dashed var(--muted); }
-.data-table { max-height: calc(100vh - 330px); min-height: 300px; overflow-y: auto; }
+/* The page scrolls (no inner scroll box); column headings stick to the top of the window. */
 .data-table table { border-collapse: separate; border-spacing: 4px 3px; font-size: 15px; }
 .data-table th { position: sticky; top: 0; background: var(--panel); text-align: left; color: var(--muted); font-weight: 500; font-size: 13px; padding: 2px 8px; }
 .data-table td.cell { cursor: pointer; white-space: nowrap; min-width: 90px; }
@@ -319,8 +318,9 @@ button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Learning data: what the model is given, the three views, questions and records. */
 .data-given { font-size: 14px; background: #f8fafc; border-left: 3px solid var(--accent); padding: 6px 10px; margin-bottom: 10px; border-radius: 0 4px 4px 0; }
-.data-views { margin-bottom: 4px; }
-.data-view-note { margin: 0 0 8px; }
+.data-view-row { align-items: baseline; flex-wrap: nowrap; margin-bottom: 6px; }
+.data-views { margin-bottom: 0; flex-shrink: 0; }
+.data-view-note { color: var(--muted); }
 .data-legend[hidden] { display: none; }
 .data-table table.questions { border-spacing: 6px 2px; font-size: 14px; }
 .data-table table.questions tr { cursor: pointer; }
@@ -339,3 +339,6 @@ button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .records pre.record { margin: 0; font-size: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px 8px; white-space: pre-wrap; word-break: break-word; }
 .records pre.record.kept { border-style: dashed; color: var(--muted); }
 .data-controls .picker[hidden] { display: none; }
+
+/* The example panel stays in view while the data scrolls. */
+.data-layout > .example { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow-y: auto; }

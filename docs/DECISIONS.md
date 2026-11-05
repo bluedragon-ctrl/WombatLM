@@ -227,3 +227,10 @@ The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–
 - **`"split": "train" | "unseen"` became an optional `"unseen": true`.** 182 entries said `"split": "train"`, which was already the default; they now carry nothing. The 19 never-seen entries (11 in the base pack, 8 in the extension packs) say `"unseen": true`. The validator rejects `split` and any `unseen` value other than `true`. In code, `Animal.unseen`, `AnimalInfo.unseen` and `TaskResult.unseen` are booleans; the `Split` type is gone.
 - **`kindOverride` removed** from the format, the merge and the validator, together with `pairKey` and `animalKind`, which only served it. No animal in any pack used it.
 - A data entry is now just `id`, `names`, `forms` and the optional `unseen`. A script checked that the data is otherwise identical.
+
+## Learning data tab: data sooner, one scroll, one word for "never seen" (review)
+- **The data starts higher** (table top ~455 px instead of ~590 px at 1400×900). The intro is shorter, the seven counts became two lines, **Learning** (529 examples: 249 word forms + 280 copy the name, from 140 animals, per language) and **Testing** (302 questions with a right answer, 53 of them never seen; 604 with no real word), the view note sits beside the view buttons, and the table legend shares a line with the "animals shown" count.
+- **One scroll bar.** The data no longer has its own scroll box (it ended below the window, so it needed two scrolls); the page scrolls, the column headings stick to the top, and the example panel stays in view beside it.
+- **The intro fits every view.** It no longer says "marked in yellow" (only the overview table has yellow) or that every question has a right answer (604 have none). The "?" help says the yellow is in the overview table.
+- **One word: "never seen".** "Kept aside" / "stranou" is gone; the legend says "never seen (only tested)". `unseen` appears only where the data records show the field; "hidden" only for answers that are not revealed.
+- Not changed: narrow screens. Mobile/tablet is a non-goal (DESIGN.md: desktop ≥ 1280×720); checked at 1280×720.

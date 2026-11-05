@@ -150,7 +150,7 @@ export class DataTab {
       b.onclick = () => { this.view = v; this.render(); };
       this.viewPick.append(b);
     }
-    this.viewNote = h('p', { class: 'small data-view-note', 'data-test': 'data-view-note' });
+    this.viewNote = h('span', { class: 'small data-view-note', 'data-test': 'data-view-note' });
     for (const f of FILTERS) {
       const b = h('button', { 'data-filter': f }, t(`data.filter.${f}`));
       b.onclick = () => { this.filter = f; this.render(); };
@@ -169,8 +169,7 @@ export class DataTab {
       h('div', { class: 'data-given', 'data-test': 'data-given' },
         h('b', {}, t('data.given.title')), ' ', t('data.given.body')),
       this.summary,
-      this.viewPick,
-      this.viewNote,
+      h('div', { class: 'row data-view-row' }, this.viewPick, this.viewNote),
       h('div', { class: 'row data-controls' }, this.langPick, this.filterPick, search,
         h('label', { class: 'small' }, revealBox, ' ', t('data.reveal'))),
       this.legend = h('div', { class: 'data-legend small' }),
@@ -201,19 +200,19 @@ export class DataTab {
     for (const b of this.langPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.lang === this.lang);
     for (const b of this.filterPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.filter === this.filter);
 
+    // Two lines: what it learns from, and what it is tested on (all languages).
     const all = countData(ready);
-    const here = countData(ready, this.lang);
-    const langName = ready.languages.find((l) => l.code === this.lang)?.name[uiLang()] ?? this.lang;
     const n = (v: number) => v.toLocaleString(uiLang());
+    const perLang = ready.languages.map((l) => {
+      const c = countData(ready, l.code);
+      return t('data.sum.perLang', { lang: l.name[uiLang()] ?? l.code, n: n(c.forms + c.copies) });
+    }).join(' · ');
     this.summary.replaceChildren(
-      h('div', { class: 'stat' }, h('b', {}, n(all.forms + all.copies)), ' ', t('data.sum.examples')),
-      h('div', { class: 'stat' }, h('b', {}, n(all.forms)), ' ', t('data.sum.forms')),
-      h('div', { class: 'stat' }, h('b', {}, n(all.copies)), ' ', t('data.sum.copies')),
-      h('div', { class: 'stat' }, h('b', {}, n(all.train)), ' ', t('data.sum.train')),
-      h('div', { class: 'stat kept' }, h('b', {}, n(all.unseen)), ' ', t('data.sum.unseen')),
-      h('div', { class: 'stat' }, h('b', {}, n(all.tests)), ' ', t('data.sum.tests', { unseen: n(all.unseenTests) })),
-      h('div', { class: 'stat kept' }, h('b', {}, n(all.inventions)), ' ', t('data.sum.inventions')),
-      h('p', { class: 'small' }, t('data.sum.lang', { lang: langName, examples: n(here.forms + here.copies), forms: n(here.forms), copies: n(here.copies) })));
+      h('span', { class: 'sum-label' }, t('data.sum.learn.label')),
+      h('span', {}, ...rich('data.sum.learn', { examples: n(all.forms + all.copies), forms: n(all.forms), copies: n(all.copies), train: n(all.train) }),
+        ' ', h('span', { class: 'small' }, `(${perLang})`)),
+      h('span', { class: 'sum-label' }, t('data.sum.test.label')),
+      h('span', {}, ...rich('data.sum.test', { tests: n(all.tests), unseenTests: n(all.unseenTests), unseen: n(all.unseen), inventions: n(all.inventions) })));
 
     this.langPick.hidden = this.view === 'records';
     for (const b of this.viewPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.view === this.view);
@@ -225,11 +224,7 @@ export class DataTab {
   }
 
   private renderTable(ready: ReadyMsg): void {
-    this.legend.hidden = false;
-    this.legend.replaceChildren(
-      h('span', { class: 'learned' }, t('data.legend.learned')),
-      h('span', { class: 'missing' }, `— ${t('data.legend.missing')}`),
-      h('span', { class: 'kept' }, t('data.legend.kept')));
+    this.legend.hidden = true;
     const lang = this.lang;
     const forms = ready.forms.filter((f) => f !== 'name');
     const list = this.animalsShown(ready, lang);
@@ -238,7 +233,7 @@ export class DataTab {
       const word = (text: string, form: string, cls: string, title: string) => {
         const sel = this.sel?.id === a.id && this.sel.lang === lang && this.sel.form === form;
         const cell = h('td', { class: `cell ${cls}${sel ? ' sel' : ''}`, title }, text);
-        cell.onclick = () => { this.sel = { id: a.id, lang, form }; this.render(); };
+        cell.onclick = () => this.select({ id: a.id, lang, form });
         return cell;
       };
       const cells = forms.map((f) => {
@@ -253,7 +248,11 @@ export class DataTab {
       return h('tr', { class: kept ? 'kept' : '' }, name, ...cells);
     });
     this.table.replaceChildren(
-      h('p', { class: 'small' }, t('data.shown', { n: list.length })),
+      h('div', { class: 'data-legend small' },
+        h('span', { class: 'count' }, t('data.shown', { n: list.length })),
+        h('span', { class: 'learned' }, t('data.legend.learned')),
+        h('span', { class: 'missing' }, `— ${t('data.legend.missing')}`),
+        h('span', { class: 'kept' }, t('data.legend.kept'))),
       h('table', {},
         h('thead', {}, h('tr', {},
           h('th', {}, t('data.col.name')),
@@ -301,7 +300,7 @@ export class DataTab {
         yes(q.learn),
         yes(q.test, q.answer ? '✓' : t('data.q.invents')),
         h('td', { class: 'small' }, q.unseen ? t('neverSeen') : ''));
-      tr.onclick = () => { this.sel = { id: q.id, lang: q.lang, form: q.form }; this.render(); };
+      tr.onclick = () => this.select({ id: q.id, lang: q.lang, form: q.form });
       return tr;
     });
     this.table.replaceChildren(
@@ -337,6 +336,12 @@ export class DataTab {
     this.table.replaceChildren(
       h('p', { class: 'small' }, t('data.rec.shown', { n: animals.length })),
       h('div', { class: 'records', 'data-test': 'data-records' }, ...records));
+  }
+
+  /** Show a learning example as tokens. */
+  private select(sel: NonNullable<DataTab['sel']>): void {
+    this.sel = sel;
+    this.render();
   }
 
   /** Start with a word-form example of the first animal it learns from, so the panel is never empty. */
@@ -416,6 +421,11 @@ export class DataTab {
     const words = [a.names[lang], a.id, ...(hidden ? [] : Object.values(a.forms[lang] ?? {}))];
     return words.some((w) => w.toLowerCase().includes(this.search));
   }
+}
+
+/** A translated sentence with its {numbers} in bold. */
+function rich(key: string, vars: Record<string, string>): (Node | string)[] {
+  return t(key).split(/\{(\w+)\}/).map((part, i) => (i % 2 ? h('b', {}, vars[part] ?? part) : part));
 }
 
 /** Readable JSON: one line per field; objects by language get one line per language. */
