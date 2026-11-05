@@ -148,7 +148,7 @@
   "cycle.seeChange": "see the change →",
   "cycle.hint": "Tip: pause, then press Step ×1 to watch one step slowly.",
   "cycle.running": "This repeats about {n} times a second.",
-  "ask.title": "② Ask the model: answering",
+  "ask.title": "Answering",
   "ask.help": "Asking sends your word through the model once, letter by letter. The model's numbers are only read, never changed: the same model always gives the same answer. While it is learning, the answer waits until it pauses or you press “Ask again”.",
   "stamp.fresh": "🔒 Answer from the model at step {step}. Answering never changes the model.",
   "stamp.stale": "⏳ The model has learned {n} more steps since this answer (step {step}).",

@@ -49,7 +49,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 ## Waiting for the user
 
 - **Data review:** no flags any more (one right word per answer; fix or delete doubtful words in the JSON); regenerate the table with `npm run validate-data -- --review` → `docs/DATA_REVIEW.md` (deferred by the user: "data tuning later").
-- **Czech UI copy:** Ask tab review: `form.name` ("stejné jméno"), `form.tip.*`, reworded `ask.help`.
+- **Czech UI copy:** Ask tab review: `form.name` ("stejné jméno"), `form.tip.*`, reworded `ask.help`, `ask.title` ("Odpovídání").
 - **Czech UI copy:** new in the build-time PRs: `quiet.*`, `wallPerSec`, `goal.*`, `practice.col.loss`, `practice.end`, `practice.letterTip`, `practice.lossTip`, `practice.lossExplain`; letter map PR: `map.help`, `map.how`, `map.note`, `map.pick`, `map.near`, `map.rare`, `map.clear`.
 - **Czech UI copy (earlier):** `src/ui/i18n/cs.json` (M3 added ~70 strings: tabs, attention, letter map, Inside the model; the learning-vs-answering PR added 42: `tab.practice`, `build.*`, `learning.*`, `practice.*`, `cycle.*`, `ask.*`, `stamp.*`, `slow.*`; the Learning data tab added 26: `tab.data`, `data.*`; the tab reorganisation added `tab.test`, `tab.learn`, `tab.ask`, `test.*`, `askStatus.*` and reworded `data.explain`, `data.help`).
 - **M3 review:** the PR's screenshots and questions.

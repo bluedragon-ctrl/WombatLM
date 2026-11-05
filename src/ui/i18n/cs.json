@@ -148,7 +148,7 @@
   "cycle.seeChange": "ukaž změnu →",
   "cycle.hint": "Tip: zastav a zmáčkni Krok ×1, uvidíš jeden krok pomalu.",
   "cycle.running": "Opakuje se to asi {n}× za sekundu.",
-  "ask.title": "② Ptáme se modelu: odpovídání",
+  "ask.title": "Odpovídání",
   "ask.help": "Otázka projde modelem jednou, písmeno po písmenu. Čísla modelu se jen čtou, nikdy se nemění: stejný model dá vždy stejnou odpověď. Když se model učí, odpověď počká, až se zastaví nebo zmáčkneš „Zeptat se znovu“.",
   "stamp.fresh": "🔒 Odpověď modelu z kroku {step}. Odpovídání model nikdy nemění.",
   "stamp.stale": "⏳ Od této odpovědi (krok {step}) se model naučil dalších {n} kroků.",
