@@ -1,27 +1,39 @@
 # WombatLM — design document
 
-> **⚠️ Superseded in part:** the main task changed from cs↔en translation to within-language word forms (animal → male / female / young). Read `docs/HANDOFF.md` first; it lists which sections below are out of date.
+A tiny neural network that learns **animal word forms** (male / female / young) in Czech and English, trained live in the browser, with every part of its "brain" visible while it learns.
 
-A tiny neural network that learns to translate Czech ↔ English animal names, trained live in the browser, with every part of its "brain" visible while it learns. A second mode lets the same machinery invent new animal names.
+```
+<cs:female> tygr  → tygřice      <en:female> lion → lioness
+<cs:young>  kočka → kotě         <en:young>  cat  → kitten
+<cs:female> buvol → buvolice  (never seen in training, guessed from the pattern)
+<cs:young>  žirafa → žirafě?  (no real word exists: the model invents one)
+```
 
-> **For the implementing session:** this is the spec. Build it milestone by milestone (section 12). Each milestone ends with its acceptance criteria passing and a commit. If a number below (model size, learning rate, steps) turns out wrong in practice, change it and note why in `docs/DECISIONS.md`. Don't silently drift from the spec.
+> **For the implementing session:** this is the spec. Build it milestone by milestone (section 12). Each milestone is a pull request (section 12.1). If a number below turns out wrong in practice, change it and note why in `docs/DECISIONS.md`; don't silently drift from the spec. `docs/HANDOFF.md` has the current state and next steps.
 
 ---
 
 ## 1. Goals and non-goals
 
+**This is a teaching demo.** Its value is in showing *how* a model works: how tokens are generated letter by letter, how weights change while it learns, what it copies and what it invents. **Model accuracy does not need to be perfect.** Believable mistakes are part of the lesson. When choosing what to build or tune, prefer clearer visuals and explanations over accuracy. Accuracy numbers in this document are guides, not gates.
+
 **Goals**
-- Show *how* a model learns: weights changing, mistakes going down, attention forming, letters organising themselves.
-- Make **memorisation vs. generalisation** visible: the model must get some never-seen animals right (lookalike words such as `tygr → tiger`) and visibly fail on others (`veverka → squirrel`).
-- Show that a model can be **taught new things later** (new animals, new packs) and what happens to old knowledge when it is (forgetting).
-- Run fully in the browser, static hosting, no server, no GPU.
+- Show how a model learns: weights changing, mistakes going down, attention forming, letters organising themselves.
+- Show **token-by-token generation**: for every letter, the model's top guesses and how sure it is; which letters it copied from the input and which it wrote itself.
+- Make **memorisation vs. generalisation** visible. Czech forms mostly follow patterns (tygr → tygřice, slon → slonice), so the model partly generalises to never-seen animals, with believable over-regularised mistakes (vlk → *vlkice* instead of vlčice). English forms are irregular (cub, calf, foal), so the model must memorise them and fails on never-seen ones. The contrast between the two languages is the lesson.
+- Show **hallucination**: a model always answers, even when no real answer exists (žirafa has no Czech young-animal word), and it can be confident about it.
+- Show that a trained model can be **taught new things later** (new animals, a new kind of task) and what happens to old knowledge when it is (forgetting).
+- Run fully in the browser: static hosting, no server, no GPU.
 - Small, readable code: the whole neural network is our own TypeScript that a curious teenager can read.
 
 **Audience:** age 11+ and adults. Plain-language text by default. Each panel has a "?" with a short explanation plus a "More detail" section that uses real terms (weights, gradient, loss, attention, embedding).
 
-**Non-goals:** mobile/tablet layout, Safari support, pictures/emoji of animals, a backend, accounts, pretrained big models, TensorFlow.js.
+**Non-goals:** mobile/tablet layout, Safari support, pictures/emoji of animals, a backend, accounts, pretrained big models, TensorFlow.js, state-of-the-art accuracy.
 
 **Supported:** desktop Chrome, Edge, Firefox (current versions), viewport ≥ 1280×720.
+
+### 1.1 History: why word forms and not translation
+The first design taught cs↔en translation of animal names. Experiments (M2, `docs/DECISIONS.md`) showed it cannot generalise on ~150 animals: never-seen animals scored 0%, even identical words (leopard → "kowpa"). The data simply has no learnable rule. Within-language word forms do have rules, so the main task changed to forms. Translation may return as a Teach scenario ("teach the brain a new kind of task"); the model and `Dataset.nameTasks()` still support it.
 
 ---
 
@@ -31,352 +43,358 @@ A tiny neural network that learns to translate Czech ↔ English animal names, t
 |---|---|
 | Language | TypeScript (strict) |
 | Build | Vite |
-| UI | Vanilla TS + DOM for controls, **Canvas 2D** for all visualisations. No UI framework (keeps the bundle tiny and code readable). |
+| UI | Vanilla TS + DOM for controls, **Canvas 2D** for all visualisations. No UI framework. |
 | Maths | Own tensor and autograd library on `Float32Array` (section 5). Zero ML dependencies. |
 | Concurrency | Training in a **Web Worker**, rendering on the main thread |
-| Tests | Vitest (unit, gradient checks), Playwright (smoke test) |
+| Tests | Vitest (unit, gradient checks), Playwright (smoke test, screenshots) |
 | Hosting | GitHub Pages via GitHub Actions |
-| Randomness | Seeded PRNG (mulberry32). Same seed means the same run, bit for bit. |
+| Randomness | Seeded PRNG (mulberry32). Same seed, same run, bit for bit (verified: Node and the browser worker give identical results). |
 
-Runtime dependencies: none. Dev dependencies: vite, typescript, vitest, playwright (pre-installed in Claude cloud sessions; don't reinstall browsers).
+Runtime dependencies: none. Dev dependencies: vite, typescript, vitest, tsx, @playwright/test (pinned to the browser pre-installed in Claude cloud sessions; never run `playwright install`).
 
 ---
 
 ## 3. Repository layout
 
+✔ = exists, ◌ = planned.
+
 ```
 /
-├─ index.html
+├─ index.html                      ✔
 ├─ data/
-│  ├─ languages.json           # list of data languages (v1: cs, en)
-│  ├─ vocab.json               # character vocabulary + special/target tokens
-│  ├─ forms.json               # word forms (v1: ["name"], M8 adds "young")
-│  ├─ animals.base.json        # base dataset (~150 animals)
-│  └─ packs/
-│     ├─ ocean.json            # extension packs for "Teach" mode
-│     ├─ insects.json
-│     └─ farm-babies.json      # e.g. štěně → puppy (hard: no pattern)
-├─ public/
-│  └─ replay/                  # baked pretrained runs (section 9)
+│  ├─ languages.json               ✔ data languages (cs, en)
+│  ├─ vocab.json                   ✔ characters + special tokens
+│  ├─ forms.json                   ✔ ["name", "male", "female", "young"]
+│  ├─ animals.base.json            ✔ base dataset, 151 animals
+│  └─ packs/                       ✔ ocean, insects, farm-babies (rework in M5)
+├─ public/replay/                  ◌ baked pretrained runs (section 9)
 ├─ scripts/
-│  ├─ bake-replay.ts           # trains in Node, writes replay files
-│  └─ validate-data.ts         # dataset linter (also run in tests)
+│  ├─ validate-data.ts             ✔ data linter (+ --review table)
+│  ├─ train-node.ts                ✔ the app's trainer in Node
+│  ├─ bench.ts                     ✔ speed benchmark
+│  ├─ experiments/                 ✔ generalisation experiments (M2)
+│  └─ bake-replay.ts               ◌
 ├─ src/
-│  ├─ nn/                      # the "brain": pure, no DOM, runs in Node + worker
-│  │  ├─ tensor.ts             # Tensor type, shape helpers
-│  │  ├─ autograd.ts           # tape, backward
-│  │  ├─ ops.ts                # matmul, add, softmax, layernorm, gelu, gather, crossEntropy, …
-│  │  ├─ optim.ts              # Adam, grad clipping, LR schedule
-│  │  ├─ rng.ts
-│  │  ├─ vocab.ts              # fixed character vocabulary
-│  │  ├─ transformer.ts        # attention, blocks
-│  │  ├─ translator.ts         # encoder–decoder model
-│  │  ├─ namer.ts              # decoder-only "invent an animal" model
-│  │  └─ serialize.ts          # weights <-> binary (f32 / f16 / int8)
+│  ├─ nn/                          ✔ the "brain": pure, no DOM
+│  │  ├─ tensor.ts autograd.ts ops.ts optim.ts rng.ts vocab.ts
+│  │  ├─ transformer.ts            attention, blocks, KV cache
+│  │  ├─ translator.ts             encoder–decoder (+ copy mechanism)
+│  │  ├─ serialize.ts              weights <-> binary (f32/f16/int8), vocab growth
+│  │  └─ namer.ts                  ◌ decoder-only "invent an animal" model
 │  ├─ train/
-│  │  ├─ worker.ts             # Web Worker entry: owns models and training loop
-│  │  ├─ protocol.ts           # typed messages main <-> worker
-│  │  ├─ trainer.ts            # batching, steps, eval, snapshots
-│  │  └─ snapshots.ts          # snapshot store + time-travel
+│  │  ├─ trainer.ts                ✔ FormTrainer: batches, steps, evaluation
+│  │  ├─ engine.ts                 ✔ training loop + message handling (testable in Node)
+│  │  ├─ worker.ts                 ✔ Web Worker entry
+│  │  ├─ protocol.ts               ✔ typed messages main <-> worker
+│  │  └─ snapshots.ts              ◌ snapshot store + time travel
 │  ├─ data/
-│  │  ├─ dataset.ts            # load, merge packs, user additions, splits
-│  │  └─ storage.ts            # localStorage, import/export JSON
-│  ├─ viz/                     # one file per panel, Canvas 2D
-│  │  ├─ guessBars.ts
-│  │  ├─ attentionGrid.ts
-│  │  ├─ letterMap.ts          # PCA 2D map of character embeddings
-│  │  ├─ weightHeatmap.ts
-│  │  ├─ lossChart.ts
-│  │  ├─ scoreboard.ts         # known vs never-seen accuracy
-│  │  ├─ timeline.ts
-│  │  └─ colors.ts             # shared diverging palette
+│  │  ├─ dataset.ts                ✔ load, merge packs, tasks, form kind, validation
+│  │  ├─ bundle.ts                 ✔ the shipped data files
+│  │  └─ storage.ts                ◌ localStorage, import/export
+│  ├─ viz/                         one file per visual, Canvas 2D
+│  │  ├─ canvas.ts colors.ts       ✔ HiDPI setup, shared palettes
+│  │  ├─ guessBars.ts lineChart.ts ✔
+│  │  └─ attentionGrid.ts letterMap.ts weightHeatmap.ts timeline.ts   ◌
 │  ├─ ui/
-│  │  ├─ app.ts, layout.ts, controls.ts, tabs.ts, tour.ts, help.ts
-│  │  └─ i18n/{cs.json,en.json,index.ts}
-│  └─ main.ts
-├─ tests/                      # vitest
-├─ e2e/                        # playwright smoke
-└─ docs/DECISIONS.md
+│  │  ├─ app.ts style.css          ✔ the M2 app (one tab)
+│  │  ├─ i18n/{cs,en}.json, index.ts ✔
+│  │  └─ tabs, tour, help          ◌
+│  └─ main.ts                      ✔
+├─ tests/                          ✔ vitest
+├─ e2e/                            ✔ playwright smoke test
+└─ docs/                           DESIGN (this), DECISIONS, HANDOFF, DATA_REVIEW
 ```
 
-Rule: `src/nn` must not import from the DOM or worker code, so the same code runs in tests, in Node (baking) and in the worker.
+Rule: `src/nn` and `src/data` must not import DOM or worker code, so the same code runs in tests, in Node and in the worker. `src/train/engine.ts` gets its host (post, schedule, clock) passed in for the same reason.
 
 ---
 
 ## 4. Data
 
 ### 4.1 Vocabulary (data-driven, can grow)
-Lower-case, Unicode NFC. The vocabulary is **defined in `data/vocab.json`, not hard-coded**, so more languages can be added later (section 15). v1 content:
+Lower-case, Unicode NFC. Defined in `data/vocab.json`, not hard-coded:
 
-- `a–z` (26)
-- Czech letters: `á č ď é ě í ň ó ř š ť ú ů ý ž` (15)
-- space, hyphen `-` (2)
-- special tokens: `<pad> <bos> <eos> <unk>` (4)
-- one **target token per (language, form)** pair: in v1 the only form is `name`, giving `<cs> <en>` (2). A target token tells the model what to write (and in Invent mode, which language to sound like). Forms are listed in `data/forms.json` (v1: `["name"]`). M8 adds the form `young`, giving the extra tokens `<cs:young> <en:young>` through vocabulary growth (see below).
+- 4 special tokens: `<pad> <bos> <eos> <unk>`
+- 43 characters: `a–z`, Czech letters `á č ď é ě í ň ó ř š ť ú ů ý ž`, space, hyphen
+- one **target token per (form, language)**: `<cs> <en>` (form `name`), `<cs:male> <en:male>`, `<cs:female> <en:female>`, `<cs:young> <en:young>`. Built form-major from `forms.json` × `languages.json`, so adding a form only appends tokens.
 
-Total in v1: **49 tokens**. Code must never assume 49 or a fixed set of languages: it reads the sizes from `vocab.json` and the language list from `data/languages.json`. Max word length **20 characters**, so the max sequence length is 22 (including the special tokens). Input outside the vocabulary is shown with a warning and mapped to `<unk>`.
+Total: **55 tokens**. Code never assumes 55 or a fixed set of languages. Max word length 20 characters, max sequence length 22. Input outside the vocabulary maps to `<unk>`.
 
-`data/languages.json` (v1):
-```json
-[
-  { "code": "cs", "name": { "cs": "čeština", "en": "Czech" } },
-  { "code": "en", "name": { "cs": "angličtina", "en": "English" } }
-]
-```
+**Growing the vocabulary** (`growVocab` in `src/nn/serialize.ts`): new tokens are appended, the embedding table gains new rows, all existing weights stay. Models remap embeddings by token text, so the order is not load-bearing. Used for Teach scenarios and new languages.
 
-**Growing the vocabulary** (`growVocab` in `src/nn/serialize.ts`): new tokens are appended to the end of the vocabulary, and the embedding table gains new rows (small random init) while all existing weights stay unchanged. A trained model therefore keeps what it knows when a language with new letters is added. Implement and test this in M1 even though v1 doesn't need it.
+### 4.2 Forms
+`data/forms.json` = `["name", "male", "female", "young"]`.
+- `male`, `female`, `young` are the word forms the model learns, within one language.
+- `name` means "copy the name" (`<cs> slon → slon`). It is used as **copy practice** during training (section 6.3) and is offered in the UI as a form you can ask for.
 
-### 4.2 Animal file format
+### 4.3 Animal file format (version 2)
 ```json
 {
   "pack": "base",
-  "version": 1,
+  "version": 2,
   "title": { "cs": "Základní zvířata", "en": "Basic animals" },
   "animals": [
-    { "id": "tiger",    "names": { "cs": "tygr",    "en": "tiger" },    "split": "train" },
-    { "id": "leopard",  "names": { "cs": "leopard", "en": "leopard" },  "split": "unseen" },
-    { "id": "dog",      "names": { "cs": "pes",     "en": "dog" },      "split": "train" },
-    { "id": "squirrel", "names": { "cs": "veverka", "en": "squirrel" }, "split": "unseen" },
-    { "id": "cat",      "names": { "cs": "kočka",   "en": "cat" },      "split": "train",
-      "alt": { "cs": ["kocour"] } }
+    { "id": "tiger", "names": { "cs": "tygr", "en": "tiger" },
+      "forms": { "cs": { "male": "tygr", "female": "tygřice", "young": "tygře" },
+                 "en": { "male": "tiger", "female": "tigress", "young": "cub" } },
+      "split": "train" },
+    { "id": "wolf", "names": { "cs": "vlk", "en": "wolf" },
+      "forms": { "cs": { "male": "vlk", "female": "vlčice", "young": "vlče" },
+                 "en": { "female": "she-wolf", "young": "pup" } },
+      "formsAlt": { "en": { "young": ["cub"] } },
+      "split": "unseen" },
+    { "id": "giraffe", "names": { "cs": "žirafa", "en": "giraffe" },
+      "forms": { "en": { "male": "bull", "female": "cow", "young": "calf" } },
+      "split": "unseen", "unsure": ["en.male"] }
   ]
 }
 ```
-- `names`: one entry per language code. An animal may lack some languages (e.g. a pack that only adds German names to existing ids). Packs **merge by `id`**, so a later "German" pack can add `"de"` names to the base animals.
-- `kind` is **computed, not stored**, because it depends on the language pair (tygr/tiger are lookalikes, but pes/dog are different, while Czech pes and Slovak pes are identical). `kind(a, b)` uses the normalised edit distance after stripping diacritics: ≤ 0.34 → `lookalike`, ≤ 0.6 → `partial`, otherwise `different`. Thresholds live in one place and can be tuned. For cs↔en this gives e.g. tygr/tiger lookalike, papoušek/parrot partial, pes/dog different. Used for colouring and to explain results. An optional `"kindOverride": {"cs-en": "different"}` handles the rare wrong guesses.
-- `split`: `train` or `unseen`, **per animal** (an unseen animal is unseen in all languages, so there is no leakage through a third language). About 15–20% `unseen`, stratified so each kind (for cs↔en) has some unseen examples.
-- `alt`: accepted alternative answers for evaluation only. Training uses the main form.
-- `young` (optional, used from M8): the name of the animal's young, per language, e.g. `"young": {"cs": "kotě", "en": "kitten"}`, with optional `"youngAlt": {"cs": ["koťátko"]}`. Any language may be missing, and that is expected: missing young names are what the model will invent. v1 code must already accept and validate this field (and ignore it for training) so the base dataset can carry young names from the start. Generic phrases (*mládě*, *tygří mládě*, *baby tiger*, *elephant calf*) are **not** main entries; put them in `youngAlt` only.
+- `names`: one entry per language code; `alt`: accepted alternative names. Packs **merge by `id`**, so a later pack can add languages or forms to existing animals.
+- `forms`: per language, any subset of the word forms. **Missing forms are deliberate**: no real word exists (žirafa has no Czech male/female/young word), and that is what the model invents. Generic phrases (*mládě*, *baby tiger*) are never main entries. Words unsuitable for an 11+ audience are left out.
+- `formsAlt`: accepted alternatives, for evaluation only (never trained).
+- `unsure`: entries waiting for native-speaker review, e.g. `"cs.female"`. Currently still trained on (as in the experiments).
+- `split`: `train` or `unseen`, **per animal** (an unseen animal is unseen in all languages and forms, so nothing leaks). Never-seen animals give the "hidden real answers".
 
-### 4.3 Base dataset content
-About **150 animals**, roughly 45% lookalike, 20% partial, 35% different. Mammals, birds, reptiles, fish, insects, sea animals. Prefer common, well-known names. **The user is a native Czech speaker and must review the list** before M2 is accepted (spelling, diacritics, natural word choice).
+### 4.4 Form kind
+How a form relates to its name, computed (`formKind()` in `src/data/dataset.ts`), not stored. The share of the name's letters (without diacritics) found in order in the form (longest common subsequence / name length):
+- ≥ 0.75 **pattern** (tygr → tygřice, buvol → buvolice)
+- ≥ 0.5 **partly** (lev → lvice)
+- otherwise **irregular** (pes → štěně, cat → kitten)
 
-### 4.4 Extension packs (for "Teach" mode)
-Separate files, same format, all their animals `split: "train"` plus a few `unseen`. Planned: `ocean` (~20), `insects` (~20), `farm-babies` (~12: štěně→puppy, kotě→kitten, hříbě→foal…: deliberately "different" words, hard to learn). Packs are how the project grows: adding animals later means adding a JSON file, no code changes.
+Used for colours, the scoreboard lines and the explanations. Thresholds live in one place (`FORM_KIND_THRESHOLDS`).
 
-### 4.5 Validation (`scripts/validate-data.ts`, also run as a test)
-All characters in vocabulary · lengths ≤ 20 · no duplicate ids · no duplicate cs or en across packs · NFC normalised · lower-case · every pack has both splits (except tiny user packs).
+### 4.5 Base dataset
+151 animals: mammals, birds, reptiles, fish, insects, sea animals. 92 have forms (Czech 49 animals / 128 forms, English 87 / 174). 11 never-seen animals (53 forms), chosen so every language has never-seen forms of every kind. Solid Czech male/female/young words exist for only ~50 common animals; the rest are inventions by design.
 
-### 4.6 User additions
-In Teach mode a user can type a pair. It is stored in `localStorage` as a pack `user`. Export/import as JSON in the same format (so good additions can be sent to the maintainer and merged into the repo).
+**The user (native Czech speaker) reviews the data.** `npm run validate-data -- --review` writes `docs/DATA_REVIEW.md` with every form and the `unsure` entries.
+
+### 4.6 Extension packs (Teach mode)
+Separate files, same format. Existing: `ocean` and `insects` (names only, from the translation design) and `farm-babies` (now redundant with `young` forms). **Rework in M5** into packs with forms, e.g. "farm animals" (kůň → klisna / hříbě, horse → mare / foal) and "birds" (páv → pávice). Adding animals later means adding a JSON file, no code changes.
+
+### 4.7 Validation (`scripts/validate-data.ts`, also a test)
+All characters in the vocabulary · lengths ≤ 20 · NFC · lower-case · no duplicate ids within a pack · no name used by two animals · forms only for languages with a name · known form names · `formsAlt` only next to a main form · `unsure` points at something · packs of ≥ 8 animals have both splits.
+
+### 4.8 User additions
+In Teach mode a user can type an animal with forms. Stored in `localStorage` as pack `user`; export/import as JSON in the same format.
 
 ---
 
-## 5. The neural-network library (`src/nn`)
+## 5. The neural-network library (`src/nn`) — done in M1
 
-### 5.1 Approach
-A small **tape-based reverse-mode autograd** over dense `Float32Array` tensors (row-major, up to 3-D). Each op records its backward closure on a tape, and `backward(loss)` walks the tape in reverse. Parameters are `Tensor`s with `.grad`. Use plain loops, no SIMD tricks. Make it readable first and fast enough second (see the performance budget in section 10).
-
-### 5.2 Ops needed
-`matmul` (with batched variant), `add` (with broadcasting of bias), `mul`, `scale`, `gather` (embedding lookup), `layerNorm`, `gelu`, `softmax` (row-wise, with additive mask), `transpose` (last two dims), `reshape/splitHeads/mergeHeads`, `concat`, `crossEntropy` (with ignore-index for `<pad>`, fused log-softmax for stability), `dropout` (not used in v1; leave it out).
-
-### 5.3 Correctness
-- **Gradient check** every op with finite differences (float64 reference path or eps=1e-3 with relative tolerance 1e-2 in f32).
-- Gradient check the full translator at a tiny config (d=8, 1 head).
-- **Overfit test:** a model must reach loss < 0.05 on 4 pairs within N steps.
-- **Determinism test:** two runs with the same seed give identical weights after 50 steps.
-
-### 5.4 Optimiser
-Adam (β1 0.9, β2 0.98, ε 1e-9), global gradient-norm clipping at 1.0, linear warmup over 100 steps then constant LR. Default LR 3e-3. The expert panel exposes LR (log slider 1e-4…3e-2) and batch size.
+- **Autograd:** tape-based reverse mode over dense `Float32Array` tensors (row-major, up to 3-D). Plain loops; readable first, fast enough second.
+- **Ops:** `matmul`/`bmm`, `add` (broadcast bias), `mul`, `scale`, `gather`, `layerNorm`, `gelu`, `softmax` (with additive mask), `transpose`, `reshape`/heads, `concat`, `crossEntropy` (ignore `<pad>`, fused log-softmax), `dropout`, and for the copy mechanism `pointerMix` and `nllFromProbs`.
+- **Correctness:** every op gradient-checked; the full model gradient-checked at a tiny size; overfit test; determinism test; cached decoding checked against full recomputation.
+- **Optimiser:** Adam (β1 0.9, β2 0.98, ε 1e-9), optional AdamW weight decay, global gradient-norm clipping at 1.0, linear warm-up over 100 steps, then constant LR. Default LR 3e-3.
+- **Serialisation:** f32 / f16 / int8 (per-matrix scale), with vocabulary remapping on load.
 
 ---
 
 ## 6. Models
 
-### 6.1 Translator: tiny Transformer encoder–decoder (character level)
+### 6.1 The form model: tiny Transformer encoder–decoder (character level)
 
 | Hyperparameter | Value |
 |---|---|
 | d_model | 32 |
 | heads | 2 (head dim 16) |
 | FFN hidden | 64, GELU |
-| encoder layers | 1 |
-| decoder layers | 1 (masked self-attention + cross-attention) |
-| positions | learned, 22 |
+| encoder / decoder layers | 1 / 1 (decoder: masked self-attention + cross-attention) |
+| positions | learned, 22, separate tables for encoder and decoder |
 | norm | pre-LayerNorm, final LayerNorm |
-| embeddings | **one shared character embedding table** for encoder input, decoder input **and** output projection (tied). This keeps the single "letter map" meaningful. |
-| parameters | ≈ 25k (log the exact count at startup) |
+| embeddings | **one shared table** for encoder input, decoder input and output projection (tied), plus an output bias. This keeps a single "letter map". |
+| copy mechanism | on (section 6.2) |
+| decoder start | the target token (`<cs:female>`), not `<bos>` |
+| dropout | 0.1 while training |
+| parameters | **26 872** |
 
-**One model, all directions.** The encoder input is the target-language token followed by the source word: `<en> t y g r` means "write this in English", `<cs> t i g e r` means "write this in Czech". The source language is **not** given; the model works it out from the letters. This is how real multilingual translators work, and it scales to N languages without changing anything. The decoder generates the target from `<bos>` until `<eos>`. Each animal with names in languages A and B gives the examples A→B and B→A. With N languages, the trainer samples random (source, target) pairs among the languages an animal has. From M8 the target can also be a young form (`<cs:young> tiger` → the model's guess, e.g. `tygře`); the source is always an adult name in any language (section 8.7).
+**Input:** the target token followed by the name: `<cs:female> t y g r`. The target token says what to write (language + form). **Output:** `t y g ř i c e <eos>`, greedy decoding with a key/value cache, max 21 steps.
 
-**Training:** teacher forcing, cross-entropy on target characters, batch of 16 examples sampled from the train split (both directions mixed), no label smoothing (so probability bars stay honest).
+Why the decoder starts from the target token: without it the model often mixed up forms (čáp → male *čápice*). Seeing "what to write" at every output step fixes that.
 
-**Inference:** greedy decoding, max 22 steps. For visualisation the worker returns, per output step: the top-5 characters with probabilities, the cross-attention weights per head (output step × input position), and the decoder self-attention.
+### 6.2 Copy mechanism
+A single-head attention from the final decoder state over the input letters (never the target token or padding) plus a learned **write-or-copy gate** g: `p = g·softmax(logits) + (1−g)·copy`. Loss is the NLL of the mixed distribution. +2 145 parameters.
 
-**Expected behaviour** (verify in M2, adjust size/LR if needed): train accuracy close to 100% after a few thousand steps. Unseen lookalike words often correct or nearly correct; unseen different words wrong. That contrast is the key teaching moment.
+Mainly a **teaching visual**: for every output letter the UI shows whether the model copied it from the input or wrote it itself (tygr|ice: the stem is copied, the ending written). It also keeps known-form accuracy up while copy practice is on. It does not by itself improve generalisation.
 
-### 6.2 Namer: "Invent an animal" (decoder-only character language model)
-- Same building blocks: 2 decoder-only blocks (masked self-attention only), d_model 32, 2 heads, its own embeddings, ≈ 25k params.
-- Trained on all train-split names from all loaded packs, with a language token: `<cs>` + name for Czech names and `<en>` + name for English names, so the user can pick "Czech-sounding" or "English-sounding" (and later any loaded language).
-- Sampling with a **temperature** slider (0.2 to 1.5) and the probability bars shown per generated letter.
-- Each generated name gets a label: **"real animal!"** (exists in the dataset), **"new!"**, or **"looks like X"** (nearest real name by edit distance ≤ 2).
-- It trains in the same worker, with its own trainer instance, only when its tab is active (or on demand).
+### 6.3 Training
+- **Batch mix:** word-form tasks of train-split animals (both languages, all forms) mixed **1:1 with copy practice** (`<cs> tygr → tygr` for every train-split name). Copy practice is what makes never-seen forms work: it teaches "keep the stem".
+- Teacher forcing, cross-entropy on target characters, batch 16, no label smoothing (so probability bars stay honest).
+- `FormTrainer` in `src/train/trainer.ts`; defaults in `TRAINER_DEFAULTS`.
+
+**Measured behaviour** (5 000 steps, ~2.5 min in the browser): known forms Czech ~98%, English ~93%. Never-seen Czech pattern forms ~30–45% exact (buvol → buvolice), more counting "one letter off"; never-seen English near 0, as expected. What the model reliably generalises is keeping the stem; endings on never-seen stems are hit-and-miss; consonant changes (vlk → vlčice) fail with believable mistakes. Exact numbers move by a few points between seeds.
+
+### 6.4 Evaluation and results
+- Every real form of every animal is asked for and judged **correct**, **close** (edit distance 1 from any accepted answer) or **wrong**.
+- Forms with no real word are asked for too and marked **invented** (never scored).
+- **Scoreboard per language:** known · never-seen pattern · never-seen partly · never-seen irregular, plus never-seen "right or one letter off" shown prominently (believable near-misses are part of the lesson).
+- **Badge for a question** (`ask`): **real** (the data has it and the model trained on it) · **hidden** (the data has it, the animal is never-seen; a Reveal button shows it) · **invention** (known animal, no real word) · **free** (not an animal in the data).
+- **Confidence:** geometric mean of the chosen letters' probabilities (including the end of the word), 0–100, so long words are not penalised. Help text: a confident answer can still be wrong.
+
+### 6.5 Namer: "Invent an animal" (M6)
+- Decoder-only character model: 2 blocks (masked self-attention), d_model 32, 2 heads, its own embeddings, ≈ 25k params.
+- Trained on all train-split names with a language token (`<cs>` + name, `<en>` + name), so the user can pick "Czech-sounding" or "English-sounding".
+- Sampling with a **temperature** slider (0.2–1.5) and per-letter probability bars.
+- Labels: **"real animal!"** (exists in the data), **"new!"**, or **"looks like X"** (nearest real name by edit distance ≤ 2).
+- Trains in the same worker with its own trainer, only when its tab is active.
 
 ---
 
 ## 7. Training engine and worker protocol
 
-The worker owns the models, the optimiser state, the dataset, and the snapshot store. The main thread never holds live weights; it receives rendering-ready data.
+The worker owns the models, optimiser state, dataset and (from M4) the snapshot store. The main thread never holds live weights; it receives data ready to draw. The loop and message handling live in `src/train/engine.ts`; `worker.ts` only wires it to the worker globals.
 
-### 7.1 Messages (main → worker)
-`init{seed, packs}` · `play` · `pause` · `step{n}` · `setSpeed{stepsPerTick}` · `setHyper{lr, batch}` · `reset{seed}` · `translate{text, to}` · `inspect{matrixIds}` · `seekSnapshot{index}` · `returnToLive` · `addAnimals{pack}` · `setRehearsal{on}` · `namer.*` (equivalents) · `exportWeights` · `importWeights{buffer}`.
+**Loop:** slices of ~12 ms of training, then yield (through a `MessageChannel`, since nested `setTimeout(0)` is clamped to 4 ms), so `pause` and questions are handled promptly. Speed is steps per second (1 / 5 / 20) or `max`; slow speeds earn steps over time, and the first step happens immediately on Play.
 
-### 7.2 Messages (worker → main)
-- `tick` (≤ 20 Hz, throttled): step, train loss (EMA), last LR, gradient norm.
-- `eval` (every 50 steps): accuracy on train known / unseen lookalike / unseen different, plus a per-animal status (correct, close (edit distance 1), wrong).
-- `translation`: output string, per-step top-5, attention matrices.
-- `weights`: requested matrices as `Float32Array` (transferable), plus their **delta since the previous request**.
-- `letterMap`: vocab-size × 2 PCA coordinates.
-- `snapshotIndex`: list of (step, loss) for the timeline.
+**Evaluation schedule:** real forms every 100 steps (or every 3 s at slow speeds), inventions every 500 steps, plus on init / reset / step / request. Evaluating all ~900 forms every 50 steps would halve training speed.
 
-The UI re-requests `translation`/`weights`/`letterMap` for the currently shown word after each tick while visible. Only the visible panels request data.
+### 7.1 Messages main → worker (`src/train/protocol.ts`)
+Built (M2): `init{seed, speed?}` · `play` · `pause` · `step{n}` · `setSpeed{speed}` · `setHyper{lr?, batchSize?}` · `reset{seed}` · `ask{id, text, lang, form}` · `evaluate{inventions?}`.
 
-### 7.3 Snapshots and time travel
-- Save a full weight snapshot at steps 0, 1, 2, 4, 8, … (log-spaced) and every 100 steps after that, capped at 300 snapshots (≈ 25k × 4 B ≈ 100 KB each, max ~30 MB; drop every other old one when full).
-- The timeline slider seeks: the worker loads the snapshot into a separate **view model** and all panels show it, while live training is paused. "Back to now" returns to the live view model.
-- Snapshots also store loss and eval scores, so the scoreboard and loss chart can show a cursor at that time.
+Planned: `inspect{matrixIds, mode}` (M3) · `seekSnapshot{index}` · `returnToLive` (M4) · `addPack{pack}` · `setRehearsal{on}` · `growTask{…}` (M5) · `namer.*` (M6) · `exportWeights` · `importWeights{buffer}`.
+
+### 7.2 Messages worker → main
+Built (M2):
+- `ready`: seed, parameter count, languages, forms, animal list (names, forms, split), vocabulary tokens.
+- `tick` (≤ 20 Hz): step, running, speed, loss EMA, LR, batch size, gradient norm, measured steps/s, and **every batch loss since the previous tick** (the loss chart is drawn from these).
+- `eval`: step, scores per language, per-form results (`TaskResult`: animal, language, form, output, status, split, kind), whether inventions are included, and how long it took.
+- `answer`: the output word, whether it finished, the input tokens, **per letter the top-5 candidates with probabilities and the write-vs-copy share**, the confidence, **all attention maps** (transferred buffers), the badge and, for real/hidden, the accepted answers and status.
+- `error`.
+
+Planned: `weights` (requested matrices as transferable `Float32Array`s plus their delta since the previous request, or their gradient) and `letterMap` (vocab × 2 PCA coordinates) in M3; `snapshotIndex` in M4.
+
+The UI re-asks its current question after each tick while training (at most one request in flight). Only visible panels request data.
+
+### 7.3 Snapshots and time travel (M4)
+- Save a full weight snapshot at steps 0, 1, 2, 4, 8, … (log-spaced) and every 100 steps after that, capped at 300 (≈ 27k × 4 B ≈ 110 KB each; drop every other old one when full).
+- The timeline slider seeks: the worker loads the snapshot into a separate **view model** and all panels show it, while live training is paused. "Back to now" returns to the live model.
+- Snapshots also store loss and eval scores, so charts can show a cursor at that time.
 
 ---
 
 ## 8. Screens and panels
 
-Desktop layout, ≥ 1280 wide. Top bar: logo · tabs **Translate · Inside the brain · Teach · Invent** · CZ/EN switch · "Expert" toggle · "?" tour.
+Desktop layout, ≥ 1280 wide. Top bar: logo · tabs **Forms · Inside the brain · Teach · Invent** · CZ/EN switch · "Expert" toggle · "?" tour.
 
-### 8.1 Translate (main tab)
+### 8.1 Forms (main tab) — minimal version built in M2
 ```
-┌───────────────┬──────────────────────────────┬──────────────────┐
-│ CONTROLS      │  [ tygr          ] (CZ→EN ⇄) │  LETTER MAP      │
-│ ▶ Play ⏸      │  → t i g e r                 │  (2D dots, vowels│
-│ Step ×1 ×10   │                              │   vs consonants, │
-│ Speed ▭▭▭     │  GUESS BARS per letter       │   Czech letters  │
-│ Reset (seed)  │  t ███████ 81%  d ██ 9% …    │   highlighted)   │
-│ [Expert: LR,  │                              │                  │
-│  batch]       │  ATTENTION GRID              │                  │
-│               │  input letters × output      │                  │
-│ ANIMAL LIST   │  letters, head 1 | head 2    │                  │
-│ ✓ tygr→tiger  │                              │                  │
-│ ✗ pes→dag     │                              │                  │
-│ ◌ leopard (never seen)                       │                  │
-├───────────────┴──────────────────────────────┴──────────────────┤
-│ MISTAKES (loss) chart  │  SCOREBOARD: known ▬ / unseen-lookalike ▬ / unseen-different ▬ │
-│ TIMELINE ◀━━━━━━━━━●━━━━━━━━▶  step 1840   [back to now]                               │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────┬────────────────────────────────────┬──────────────┐
+│ CONTROLS             │ [ tygr      ] [Czech][English]     │ LETTER MAP   │
+│ ▶ Play  Step×1 ×10   │ [copy name][male][female][young]   │ (M3)         │
+│ Speed ▾  Seed  Reset │ looks like Czech                   │              │
+│ [Expert: LR, batch]  │ tygr → tygřice   ✓ real word       │              │
+│ step · steps/s · loss│ Sure ████████░░ 82                 │              │
+│                      │                                    │              │
+│ ANIMALS  all|known|  │ GUESS BARS per letter              │              │
+│  never seen|wrong    │ t ███ 99% … ř ██ 71% e ▌ 12% …     │              │
+│      male female young│ copied copied … wrote wrote       │              │
+│ tygr ✓tygr ✓tygřice ✓│                                    │              │
+│ vlk⌗ ✓vlk ≈vlkice ✗… │ ATTENTION GRID (M3)                │              │
+│ žirafa ✨… ✨… ✨…     │                                    │              │
+├──────────────────────┴───────────────┬────────────────────┴──────────────┤
+│ MISTAKES (loss) chart                │ SCOREBOARD per language            │
+│ TIMELINE ◀━━━━━━━●━━━━━▶ (M4)        │ known / pattern / partly / irregular│
+└──────────────────────────────────────┴───────────────────────────────────┘
 ```
-- **Animal list:** every animal with its current status, coloured by `kind`, unseen ones marked with a "never seen" badge. Clicking one puts it in the input box. Filters: all / known / never seen / wrong.
-- **Guess bars:** the main visual. For each output position, the top-5 characters with bars. The chosen character is highlighted. Hovering a column highlights the matching attention row.
-- **Attention grid:** cells shaded 0 to 1 (sequential palette), one grid per head, letters on the axes. Hovering shows the value. Expert mode also shows decoder self-attention and encoder self-attention.
-- **Letter map:** PCA of the shared embedding table. Dots labelled with the letter; vowels, consonants, Czech-only letters and special tokens use different marker shapes and colours. **Stability:** the PCA axes are sign-aligned and Procrustes-rotated to the previous frame so the map moves smoothly instead of flipping. Points animate (lerp) between updates.
-- **Scoreboard:** three lines over time: accuracy on known animals, on unseen lookalikes, on unseen different words. This chart *is* the memorise-vs-generalise lesson.
-- **Loss chart:** EMA-smoothed train loss with a log y-axis in expert mode and linear in plain mode, labelled "Mistakes" in plain mode.
+- **Question box:** text input, **language picker** and **form picker** (both built from the data files). Typing a name from another language switches the language (forms stay within one language) and the hint says "looks like Czech" or "not an animal from the data".
+- **Answer:** the generated word, the badge (section 6.4), the confidence meter. **A hidden answer is shown uncoloured until Reveal**, because a green or red word would give it away.
+- **Guess bars:** the main visual. For each output letter, the top-5 candidates (including "end of word") with bars; the chosen one highlighted; under each column a strip showing **copied vs wrote**. M3: hovering a column highlights the matching attention row.
+- **Animal list:** per selected language, one row per animal with columns male / female / young showing the model's current answer with ✓ ≈ ✗ ✨, a dashed "never seen" badge, filters all / known / never seen / wrong. Clicking a row or cell puts it in the question box. Tooltips show real words only for known animals.
+- **Scoreboard:** lines over time for the selected language: known (solid), never-seen pattern / partly / irregular (dashed and dotted, so colour is never the only cue). A table below shows the latest numbers for every language, with the "right or one letter off" row in bold. This chart *is* the memorise-vs-generalise lesson, and the Czech-vs-English difference is visible side by side.
+- **Loss chart:** EMA-smoothed batch loss, labelled "Mistakes"; linear in plain mode, log y-axis in expert mode.
+- **Attention grid (M3):** cells shaded 0–1, one grid per head, letters on the axes (cross-attention: output letters × input tokens; the copy attention as its own grid). Expert mode adds decoder and encoder self-attention.
+- **Letter map (M3):** PCA of the shared embedding table, dots labelled with the letter; vowels, consonants, Czech-only letters and target tokens use different markers and colours. PCA axes are sign-aligned and Procrustes-rotated to the previous frame; points lerp between updates.
 
-### 8.2 Inside the brain
-- A grid of **weight heatmaps**, one per matrix (embeddings 49×32, Q/K/V/O per attention, FFN in/out), labelled in plain words ("letter table", "what to look for (Q)", …) with the technical name in expert mode.
-- Diverging palette: blue negative, white zero, red positive. Symmetric scale per matrix (robust max = 99th percentile of |w|).
-- Mode toggle: **Weights** / **Change in the last steps** (delta, own scale) / **Gradient**. The change view is the default: raw weights look like noise, changes show learning.
-- Hovering a cell shows its exact value and its row/column meaning when known (e.g. "embedding of letter 'ž', dimension 7").
-- Header shows the total parameter count ("This brain has 24 816 numbers. ChatGPT-class models have hundreds of billions.").
-- One "follow the signal" view in expert mode: for the current word, the activations through each layer as heatmap strips.
+### 8.2 Inside the brain (M3)
+- A grid of **weight heatmaps**, one per matrix (letter table 55×32, Q/K/V/O per attention, FFN in/out, copy head), labelled in plain words ("letter table", "what to look for (Q)", …) with the technical name in expert mode.
+- Diverging palette: blue negative, white zero, red positive; symmetric scale per matrix (99th percentile of |w|).
+- Mode toggle: **Weights** / **Change in the last steps** (default: raw weights look like noise, changes show learning) / **Gradient**.
+- Hovering a cell shows its value and its meaning when known ("letter 'ž', dimension 7").
+- Header: "This brain has 26 872 numbers. ChatGPT-class models have hundreds of billions."
+- Expert: "follow the signal" for the current word: activations through each layer as heatmap strips (the `answer` trace already has them in the worker).
 
-### 8.3 Teach (new things later)
-The point: a trained model can learn new animals, and it can also forget old ones.
-1. Choose a pack (ocean, insects, farm babies) or type your own pairs.
-2. **Before:** the model tries the new animals cold, and the results are shown.
-3. Toggle **"Keep practising old animals"** (rehearsal: each batch is 50% old, 50% new) **on/off**.
-4. Train. The scoreboard gains a fourth line, "new animals", and you watch old-animal accuracy too. With rehearsal off, old knowledge visibly drops (catastrophic forgetting). With it on, it doesn't.
-5. **After:** the comparison table, before vs after.
+### 8.3 Teach (M5)
+The point: a trained model can learn new things, and it can forget old ones.
+1. Choose a pack (reworked packs with forms, section 4.6) or type your own animals.
+2. **Before:** the model tries the new animals cold.
+3. Toggle **"Keep practising old animals"** (rehearsal: each batch 50% old, 50% new).
+4. Train. The scoreboard gains "new animals" and keeps "old animals". Without rehearsal old knowledge visibly drops (catastrophic forgetting); with it, it doesn't.
+5. **After:** a before/after table.
 
-Also: export the user pack as JSON, and import a pack.
+**Scenario "Teach it a new kind of task":** start from a model trained only on some forms (e.g. without `young`), grow the vocabulary with the new target tokens (existing weights kept) and train the new form with rehearsal on/off. A second scenario can teach **cs↔en translation** to a forms model and show why it fails on never-seen animals (section 1.1).
 
-### 8.4 Invent
-- Language choice (Czech-sounding / English-sounding), temperature slider, "Invent 10" button.
-- The list of generated names with labels (real! / new! / looks like X).
-- Click a name to see its letter-by-letter guess bars ("why did it pick 'ž' here?").
-- Mini loss chart and Train/Pause controls for the namer.
+Also: export the user pack as JSON, import a pack.
 
-### 8.5 Help and tour
-- A first-visit **tour** (5 steps): this is a tiny brain → press Play → watch mistakes go down → look at the attention → try a never-seen animal.
-- A "?" on every panel opens a popover with "In short" (2–3 sentences, no jargon) and "More detail" (correct terminology, a formula where helpful).
-- An "About" page: how it works, a link to the `src/nn` code, honest comparison with real LLMs.
+### 8.4 Invent (M6)
+- **Invent a name** (namer): language choice, temperature slider, "Invent 10", labels (real! / new! / looks like X), click a name to see its per-letter guess bars.
+- **Inventions gallery** (form model): for every animal form with no real word, the model's invention as a card: name → invented form, ✨ badge, confidence meter. Sorted by confidence or A–Z. Clicking a card opens it in the Forms tab with guess bars and attention (the attention often shows the stem being copied and an ending attached: the pattern made visible). Updates live while training.
+
+### 8.5 Help and tour (M7)
+- A first-visit **tour** (5 steps): this is a tiny brain → press Play → watch mistakes go down → look at the guess bars and what it copies → try a never-seen animal, then one with no real answer.
+- A "?" on every panel: "In short" (2–3 sentences, no jargon) and "More detail" (correct terms, a formula where helpful). Topics include hallucination (a confident answer can be invented).
+- An "About" page: how it works, a link to the `src/nn` code, an honest comparison with real LLMs (same idea of generating one token at a time, tokens there are word pieces, sizes differ by ~10⁷).
 
 ### 8.6 Internationalisation
-All UI strings are in `cs.json` / `en.json`; the default comes from `navigator.language`, and the choice is stored in `localStorage`. Animal data is inherently bilingual. **The Czech copy must be reviewed by the user.**
+All UI strings live in `src/ui/i18n/{cs,en}.json`; the default comes from `navigator.language`, the choice is kept in `localStorage`. The UI language is independent of the data languages. **The Czech copy must be reviewed by the user.**
 
 ---
 
-### 8.7 Baby animals (M8)
-The lesson: **a model always answers, even when it doesn't know**, and sometimes it's confident about it (hallucination). Czech young names follow a learnable pattern (kočka → kotě, kachna → kachně, slon → slůně, vlk → vlče, lev → lvíče), with irregular exceptions (pes → štěně, kůň → hříbě). English is mostly irregular (puppy, kitten, foal, lamb, joey), with weak patterns (*-ling*, *-let*, "cub" for big cats and bears, "calf" for big animals). Expect believable Czech inventions (*žirafě*) and funny English ones.
-
-**Translate tab:** the "to:" dropdown gains "Czech baby" and "English baby". Each result gets a badge:
-- ✓ **real word**: the dataset has it and the model trained on it.
-- 🔒 **hidden real answer**: the dataset has it but it's in the `unseen` split. A "reveal" button shows the real word and whether the model got it.
-- ✨ **the model's own invention**: no real answer exists in the data.
-
-Next to the badge, a **confidence meter**: the probability of the whole generated word (product of per-letter probabilities, shown as a 0–100 scale using the geometric mean per letter so long words aren't penalised). The help text says plainly that a confident answer can still be wrong.
-
-**"Baby animals" gallery (new tab, or a section inside Invent):** for every animal without a young name, the model's inventions in Czech and English, as cards: adult name → invented young name, ✨ badge, confidence meter. Sorted by confidence, with a toggle to sort A–Z. Clicking a card opens it in Translate with guess bars and attention (the attention often shows the model copying the stem and attaching an ending, which is the pattern made visible). The gallery updates live while training, so you can watch inventions change.
-
-**Scoreboard:** a line "young names (hidden real answers)", split Czech / English, so the different learnability of the two languages is visible.
-
-**Data:** about 60–100 animals with at least one young name, the rest without. About 20% of the young names go to `unseen` (following the animal's split). A native speaker reviews all young names; rare or debated Czech forms are better left out than taught.
-
-**Training mix:** young-name examples make up about 30% of each batch once the form is enabled, so the smaller dataset isn't drowned out. Tune and record in `docs/DECISIONS.md`.
-
-**Teach mode tie-in:** a Teach scenario "Teach it baby names" starts from a model trained on names only, grows the vocabulary with the `young` target tokens (existing weights kept), and trains on young names with rehearsal on/off. It shows that a model can learn a new *kind* of task, not only new words.
+## 9. Pretrained replay ("show something immediately") — M4
+- `scripts/bake-replay.ts` runs the same code in Node with a fixed seed (training is deterministic across Node and the worker), recording the snapshot schedule (thinned to ~60 snapshots).
+- Stored as `public/replay/forms.bin` + a JSON index, weights int8 with a per-matrix scale (~27 KB per snapshot, ~1.6 MB total), with the loss/eval history.
+- On first load the app opens in **replay mode**: the timeline is populated and the user can scrub from "baby brain" to "trained brain" at once. **"Train your own brain"** resets with a new seed and trains live.
+- `npm run bake` regenerates it. The index stores a hash of dataset, vocabulary and model config; on mismatch the app falls back to live training.
 
 ---
 
-## 9. Pretrained replay ("show something immediately")
-- `scripts/bake-replay.ts` runs the same `src/nn` code in Node with a fixed seed, training translator and namer on the base dataset, and records the snapshot schedule from section 7.3 (thinned to ~60 snapshots).
-- Stored as `public/replay/translator.bin` plus a JSON index, weights quantised to **int8 with a per-matrix scale** (~25 KB per snapshot, ~1.5 MB total), along with the loss/eval history.
-- On first load the app opens in **replay mode**: the timeline is fully populated, and the user can scrub from "baby brain" to "trained brain" immediately. The button **"Train your own brain"** resets with a new seed and trains live.
-- `npm run bake` regenerates it. CI checks that the replay was baked with the current dataset and model version (hash stored in the index); if they don't match, the app falls back to live training only.
+## 10. Performance
 
----
+Measured in M2:
+- **Node 22, one core:** ~40 training steps/s at batch 16.
+- **Headless Chromium worker:** ~38 training steps/s, ~32 steps/s wall-clock including evaluation and UI. 5 000 steps take ~160 s.
+- **Evaluation:** ~250 ms for the 355 real forms, ~640 ms with inventions (906 forms), hence the schedule in section 7.
 
-## 10. Performance budget
-- Target: **≥ 30 training steps/s** (batch 16) for the translator in the worker on a mid-range laptop, so a run converges in ~1–3 minutes at full speed. Measure in M2. If too slow: avoid allocating per op (reuse buffers in a tape arena), fuse layernorm and softmax backward, then reduce d_model to 24.
-- Speed slider: 1 step per tick (slow, kids can watch) to "as fast as possible" (time-boxed loop, ~12 ms of work per slice, so `pause` messages are handled promptly).
-- Rendering: each panel redraws only when its data changes, and at most 30 fps. Canvases are HiDPI-aware (devicePixelRatio).
+Rules: the speed slider goes from 1 step/s (kids can watch each step) to max. Panels redraw only when their data changes, at most once per animation frame. Canvases are HiDPI-aware. If a later feature makes training noticeably slower, first reuse buffers in the tape, then fuse layernorm/softmax backward.
 
 ---
 
 ## 11. Visual style
-- Clean, light theme with a dark-mode toggle. Large readable type (≥ 15 px body text).
-- **One diverging palette** (weights) and **one sequential palette** (attention, probabilities) used everywhere. Category colours for `kind`: lookalike, partial, different. Unseen items use a dashed outline.
+- Clean, light theme (dark mode in M7). Readable type (≥ 15 px body text).
+- **One sequential palette** (probabilities, attention: white → blue) and **one diverging palette** (weights: blue / white / red), defined in `src/viz/colors.ts` and handed to CSS as variables.
+- Status colours and icons: correct ✓ green, close ≈ amber, wrong ✗ red, invented ✨ purple. Never-seen animals get a dashed badge. Scoreboard lines: known solid, never-seen dashed/dotted.
 - Motion: smooth transitions (letter map lerp, bar easing), no flashing.
-- Accessible: colour is never the only cue (✓/✗ icons, patterns), keyboard focus works for all controls.
+- Accessible: colour is never the only cue (icons, dash patterns), keyboard focus works on all controls.
 
 ---
 
 ## 12. Milestones
 
-Each milestone ends with tests green, `npm run build` passing, and a commit and push.
+Each milestone ends with tests green, `npm run build` passing, and a merged pull request. Accuracy targets are guides (section 1).
 
-**M1: The brain library.** Project scaffold (Vite, TS strict, Vitest, CI). `src/nn`: tensors, autograd, ops, Adam, RNG, vocabulary, translator model.
-✔ Gradient checks for every op and for the full tiny model · overfit test · determinism test · parameter count logged.
+**M1: The brain library.** ✅ Done. Scaffold, `src/nn` (tensors, autograd, ops, Adam, RNG, vocabulary, translator, serialisation, vocab growth), gradient checks, overfit and determinism tests.
 
-**M2: Training in the browser.** Dataset files (base list for user review) and validator. Worker plus protocol, trainer, eval. Minimal UI: controls, translate box, guess bars, loss chart, scoreboard, animal list.
-✔ Training converges in the browser · ≥ 30 steps/s measured (or a documented decision) · train accuracy ≥ 95% · at least some unseen lookalikes correct · **user reviews the dataset**.
+**M2: Training in the browser.** ✅ Done (pending the user's data review). Dataset v2 with forms + validator + review doc, generalisation experiments, copy mechanism and target-token start, `FormTrainer` with copy practice, engine + worker + protocol, minimal UI (controls, question box with pickers, badge, confidence, guess bars with copied/wrote, loss chart, scoreboard, animal list), Playwright smoke test. Measured: ~38 steps/s; known cs 98% / en 93%; never-seen Czech pattern forms partly right.
 
-**M3: Seeing inside.** Attention grids, letter map (PCA with Procrustes alignment), "Inside the brain" tab with weight/delta/gradient heatmaps.
-✔ Visual check with Playwright screenshots of each panel at step 0 and after training.
+**M3: Seeing inside.** Attention grids (cross, copy, self in expert mode) linked to the guess bars by hover; letter map (PCA + Procrustes + lerp); "Inside the brain" tab with weight / change / gradient heatmaps; `inspect`/`weights`/`letterMap` messages; tabs in the UI.
+✔ Playwright screenshots of each panel at step 0 and after training, reviewed visually.
 
 **M4: Time travel and replay.** Snapshot store, timeline seeking, bake script, int8 replay, replay-first start.
 ✔ The page opens to a ready replay with no training needed · seeking is instant (< 100 ms) · "Train your own" works.
 
-**M5: Teach mode.** Packs, user additions, localStorage, import/export, rehearsal toggle, before/after table, "new animals" line.
-✔ Forgetting is visible with rehearsal off and largely prevented with it on (verify, and tune the defaults if not).
+**M5: Teach mode.** Reworked packs with forms, user additions, localStorage, import/export, rehearsal toggle, before/after table, "new animals" line, the "new kind of task" scenario with vocabulary growth.
+✔ Forgetting is visible with rehearsal off and largely prevented with it on (tune defaults so the effect shows in < 1 min).
 
-**M6: Invent mode.** Namer model, training, sampling with temperature, labels, per-letter bars.
-✔ Generates plausible names at temperature 0.8, with mostly "new!" labels.
+**M6: Invent.** Namer model and its tab; inventions gallery for the form model.
+✔ Plausible names at temperature 0.8, mostly "new!" · the gallery fills with inventions within ~1 min of training · the user reviews a sample of inventions.
 
-**M7: Polish and ship.** CZ/EN strings complete, help popovers, tour, About page, dark mode, GitHub Pages deploy workflow, Playwright smoke test (load, play 5 s, translate a word, switch tabs and language).
-✔ Live URL works in Chrome, Edge and Firefox · **user reviews the Czech copy**.
+**M7: Polish and ship.** CZ/EN strings complete, help popovers, tour, About page, dark mode, GitHub Pages deploy workflow, Playwright smoke test (load, play, ask a word, switch tabs and language).
+✔ Live URL works in Chrome, Edge and Firefox · **the user reviews the Czech copy**.
 
-*v1 is complete here. What follows is the first step after launch.*
+*v1 is complete here.* Then: more languages (section 15).
 
-**M8: Baby animals.** Add the form `young` to `forms.json`, the target tokens `<cs:young> <en:young>`, young names in the base dataset, the training mix, result badges (real / hidden / invention), the confidence meter, the Baby animals gallery, the scoreboard line, the Teach scenario, and a re-baked replay that includes young names. Raise d_model to 40–48 if name-translation accuracy drops noticeably (measure first and record the decision).
-✔ Name translation accuracy within 3 percentage points of v1 · Czech hidden young names noticeably better than English (expected; if not, document what happened) · gallery fills with inventions within ~1 min of training · **user reviews the young-name list and a sample of inventions** · Teach scenario loads a names-only model, grows the vocabulary, and learns young names without breaking it.
+### 12.1 Workflow
+- From M3 on, work happens through **pull requests**: one branch and one PR per milestone (or per coherent step of a milestone), reviewed by the user before merging.
+- Each PR: tests and build green, `docs/DECISIONS.md` updated for any deviation, `docs/HANDOFF.md` updated with the new state, screenshots for UI changes.
+- Decisions that need the user (data, Czech wording, trade-offs) are asked in the PR, not decided silently.
 
 ---
 
@@ -384,59 +402,52 @@ Each milestone ends with tests green, `npm run build` passing, and a commit and 
 
 | Risk | Mitigation |
 |---|---|
-| Our own backprop has subtle bugs | Gradient checks for each op and end-to-end, the overfit test, and reference values from a tiny hand-computed example |
-| Too slow in pure JS | Buffer reuse, op fusion, smaller d_model. The worker keeps the UI smooth regardless. |
-| Unseen lookalikes don't generalise | Tune data balance (more lookalike pairs), model size, steps. Adjust the dataset `kind`/`split` labels after observing, and document it. |
-| Letter map is jittery or meaningless | Procrustes alignment and lerp. If structure is weak, also offer a "colour by vowel/consonant" view and explain honestly. |
-| Forgetting demo too weak or too strong | Tune pack size, LR and steps in Teach mode. Choose defaults that make the effect clear in < 1 min. |
-| Dataset mistakes (Czech spelling) | Validator plus mandatory user review |
+| Our own backprop has subtle bugs | Gradient checks for each op and end-to-end, overfit test, cached-vs-full decoding test |
+| Too slow in pure JS | Measured fine (~38 steps/s). If a feature slows it: buffer reuse, op fusion, smaller evaluation set |
+| Never-seen forms barely generalise | Accepted: partial generalisation with believable mistakes is the lesson. Copy practice is the lever if it gets worse |
+| English looks "broken" next to Czech | Explain it: English forms are irregular words that must be memorised. The scoreboard by kind shows why |
+| Kids take inventions as real words | ✨ badge and "its own invention" wording everywhere, confidence meter with "can still be wrong", help on hallucination |
+| Letter map is jittery or meaningless | Procrustes alignment and lerp; if structure is weak, colour by vowel/consonant and say so honestly |
+| Forgetting demo too weak or too strong | Tune pack size, LR and steps in Teach mode |
+| Dataset mistakes (Czech forms) | Validator, `unsure` markers, mandatory user review |
 | Memory growth from snapshots | Cap the count and thin old ones out |
-| (M8) Young-name task hurts name translation | Batch mix tuning, larger d_model, measure before/after |
-| (M8) Inventions are boring (always "mládě", "cub") | Generic phrases kept out of main entries. If still dull, show the top-3 decodings (beam search) as alternatives in the gallery. |
-| (M8) Kids take inventions as real words | ✨ badge and "invented by the model" wording on every invention, plus a help popover on hallucination |
 
 ---
 
-## 14. Multilingual rules for v1 code (cheap now, expensive later)
-v1 ships only Czech and English, but the code must already follow these rules:
-- No `cs`/`en` literals outside `data/` and i18n files. Languages come from `languages.json`.
-- Vocabulary size and contents come from `vocab.json`. Models are built from those sizes.
-- Target tokens are generated from languages × forms (`languages.json` × `forms.json`). No code assumes the only form is `name`.
-- The language picker in the Translate tab is a "to:" dropdown (only two entries in v1), and the source language is auto-detected (shown as "looks like Czech" from the dataset, or "unknown").
-- The scoreboard and animal list work per selected language pair.
-- The replay index stores the language set and vocab hash; if they don't match, fall back to live training.
-- The UI language (cs/en strings) is independent of the data languages.
+## 14. Multilingual rules (cheap now, expensive later)
+The app ships Czech and English, but the code already follows these rules:
+- No `cs`/`en` literals outside `data/`, i18n files and tests. Languages come from `languages.json`.
+- Vocabulary size and contents come from `vocab.json`; models are built from those sizes.
+- Target tokens come from `forms.json` × `languages.json`. No code assumes a fixed set of forms.
+- The UI has a **language picker and a form picker**, both built from the data. Forms are always within one language.
+- The scoreboard and animal list work per language.
+- The replay index stores the language set and vocabulary hash; on mismatch, fall back to live training.
+- The UI language is independent of the data languages.
 
 ---
 
 ## 15. Next step: more languages
 
-Adding a language = add an entry to `languages.json`, add its letters to `vocab.json` (if any are new), add a pack with `"names": {"de": …}` for existing animal ids, add UI copy for the language name. No code changes.
+Adding a language = an entry in `languages.json`, its letters in `vocab.json` (if new), a pack with names and forms for existing animal ids, UI copy for the language name. No code changes. The same form drill runs for every language.
 
 **Recommended order:**
-1. **Slovak (sk):** very close to Czech (many identical words: pes, vlk, medveď/medvěd). New letters: `ä ĺ ľ ŕ ô`. Shows that similar languages are learned quickly and that the model leans on Czech knowledge.
-2. **German (de):** new letters `ä ö ü ß`. Several animals are lookalikes of English (Hund/hound, Maus/mouse), others of Czech borrowing (Tiger, Krokodil).
-3. **Polish (pl):** letters `ą ć ę ł ń ś ź ż`. Close to Czech and Slovak, very different spelling. Good for "same sound, different letters".
-4. **Later, a non-Latin script:** Ukrainian or Russian (Cyrillic, ~33 new letters) or Greek. The letter map then shows a whole new island of letters that slowly drifts to sit near their Latin counterparts. A strong visual.
+1. **Slovak (sk):** close to Czech, similar form patterns (tiger → tigrica, mačka → mačiatko). New letters `ä ĺ ľ ŕ ô`. Shows that a related language is learned quickly.
+2. **German (de):** female forms mostly *-in* (Löwe → Löwin), young forms mostly *-chen* diminutives or compounds. A clean, different pattern. New letters `ä ö ü ß`.
+3. **Polish (pl):** Czech-like patterns, very different spelling. Letters `ą ć ę ł ń ś ź ż`.
+4. **Later, a non-Latin script** (Ukrainian, Russian, Greek): the letter map shows a new island of letters.
 
-**Model size:** keep d_model 32 for up to 3 languages. From 4 languages, or with Cyrillic, raise d_model to 48 (≈ 50k params) if accuracy drops. Measure and record the change in `docs/DECISIONS.md`.
+**Model size:** keep d_model 32 for up to 3 languages; raise to 48 if accuracy drops noticeably with more. Measure and record in `docs/DECISIONS.md`.
 
-**New experiments this unlocks (add as panels or Teach scenarios):**
-- **Zero-shot translation:** train on cs↔en and en↔de only, then test cs→de, a direction the model never practised. Show whether it works (partially, for lookalikes) and explain that big translators do the same thing.
-- **Language detector:** the scoreboard per pair, plus a "which language is this word?" readout derived from the model's outputs.
-- **Teach a new language to a trained brain:** load the German pack into a cs/en model, with vocabulary growth for new letters, rehearsal on/off, and watch old languages keep or lose accuracy.
-- **Letter map by language:** colour letters by which languages use them.
+**Experiments this unlocks:** compare how fast patterns are learned per language (a scoreboard row per language); teach a new language to a trained brain with vocabulary growth and rehearsal on/off; colour the letter map by language.
 
-**UI changes when there are more than 2 languages:** the "to:" dropdown gets more entries, the scoreboard gets a pair selector (or a small accuracy matrix: source × target language, colour = accuracy), and the animal list shows a column per language.
-
-**Data review:** each new language needs a native or fluent speaker to review the pack, the same as Czech in M2.
-
-**Young names in new languages:** each language pack may include `young` names. Slovak and Polish have Czech-like patterns (sk *mačiatko*, pl *kocię*), so the model can compare patterns across related languages. German mostly uses *-chen*/*-lein* diminutives or compounds (*Kätzchen*, *Elefantenbaby*), a different pattern again.
+**Data review:** each new language needs a native or fluent speaker to review its pack.
 
 ---
 
 ## 16. Open items for later (not v1)
+- Translation as a Teach scenario (section 8.3), including zero-shot directions once there are 3+ languages.
+- Comparison mode: the same data on a no-attention model to show why attention helps.
+- "Break the brain": zero out a weight, a head or the copy gate and see what fails (ablation).
+- Beam search / top-3 decodings for the inventions gallery.
 - WebGPU acceleration (not needed at this size).
-- Comparison mode: the same data on a no-attention model (plain RNN or bag-of-letters) to show *why* attention helps.
-- "Break the brain": zero out a weight or head and see what fails (ablation).
 - Shareable links to a trained model state.
