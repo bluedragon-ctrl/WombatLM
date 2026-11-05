@@ -48,6 +48,13 @@ describe('explain (look inside one letter)', () => {
     });
   }
 
+  it('"what would it write now" after the last stage is the real guess', () => {
+    const ex = model.explain(3, src, ids, 2);
+    expect(ex.lens).toHaveLength(1 + ex.stages.length);
+    const last = ex.lens[ex.lens.length - 1];
+    for (let t = 0; t < V; t++) expect(last[t]).toBeCloseTo(ex.logits[t], 4);
+  });
+
   it('the running numbers after the last step are the decoder output', () => {
     const ex = model.explain(3, src, ids, 1);
     const sig = tr.activations['dec0.out'];

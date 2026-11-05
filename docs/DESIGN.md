@@ -325,6 +325,7 @@ Desktop layout, ≥ 1280 wide. Top bar: logo · tabs **Forms · Inside the brain
 - **"Where is it learning?"** (added after review): the model's parts as a diagram in signal order, each with its change per step (one scale for all) and a line over time; click to jump to its heatmaps.
 - **"Look inside one letter"** (added after review): for one letter of the current answer, every number of its position on the way through the decoder (goes in → each step adds → guess), with exact "where it comes from" sums on click and the used weights outlined in the heatmaps. Computed on request (`explain`). See DECISIONS.
 - Heatmaps: letters / positions on the axes, a shared colour scale by default, plain-language tooltips, thumbnails for number × number matrices in plain mode.
+- **Plain mode for non-experts** (user review): "How the model picks one letter" shows, after every stage, which letter the model **would write now** and how sure it is (logit lens), a "how sure, stage by stage" ladder, attention of both heads together and plain words; no rows of numbers, scores or matrix shapes (those stay in Expert). It opens on the letter where the answer stops copying the animal. See DECISIONS.
 
 ### 8.3 Teach (M5)
 The point: a trained model can learn new things, and it can forget old ones.

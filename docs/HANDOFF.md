@@ -31,6 +31,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 | Slovak and German (user) | **Done** (branch `claude/gallant-tesla-msdpx7`, first draft of the data). `data/animals.sk.json`, `data/animals.de.json` merged into the base animals by id (`LANGUAGE_PACKS`), 8 new letters, 71 tokens. Measured: d_model 32 is big enough (4 languages 95–99 % known at 30 000 steps, same as d 48), but it needs ~4× the steps. See DECISIONS. |
 | Ask form (user) | **Done** (branch `ccr-a4ae8508-s8hr46`). Ask tab: 1. Language · 2. Animal · 3. Which word, then **Answer now** / **✍️ Answer slowly** (letter by letter with a "what the model is doing" box); answers only when asked; no silent language switch. See DECISIONS. |
 | One step in full + tokens' way (user) | **Done** (branch `ccr-8bd786fd-ary3n5`). Step ×1 while paused records the step in detail (`src/train/stepDetail.ts`, `FormTrainer.record`, `stepDetail` / `why` messages): batch before → after (no dropout), "What this step changed" panel with each number's whole calculation (gradient split by example, clipping, Adam, result), 5th cycle stage "check", heatmap click → why. Ask tab: "Follow the tokens through the model" stepper (`src/ui/journey.ts`). See DECISIONS and `docs/REVIEW_TRANSPARENCY.md`. |
+| Inside the model for non-experts (user) | **Done** (branch `claude/admiring-galileo-qb1rto`). Analysis of the tab + options A–F; built E (plain words and numbers, help behind "?") and A ("what would it write now" after each stage, logit lens, `lensLogits`, `ExplainMsg.lens`). Proposed, not built: B attention as lines, C one "brain scan" picture replacing the flow diagram and the heatmap grid, D thinking units explained by examples, F three levels. See DECISIONS. |
 | M4 time travel | **Next.** |
 | M5–M7 | Not started. |
 
@@ -51,6 +52,8 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 - Time travel must respect the learning/answering split: a seeked snapshot is a frozen brain too, so the step label under the answer ("Answer from the brain at step N") should show the snapshot's step, and the practice strip should be hidden or say it is history.
 
 ## Waiting for the user
+
+- **Inside the model for non-experts:** check the new Czech strings (listed in DECISIONS) and pick the next step among B / C / D / F.
 
 - **Plain-language pass on Inside the model** (branch `claude/youthful-heisenberg-ieybd3`): rewrote `inside.*`, `flow.*`, `explain.*`, `tip.*`, `signal.*` in en and cs (keys unchanged). "Step" now only means a learning step; the 5 parts of "How the model picks one letter" are "stages". Heads, thinking units, volume knobs and softmax are explained where they first appear. Heatmap modes: Values / Recent change / Push (gradient). Czech wording needs a check.
 - **Czech UI copy:** step-in-full / tokens PR: `sd.*`, `jr.*`, `cycle.check*`, `practice.check*`, `practice.nowAnswers`, `inside.whyClick`, `signal.memory`, `signal.dec.final`.

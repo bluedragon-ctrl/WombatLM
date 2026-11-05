@@ -404,6 +404,29 @@ header .params { text-align: right; }
 .xguess .fill { display: block; height: 100%; background: var(--accent); }
 .xguess.chosen { box-shadow: inset 0 0 0 2px var(--accent); }
 .xguess.on { background: #fef3c7; }
+/* Plain mode: no rates, matrix shapes or colour scales (they are in the tooltips and in Expert). */
+.inside.plain .flow-box .val, .inside.plain figure.card figcaption, .inside.plain .legend .shared { display: none; }
+.explain .row[hidden] { display: none; }
+.xhelp details.help, .xtext details.help { vertical-align: middle; }
+/* "What would it write now" (logit lens) */
+.xlens { display: flex; align-items: center; gap: 6px; }
+.xlens .xlabel { width: 150px; flex: none; text-align: right; margin-right: 2px; }
+.xlens-g { display: inline-grid; grid-template-columns: 16px 56px 40px; align-items: center; gap: 5px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.xlens-g b { font-size: 15px; text-align: center; }
+.xlens-g .track, .xladder-chip .track { display: block; height: 8px; background: #eef2f7; border-radius: 4px; overflow: hidden; }
+.xlens-g .fill, .xladder-chip .fill { display: block; height: 100%; background: var(--accent); }
+.xlens-g.chosen { box-shadow: inset 0 0 0 2px var(--accent); }
+.xmostly, .xunits { margin: 2px 0 0 158px; }
+.xeffect b { white-space: nowrap; }
+.xeffect.up { color: #15803d; }
+.xeffect.down { color: #b91c1c; }
+.xladder { margin: 8px 0 4px; padding: 8px 12px; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; }
+.xladder-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.xladder-chip { display: inline-flex; align-items: center; gap: 6px; }
+.xladder-chip .num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #dbeafe; color: var(--accent); font-weight: 700; font-size: 12px; }
+.xladder-chip .track { width: 60px; }
+.xladder-arrow { color: var(--muted); }
+.xverdict { margin: 6px 0 0; color: var(--ink); font-weight: 600; }
 .xdetail { grid-column: 2 / -1; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
 .xdetail p { margin: 0 0 6px; }
 .xcontrib { border-collapse: collapse; font-size: 13px; }

@@ -313,6 +313,15 @@ describe('Engine', () => {
     ex.guesses.forEach((g, i) => { expect(g.char).toBe(ans.steps[1].top[i].char); expect(g.p).toBeCloseTo(ans.steps[1].top[i].p, 5); });
     const g = ex.guesses[0];
     expect(g.contrib.reduce((a, b) => a + b, g.bias)).toBeCloseTo(g.score, 4);
+    // "What would it write now": one per stage plus the start; the last one is the real guess.
+    expect(ex.lens).toHaveLength(1 + ex.stages.length);
+    const last = ex.lens.at(-1)!;
+    expect(last.top[0].char).toBe(ex.guesses[0].char);
+    expect(last.top[0].p).toBeCloseTo(ex.guesses[0].p, 4);
+    // (After 2 steps the chosen letter may be outside the top 5 candidates.)
+    const cg = ex.guesses.find((x) => x.char === ex.chosen);
+    if (cg) expect(last.chosen).toBeCloseTo(cg.p, 4);
+    expect(last.chosen).toBeGreaterThan(0);
   });
 
   it('inspect sends the letter map: characters, end of word and task tokens', () => {

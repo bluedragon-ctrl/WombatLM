@@ -21,6 +21,9 @@ import { shortLabel } from './tokens';
 
 const MODES: InspectMode[] = ['weights', 'delta', 'grad'];
 
+/** A "?" that opens the full explanation (the panel itself keeps one short sentence). */
+const help = (text: string) => h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), h('p', {}, text));
+
 /** Which part of the model a matrix belongs to, for grouping. */
 function group(name: string): string {
   if (/^enc(\d|Norm)/.test(name)) return 'encoder';
@@ -121,10 +124,10 @@ export class InsideTab {
     this.flow = h('div', { class: 'flow' });
     this.overview = h('section', { class: 'panel overview', 'data-test': 'overview' },
       h('h2', {}, t('flow.title')),
-      h('p', { class: 'small' }, t('flow.help')),
+      h('p', { class: 'small' }, t('flow.helpShort'), ' ', help(t('flow.help'))),
       this.flow);
     this.explain = new ExplainView(requestExplain, (marks) => { this.marks = marks; for (const c of this.cards) this.draw(c); }, (code) => this.langName(code));
-    this.el = h('div', { class: 'inside' },
+    this.el = h('div', { class: 'inside plain' },
       h('section', { class: 'panel inside-head' },
         h('p', { class: 'intro', 'data-test': 'inside-intro' }),
         h('p', { class: 'small' }, t('inside.guide'))),
@@ -133,7 +136,7 @@ export class InsideTab {
       h('section', { class: 'panel inside-head' },
         h('h2', {}, t('inside.heatTitle')),
         h('div', { class: 'row' }, modes, this.modeNote),
-        h('p', { class: 'small' }, t(`inside.help`)),
+        h('p', { class: 'small' }, t('inside.helpShort'), ' ', help(t('inside.help'))),
         legend),
       this.body,
       this.signal);
@@ -157,6 +160,8 @@ export class InsideTab {
 
   setExpert(on: boolean): void {
     this.expert = on;
+    // Plain mode hides the engineering details (rates, shapes, colour scales): see style.css.
+    this.el.classList.toggle('plain', !on);
     this.signal.hidden = !on;
     this.explain.setExpert(on);
     this.build();
@@ -262,6 +267,7 @@ export class InsideTab {
     for (const b of boxes) {
       b.fill.style.width = b.rate === null ? '0' : `${Math.max(2, Math.round((b.rate / max) * 100))}%`;
       b.value.textContent = b.rate === null ? t('flow.none') : t('inside.rate', { pct: pct(b.rate) });
+      b.el.title = b.rate === null ? t('flow.click') : `${t('inside.rate', { pct: pct(b.rate) })}\n${t('flow.click')}`;
       const W = 120, H = 26;
       const ctx = prepare(b.spark, W, H);
       ctx.strokeStyle = '#e5e7eb';
@@ -354,7 +360,7 @@ export class InsideTab {
     // A layer's matrix connects an incoming number (row) to an outgoing one (column).
     const layer = /^(dim|hidden)$/.test(c.info.rowKind) && /^(dim|hidden)$/.test(c.info.colKind);
     const where = layer ? `${r} → ${k}` : [r, k].filter(Boolean).join(', ');
-    const lines = [`${roleLabel(c.info)} — ${where}`, tipText(c.info, row, col, tokens), t(`inside.val.${this.mode}`, { v: fmt(v) })];
+    const lines = [`${roleLabel(c.info)} — ${where}`, tipText(c.info, row, col, tokens), t(`inside.val.${this.mode}`, { v: this.expert ? fmt(v) : plainFmt(v) })];
     if (this.expert) lines.push(`${c.info.name}[${row}, ${col}]`);
     if (this.canWhy) lines.push(t('inside.whyClick'));
     return lines.filter(Boolean).join('\n');
@@ -438,6 +444,15 @@ export class InsideTab {
 function fmt(v: number): string {
   const a = Math.abs(v);
   return a === 0 ? '0' : a >= 0.01 ? v.toFixed(3) : v.toExponential(1);
+}
+
+/** A number without scientific notation: 0.0019 rather than 1.9e-3, "almost 0" when tinier than 0.000001. */
+export function plainFmt(v: number): string {
+  const a = Math.abs(v);
+  if (a === 0) return '0';
+  if (a >= 0.01) return v.toFixed(3);
+  if (a < 1e-6) return t('inside.almostZero');
+  return v.toFixed(Math.min(8, 1 - Math.floor(Math.log10(a))));
 }
 
 /** A share (0..1) as a percentage with enough digits for small changes. */

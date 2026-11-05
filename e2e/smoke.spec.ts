@@ -148,10 +148,17 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=explain-caption]')).toContainText(/Letter 2 of/);
   await expect(page.locator('.xletter[data-pos="1"]')).toHaveClass(/on/);
   await expect(page.locator('[data-test=explain-guesses] button')).toHaveCount(5);
+  // Plain mode: "what would it write now" after each stage, no rows of numbers.
+  await expect(page.locator('[data-test=explain-ladder]')).toContainText(/How sure it is/);
+  await expect(page.locator('[data-test=explain-lens]')).toHaveCount(4);
+  await expect(page.locator('canvas[data-strip]')).toHaveCount(0);
+  // Expert: every number, and where it comes from.
+  await page.locator('[data-test=expert]').check();
   await page.locator('canvas[data-strip="dec0.cross:add"]').click({ position: { x: 7, y: 7 } });
   await expect(page.locator('[data-test=explain-detail]')).toContainText(/Where it comes from/);
   await page.locator('[data-test=explain-guesses] button').first().click();
   await expect(page.locator('[data-test=explain-detail]')).toContainText(/favourite-letter bonus/);
+  await page.locator('[data-test=expert]').uncheck();
 
   // A learning example can be asked on the Ask tab.
   await page.click('[data-test=tab-data]');

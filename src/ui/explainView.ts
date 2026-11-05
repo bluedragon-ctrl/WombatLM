@@ -1,13 +1,20 @@
 /**
- * "Look inside one letter" (Inside the model tab): every number the model
- * computes on the way to one letter of the answer, step by step, with what
- * each step adds highlighted. Clicking a square shows where its value comes
- * from (the exact sum), and the weights it used are outlined in the heatmaps.
+ * "How the model picks one letter" (Inside the model tab), for one letter of
+ * the answer, stage by stage.
+ *
+ * Plain mode tells it without rows of numbers: after each stage, which letter
+ * the model would write if it stopped there and how sure it is ("what would it
+ * write now", the logit lens), where it looks (both heads together) and how
+ * many detectors switch on.
+ *
+ * Expert mode adds every number the model computes on the way, with what each
+ * stage adds highlighted. Clicking a square shows where its value comes from
+ * (the exact sum), and the weights it used are outlined in the heatmaps.
  *
  * Computed by the worker only on request (`explain`), for one letter at a time.
  */
 import { EOS } from '../nn/vocab';
-import type { AnswerMsg, ExplainMsg, ExplainStage } from '../train/protocol';
+import type { AnswerMsg, ExplainLens, ExplainMsg, ExplainStage } from '../train/protocol';
 import { sequential, symmetricScale } from '../viz/colors';
 import { drawStrip, stripCellAt, stripLayout, topIndices } from '../viz/vectorStrip';
 import type { HeatmapMarks } from '../viz/weightHeatmap';
@@ -45,6 +52,12 @@ export class ExplainView {
   private lastKey = '';
   private picker: HTMLElement;
   private body: HTMLElement;
+  private numbersRow: HTMLElement;
+  private helpShort: HTMLElement;
+  private helpMore: HTMLElement;
+  /** The question of the latest answer, and whether the user picked its letter (otherwise the most interesting one is shown). */
+  private question = '';
+  private picked = false;
 
   constructor(
     private request: (q: Question, position: number) => void,
@@ -55,31 +68,51 @@ export class ExplainView {
     const numbers = h('input', { type: 'checkbox', 'data-test': 'explain-numbers' });
     numbers.onchange = () => { this.numbers = numbers.checked; this.render(); };
     this.body = h('div', { class: 'xbody', 'aria-live': 'polite' });
+    this.numbersRow = h('div', { class: 'row small', hidden: true }, h('label', {}, numbers, ' ', t('explain.numbers')));
+    this.helpShort = h('span', {});
+    this.helpMore = h('p', {});
     this.el = h('section', { class: 'panel explain', 'data-test': 'explain' },
       h('h2', {}, t('explain.title')),
-      h('p', { class: 'small' }, t('explain.help')),
+      h('p', { class: 'small xhelp' }, this.helpShort, ' ', h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), this.helpMore)),
       this.picker,
-      h('div', { class: 'row small' }, h('label', {}, numbers, ' ', t('explain.numbers'))),
+      this.numbersRow,
       this.body);
+    this.renderHelp();
     this.render();
   }
 
   setExpert(on: boolean): void {
     this.expert = on;
+    this.numbersRow.hidden = !on;
+    this.renderHelp();
     this.renderPicker();
     this.render();
+  }
+
+  private renderHelp(): void {
+    this.helpShort.textContent = t('explain.helpShort');
+    this.helpMore.textContent = this.expert ? t('explain.help') : t('explain.helpMore');
   }
 
   /** The answer shown on the Ask tab: its letters are the ones to pick from. */
   setAnswer(a: AnswerMsg | undefined): void {
     this.answer = a;
-    if (a && a.steps.length) this.position = Math.min(this.position ?? 0, a.steps.length - 1);
+    if (a && a.steps.length) {
+      const q = `${a.text}|${a.lang}|${a.form}`;
+      if (q !== this.question) { this.question = q; this.picked = false; }
+      // Until the user picks a letter: the one where the answer stops copying the animal
+      // (it can move while the model learns).
+      if (!this.picked) this.position = interestingLetter(a);
+      this.position = Math.min(this.position ?? 0, a.steps.length - 1);
+    }
     this.renderPicker();
     if (!a) this.render();
   }
 
   /** Choose a letter (guess-bar column) and look inside it. */
   select(position: number): void {
+    if (this.answer) this.question = `${this.answer.text}|${this.answer.lang}|${this.answer.form}`;
+    this.picked = true;
     this.position = position;
     if (this.answer && this.answer.steps.length) this.position = Math.min(position, this.answer.steps.length - 1);
     this.renderPicker();
@@ -128,6 +161,7 @@ export class ExplainView {
       return;
     }
     if (!m) { this.body.replaceChildren(h('p', { class: 'small' }, t('explain.wait'))); return; }
+    const ex = this.expert;
     const p = m.position;
     const written = m.decIn.slice(1).join('');
     // One colour scale for all the letter's numbers, so sizes can be compared from step to step.
@@ -136,49 +170,129 @@ export class ExplainView {
     const rows: HTMLElement[] = [];
     let num = 1;
     const tokIn = m.decIn[p];
+    const lens = m.lens ?? [];
+    const startStrips = ex ? [
+      this.strip('start', 'token', t('explain.strip.token', { tok: shortLabel(tokIn) }), m.start.token, scale),
+      this.strip('start', 'pos', t('explain.strip.pos', { n: p + 1 }), m.start.pos, scale),
+      this.strip('start', 'x', t('explain.strip.in'), m.start.x, scale),
+    ] : [];
+    if (lens[0]) startStrips.push(this.lens(lens[0], m.chosen));
     rows.push(this.stageRow('start', num++, t(p === 0 ? 'explain.start.titleTask' : 'explain.start.title', { tok: this.full(tokIn) }),
-      t('explain.start.help', { n: p + 1, d: m.start.x.length }), [
-        this.strip('start', 'token', t('explain.strip.token', { tok: shortLabel(tokIn) }), m.start.token, scale),
-        this.strip('start', 'pos', t('explain.strip.pos', { n: p + 1 }), m.start.pos, scale),
-        this.strip('start', 'x', t('explain.strip.in'), m.start.x, scale),
-      ], null));
+      'start', t('explain.start.help', { n: p + 1, d: m.start.x.length }), startStrips, null, lens[0] ? { from: null, to: lens[0].chosen } : null));
     let before = m.start.x;
     const layers = new Set(m.stages.map((s) => s.name.split('.')[0])).size;
-    for (const s of m.stages) {
+    m.stages.forEach((s, i) => {
       const kind = s.name.split('.')[1]; // self, cross, ffn
       const layer = layers > 1 ? ` ${t('explain.layer', { n: Number(s.name.match(/\d+/)?.[0] ?? 0) + 1 })}` : '';
       const marks = new Set(topIndices(s.add, TOP));
       const strips: HTMLElement[] = [];
-      if (s.kind === 'attend') strips.push(this.attention(s, kind === 'self' ? m.decIn : m.input));
-      else strips.push(this.strip(s.name, 'hidden', t('explain.strip.units', { on: s.hidden.filter((v) => v > 0.05).length, n: s.sources }), s.hidden, symmetricScale(s.hidden)));
-      strips.push(
-        this.strip(s.name, 'add', t('explain.strip.add'), s.add, scale, marks),
-        this.strip(s.name, 'x', t('explain.strip.now'), s.x, scale, marks));
-      rows.push(this.stageRow(s.name, num++, t(`explain.${kind}.title`) + layer, t(`explain.${kind}.help`), strips, norm(s.add) / Math.max(1e-9, norm(before))));
+      if (s.kind === 'attend') strips.push(ex ? this.attention(s, kind === 'self' ? m.decIn : m.input) : this.attentionPlain(s, kind === 'self' ? m.decIn : m.input));
+      else if (ex) strips.push(this.strip(s.name, 'hidden', t('explain.strip.units', { on: unitsOn(s), n: s.sources }), s.hidden, symmetricScale(s.hidden)));
+      else strips.push(h('p', { class: 'small xunits' }, t('explain.unitsOn', { on: unitsOn(s), n: s.sources })));
+      if (ex) {
+        strips.push(
+          this.strip(s.name, 'add', t('explain.strip.add'), s.add, scale, marks),
+          this.strip(s.name, 'x', t('explain.strip.now'), s.x, scale, marks));
+      }
+      const l = lens[i + 1];
+      if (l) strips.push(this.lens(l, m.chosen));
+      rows.push(this.stageRow(s.name, num++, t(`explain.${kind}.title`) + layer, kind, t(`explain.${kind}.help`), strips,
+        ex ? norm(s.add) / Math.max(1e-9, norm(before)) : null, l ? { from: lens[i].chosen, to: l.chosen } : null));
       before = s.x;
-    }
-    rows.push(this.stageRow('guess', num, t('explain.guess.title'), t('explain.guess.help'), [
-      this.strip('guess', 'final', t('explain.strip.final'), m.final, symmetricScale(m.final)),
+    });
+    rows.push(this.stageRow('guess', num, t('explain.guess.title'), 'guess', t('explain.guess.help'), [
+      ...(ex ? [this.strip('guess', 'final', t('explain.strip.final'), m.final, symmetricScale(m.final))] : []),
       this.guesses(m),
-    ], null));
+    ], null, null));
     const caption = p === 0 ? t('explain.caption0', { n: m.columns, chosen: this.full(m.chosen) })
       : t('explain.caption', { k: p + 1, n: m.columns, written, chosen: this.full(m.chosen) });
     this.body.replaceChildren(
       h('p', { class: 'xcaption', 'data-test': 'explain-caption' }, caption, ' ', h('span', { class: 'small' }, t('explain.step', { step: m.step }))),
-      h('p', { class: 'small' }, t('explain.marks')),
-      h('ol', { class: 'xstages' }, ...rows));
+      ...(lens.length ? [this.ladder(m)] : []),
+      ...(ex ? [h('p', { class: 'small' }, t('explain.marks'))] : []),
+      h('ol', { class: `xstages${ex ? '' : ' plain'}` }, ...rows));
     this.onMarks(this.marks());
   }
 
-  private stageRow(id: string, num: number, title: string, help: string, strips: HTMLElement[], change: number | null): HTMLElement {
-    const meter = change === null ? h('div', { class: 'xchange' }) : h('div', { class: 'xchange', title: t('explain.changeHelp') },
-      h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${Math.min(100, Math.round(change * 100))}%` })),
-      h('span', { class: 'small' }, t('explain.change', { pct: Math.round(change * 100) })));
+  /**
+   * "How sure it is about the letter, stage by stage": the chance of the
+   * written letter after each stage, and which stage raised it the most.
+   */
+  private ladder(m: ExplainMsg): HTMLElement {
+    const tok = this.full(m.chosen);
+    const names = ['start', ...m.stages.map((s) => s.name.split('.')[1])];
+    const chips: HTMLElement[] = [];
+    m.lens.forEach((l, i) => {
+      if (i) chips.push(h('span', { class: 'xladder-arrow', 'aria-hidden': 'true' }, '→'));
+      chips.push(h('span', { class: 'xladder-chip', title: t(`explain.name.${names[i]}`) },
+        h('span', { class: 'num' }, String(i + 1)),
+        h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${Math.max(2, Math.round(l.chosen * 100))}%` })),
+        h('b', {}, pctText(l.chosen))));
+    });
+    let best = -1, gain = 0.05;
+    for (let i = 1; i < m.lens.length; i++) {
+      const g = m.lens[i].chosen - m.lens[i - 1].chosen;
+      if (g > gain) { gain = g; best = i; }
+    }
+    const verdict = best > 0 ? t('explain.jump', { tok, n: best + 1, stage: t(`explain.name.${names[best]}`) })
+      : m.lens[0].chosen > 0.5 ? t('explain.jumpNone', { tok }) : '';
+    return h('div', { class: 'xladder', 'data-test': 'explain-ladder' },
+      h('span', { class: 'small' }, t('explain.ladder', { tok })),
+      h('div', { class: 'xladder-chips' }, ...chips),
+      verdict ? h('p', { class: 'small xverdict' }, verdict) : null);
+  }
+
+  /** "Would write now": the 3 most likely letters at this point, the finally written one outlined. */
+  private lens(l: ExplainLens, chosen: string): HTMLElement {
+    return h('div', { class: 'xlens', 'data-test': 'explain-lens' },
+      h('span', { class: 'xlabel small' }, t('explain.wouldWrite')),
+      ...l.top.map((g) => h('span', { class: `xlens-g${g.char === chosen ? ' chosen' : ''}`, title: this.full(g.char) },
+        h('b', {}, shortLabel(g.char)),
+        h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${Math.max(2, Math.round(g.p * 100))}%` })),
+        h('span', { class: 'small' }, pctText(g.p)))));
+  }
+
+  /** Attention in plain mode: both heads together (their average), and where it looks most. */
+  private attentionPlain(s: ExplainStage, keys: string[]): HTMLElement {
+    const w = Array.from({ length: s.sources }, (_, i) => {
+      let a = 0;
+      for (let hd = 0; hd < s.heads; hd++) a += s.weights[hd * s.sources + i];
+      return a / s.heads;
+    });
+    const top = w.indexOf(Math.max(...w));
+    return h('div', { class: 'xatt-wrap' },
+      h('div', { class: 'xatt-head' },
+        h('span', { class: 'xlabel small' }, t('explain.looksAt')),
+        ...keys.slice(0, s.sources).map((k, i) => h('span', { class: 'xatt', style: `background:${sequential(w[i])};color:${w[i] > 0.6 ? '#fff' : 'inherit'}`, title: `${this.full(k)}: ${pctText(w[i])}` },
+          h('b', {}, shortLabel(k)), h('small', {}, `${Math.round(w[i] * 100)}`)))),
+      h('p', { class: 'small xmostly' }, t('explain.mostly', { tok: this.full(keys[top]), pct: pctText(w[top]) })));
+  }
+
+  private stageRow(id: string, num: number, title: string, kind: string, help: string, strips: HTMLElement[], change: number | null,
+    effect: { from: number | null; to: number } | null): HTMLElement {
+    const side = h('div', { class: 'xchange' });
+    if (change !== null) {
+      side.title = t('explain.changeHelp');
+      side.append(
+        h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${Math.min(100, Math.round(change * 100))}%` })),
+        h('span', { class: 'small' }, t('explain.change', { pct: Math.round(change * 100) })));
+    }
+    if (effect && this.msg) {
+      const up = effect.from === null ? '' : effect.to > effect.from + 0.005 ? ' up' : effect.to < effect.from - 0.005 ? ' down' : '';
+      const arrow = up === ' up' ? '▲' : up === ' down' ? '▼' : '';
+      side.append(h('span', { class: `xeffect small${up}`, 'data-test': 'explain-effect' },
+        t('explain.effect', { tok: shortLabel(this.msg.chosen) }), ': ',
+        effect.from === null ? '' : `${pctText(effect.from)} → `,
+        h('b', {}, arrow ? `${pctText(effect.to)} ${arrow}` : pctText(effect.to))));
+    }
+    // Plain mode: one short sentence, the full explanation behind "?". Expert: the full explanation.
+    const text = this.expert ? h('p', { class: 'small' }, help)
+      : h('p', { class: 'small' }, t(`explain.${kind}.short`), ' ', h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), h('p', {}, help)));
     const li = h('li', { class: 'xstage', 'data-stage': id },
       h('span', { class: 'num' }, String(num)),
-      h('div', { class: 'xtext' }, h('h3', {}, title), h('p', { class: 'small' }, help)),
+      h('div', { class: 'xtext' }, h('h3', {}, title), text),
       h('div', { class: 'xstrips' }, ...strips),
-      meter);
+      side);
     if (this.pick?.row === id) li.append(h('div', { class: 'xdetail', 'data-test': 'explain-detail' }, ...this.detail(this.pick)));
     return li;
   }
@@ -225,8 +339,8 @@ export class ExplainView {
       const b = h('button', { class: `xguess${g.char === m.chosen ? ' chosen' : ''}${on ? ' on' : ''}`, title: this.full(g.char) },
         h('b', {}, shortLabel(g.char)),
         h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${Math.max(1, Math.round(g.p * 100))}%` })),
-        h('span', { class: 'small' }, `${Math.round(g.p * 100)} %`),
-        h('span', { class: 'small score' }, t('explain.score', { s: g.score.toFixed(2) })));
+        h('span', { class: 'small' }, pctText(g.p)),
+        this.expert ? h('span', { class: 'small score' }, t('explain.score', { s: g.score.toFixed(2) })) : null);
       b.onclick = () => { this.pick = on ? null : { row: 'guess', strip: 'guess', index: i }; this.render(); };
       return b;
     });
@@ -324,6 +438,29 @@ export class ExplainView {
     }
     return out;
   }
+}
+
+/** Thinking units that are (clearly) on. */
+function unitsOn(s: ExplainStage): number {
+  return s.hidden.filter((v) => v > 0.05).length;
+}
+
+/** A chance as a whole percentage; below 1 % as "<1 %" rather than a misleading 0. */
+export function pctText(p: number): string {
+  if (p > 0 && p < 0.005) return '<1 %';
+  if (p > 0.995 && p < 1) return '>99 %';
+  return `${Math.round(p * 100)} %`;
+}
+
+/**
+ * The most interesting letter of an answer to start with: the first one where
+ * it stops copying the animal's name (buvol → buvol|i|ce), or the first letter
+ * if it differs straight away.
+ */
+export function interestingLetter(a: { text: string; steps: readonly { chosen: string }[] }): number {
+  const src = [...a.text];
+  for (let i = 0; i < a.steps.length; i++) if (a.steps[i].chosen !== src[i]) return i;
+  return 0;
 }
 
 function norm(a: Float32Array): number {

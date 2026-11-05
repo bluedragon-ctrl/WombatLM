@@ -300,6 +300,14 @@ export interface ExplainGuess {
   bias: number;
 }
 
+/** "What would it write now?" after one stage of "look inside one letter" (logit lens). */
+export interface ExplainLens {
+  /** Its 3 most likely letters at this point ('' = end of word). */
+  top: { char: string; p: number }[];
+  /** The chance of the letter it finally writes, at this point. */
+  chosen: number;
+}
+
 export interface ExplainMsg {
   type: 'explain';
   id: number;
@@ -328,6 +336,8 @@ export interface ExplainMsg {
   final: Float32Array;
   /** Top 5 guesses, most likely first. */
   guesses: ExplainGuess[];
+  /** "What would it write now?" after the start and after each stage (1 + stages.length). */
+  lens: ExplainLens[];
 }
 
 export interface LetterMapMsg {

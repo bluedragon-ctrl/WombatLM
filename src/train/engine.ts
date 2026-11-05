@@ -18,7 +18,7 @@ import { nearestRows, pca2 } from '../nn/pca';
 import { FormTrainer, PracticeBatch, TRAINER_DEFAULTS, confidence, judge } from './trainer';
 import { Translator } from '../nn/translator';
 import type {
-  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, ExplainGuess, ExplainMsg, FromWorker, InspectMode, LossPoint, MatrixChange, MatrixInfo, NumberRef, Speed,
+  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, ExplainGuess, ExplainLens, ExplainMsg, FromWorker, InspectMode, LossPoint, MatrixChange, MatrixInfo, NumberRef, Speed,
   StepGuess, ToWorker,
 } from './protocol';
 import { changeStats, explainNumber, topNumbers } from './stepDetail';
@@ -598,6 +598,12 @@ export class Engine {
       contrib: ex.final.map((v, i) => v * model.tokEmb.data[tok * d + i]), bias: model.outBias.data[tok],
     }));
     const p = ex.position;
+    const chosenTok = p < ex.output.length ? ex.output[p] : vocab.eos;
+    const lens: ExplainLens[] = ex.lens.map((logits) => {
+      const pr = rowSoftmax(logits, 0, logits.length);
+      const top = cands.slice().sort((a, b) => pr[b] - pr[a]).slice(0, 3).map((tok) => ({ char: charOf(tok), p: pr[tok] }));
+      return { top, chosen: pr[chosenTok] };
+    });
     const input = [this.dataset.targetId(lang, form), ...vocab.encodeWord(word).slice(0, model.config.maxLen - 2)];
     const msg: ExplainMsg = {
       type: 'explain', id, step: this.trainer.step, text: word, lang, form, output: vocab.decode(ex.output),
@@ -605,7 +611,7 @@ export class Engine {
       chosen: p < ex.output.length ? charOf(ex.output[p]) : '',
       input: input.map((i) => tokens[i]), inputIds: input,
       decIn: ex.decIn.map((i) => tokens[i]), decInIds: ex.decIn,
-      start: ex.start, stages: ex.stages, final: ex.final, guesses,
+      start: ex.start, stages: ex.stages, final: ex.final, guesses, lens,
     };
     this.host.post(msg);
   }
