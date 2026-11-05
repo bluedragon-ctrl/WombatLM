@@ -1,5 +1,7 @@
 # Zvířátka AI — design document
 
+> **⚠️ Superseded in part:** the main task changed from cs↔en translation to within-language word forms (animal → male / female / young). Read `docs/HANDOFF.md` first; it lists which sections below are out of date.
+
 A tiny neural network that learns to translate Czech ↔ English animal names, trained live in the browser, with every part of its "brain" visible while it learns. A second mode lets the same machinery invent new animal names.
 
 > **For the implementing session:** this is the spec. Build it milestone by milestone (section 12). Each milestone ends with its acceptance criteria passing and a commit. If a number below (model size, learning rate, steps) turns out wrong in practice, change it and note why in `docs/DECISIONS.md`. Don't silently drift from the spec.
