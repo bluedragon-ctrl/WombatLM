@@ -136,8 +136,6 @@ export class App {
   private practiceTimer = 0;
   private practiceNew = false;
   private learnedAt = -Infinity;
-  /** "Keep answering while it learns": re-ask after every tick even while training. */
-  private live = false;
   /** Token strip on the Ask tab: only the numbers, as the model sees them. */
   private tokenNumbers = false;
   private tokenIdx = new Map<string, number>();
@@ -229,8 +227,8 @@ export class App {
           const justPaused = !msg.running && !!prevTick?.running;
           if (!quietNow && (msg.losses.length || justPaused)) this.requestInspect(justPaused);
           // Answering is separate from learning: while the model learns, the answer
-          // waits (marked as out of date) unless the user asked for live answers.
-          if (this.answer && this.answer.step !== msg.step && (!msg.running || (this.live && !msg.quiet))) this.ask();
+          // waits (marked as out of date, with "Ask again") until it pauses.
+          if (this.answer && this.answer.step !== msg.step && !msg.running) this.ask();
         }
         this.els.learnMain.classList.toggle('quiet', quietRun(msg));
         this.invalidate('controls', 'loss', 'stamp');
@@ -516,9 +514,6 @@ export class App {
     const askAgain = h('button', { class: 'small-btn', 'data-test': 'ask-again', hidden: true }, t('stamp.askAgain'));
     askAgain.onclick = () => this.ask();
     const stamp = h('div', { class: 'stamp', 'data-test': 'stamp', 'aria-live': 'polite' }, stampText, ' ', askAgain);
-    const liveBox = h('input', { type: 'checkbox', 'data-test': 'live' });
-    liveBox.onchange = () => { this.live = liveBox.checked; if (this.live) this.ask(); this.invalidate('stamp'); };
-    const liveLabel = h('label', { class: 'small live' }, liveBox, ' ', t('stamp.live'));
     const tokenRows = h('div', { class: 'token-rows', 'data-test': 'tokens' });
     const tokenNumbers = h('input', { type: 'checkbox', 'data-test': 'token-numbers' });
     tokenNumbers.onchange = () => { this.tokenNumbers = tokenNumbers.checked; this.invalidate('answer'); };
@@ -628,7 +623,7 @@ export class App {
         askStatus,
         h('div', { class: 'row' }, input, langPick),
         formPick, hint, output,
-        h('div', { class: 'stamp-row' }, stamp, liveLabel),
+        h('div', { class: 'stamp-row' }, stamp),
         tokensPanel,
         h('div', { class: 'row guess-head' }, h('h2', {}, t('guessBars')), slowBtn, slowCaption),
         barsWrap),
@@ -677,7 +672,7 @@ export class App {
       return b;
     }));
     formPick.replaceChildren(...this.ready.forms.map((f) => {
-      const b = h('button', { 'data-form': f }, t(`form.${f}`));
+      const b = h('button', { 'data-form': f, title: t(`form.tip.${f}`) }, t(`form.${f}`));
       b.onclick = () => this.setQuestion({ form: f });
       return b;
     }));
@@ -928,7 +923,7 @@ export class App {
     stamp.hidden = !a;
     if (!a) return;
     const behind = tk ? tk.step - a.step : 0;
-    const stale = !this.slow && behind > 0 && !!tk?.running && !this.live;
+    const stale = !this.slow && behind > 0 && !!tk?.running;
     stampText.textContent = stale
       ? t('stamp.stale', { n: behind.toLocaleString(uiLang()), step: a.step.toLocaleString(uiLang()) })
       : t('stamp.fresh', { step: a.step.toLocaleString(uiLang()) });
