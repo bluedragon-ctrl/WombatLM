@@ -128,7 +128,7 @@
   "signal.dec.in": "vstupuje dosavadní odpověď",
   "signal.decN.out": "po napsání (vrstva {n})",
   "inside.note.delta1": "o kolik se každé číslo změnilo v posledním kroku",
-  "build.title": "① Stavíme model: učení",
+  "build.title": "Učení",
   "build.help": "Učí se jen tady: když běží ▶ Spustit nebo když zmáčkneš Krok. V každém kroku si model procvičí pár příkladů, u kterých zná odpověď, změří své chyby a všechna svá čísla trochu posune. Nic jiného model nemění.",
   "learning.on": "✏️ učí se: posunul {n} čísel",
   "learning.fast": "✏️ učí se: posouvá {n} čísel, {sps}× za sekundu",

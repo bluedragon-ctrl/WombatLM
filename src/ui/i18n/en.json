@@ -128,7 +128,7 @@
   "signal.dec.in": "answer so far goes in",
   "signal.decN.out": "after writing (layer {n})",
   "inside.note.delta1": "how much each number changed in the last step",
-  "build.title": "① Build the model: learning",
+  "build.title": "Learning",
   "build.help": "Learning happens only here: while ▶ Play runs, or when you press Step. In every step the model practises a few examples whose answers it knows, measures its mistakes and nudges all its numbers a little. Nothing else changes the model.",
   "learning.on": "✏️ learning: {n} numbers nudged",
   "learning.fast": "✏️ learning: {n} numbers nudged, {sps}× a second",
