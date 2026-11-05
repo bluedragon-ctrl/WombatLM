@@ -13,13 +13,23 @@ export const KINDS: readonly Kind[] = ['lookalike', 'partial', 'different'];
 /** Per-language word lists, e.g. { cs: ["kocour"] }. */
 export type LangWords = Record<string, string[]>;
 
+/** Word forms per language, e.g. { cs: { male: "tygr", female: "tygřice", young: "tygře" } }. */
+export type LangForms = Record<string, Record<string, string>>;
+
+/** Accepted alternative forms per language, e.g. { cs: { young: ["koťátko"] } }. */
+export type LangFormAlts = Record<string, Record<string, string[]>>;
+
 export interface AnimalEntry {
   id: string;
   names: Record<string, string>;
   split?: Split;
   alt?: LangWords;
-  young?: Record<string, string>;
-  youngAlt?: LangWords;
+  /** Male / female / young forms of the name, per language. Missing = no real word. */
+  forms?: LangForms;
+  /** Alternative forms accepted when scoring (never trained on). */
+  formsAlt?: LangFormAlts;
+  /** Entries a native speaker still has to confirm, e.g. ["cs.female"]. Ignored by training. */
+  unsure?: string[];
   /** Override the computed kind for a language pair, key "cs-en" (sorted codes). */
   kindOverride?: Record<string, Kind>;
 }
@@ -37,8 +47,9 @@ export interface Animal {
   names: Record<string, string>;
   split: Split;
   alt: LangWords;
-  young: Record<string, string>;
-  youngAlt: LangWords;
+  forms: LangForms;
+  formsAlt: LangFormAlts;
+  unsure: string[];
   kindOverride: Record<string, Kind>;
   /** Pack that introduced the animal. */
   pack: string;
@@ -92,6 +103,35 @@ export function classify(a: string, b: string): Kind {
   return d <= KIND_THRESHOLDS.lookalike ? 'lookalike' : d <= KIND_THRESHOLDS.partial ? 'partial' : 'different';
 }
 
+/** How a word form relates to the name it comes from. */
+export type FormKind = 'pattern' | 'partly' | 'irregular';
+export const FORM_KINDS: readonly FormKind[] = ['pattern', 'partly', 'irregular'];
+export const FORM_KIND_THRESHOLDS = { pattern: 0.75, partly: 0.5 };
+
+/** Length of the longest common subsequence (letters in the same order, gaps allowed). */
+export function lcsLength(a: string, b: string): number {
+  const A = [...a], B = [...b];
+  let prev = new Array(B.length + 1).fill(0);
+  for (let i = 1; i <= A.length; i++) {
+    const cur = [0];
+    for (let j = 1; j <= B.length; j++) cur[j] = A[i - 1] === B[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+    prev = cur;
+  }
+  return prev[B.length];
+}
+
+/**
+ * Does the form keep the name's letters? Share of the name's letters (without
+ * diacritics) found in order inside the form: tygr → tygřice keeps all of
+ * them ("pattern"), lev → lvice most ("partly"), pes → štěně almost none
+ * ("irregular").
+ */
+export function formKind(name: string, form: string): FormKind {
+  const n = stripDiacritics(name), f = stripDiacritics(form);
+  const kept = lcsLength(n, f) / Math.max(1, [...n].length);
+  return kept >= FORM_KIND_THRESHOLDS.pattern ? 'pattern' : kept >= FORM_KIND_THRESHOLDS.partly ? 'partly' : 'irregular';
+}
+
 export function pairKey(a: string, b: string): string {
   return [a, b].sort().join('-');
 }
@@ -120,15 +160,21 @@ export function mergePacks(packs: readonly Pack[]): Animal[] {
     for (const e of pack.animals) {
       let a = byId.get(e.id);
       if (!a) {
-        a = { id: e.id, names: {}, split: e.split ?? 'train', alt: {}, young: {}, youngAlt: {}, kindOverride: {}, pack: pack.pack };
+        a = { id: e.id, names: {}, split: e.split ?? 'train', alt: {}, forms: {}, formsAlt: {}, unsure: [], kindOverride: {}, pack: pack.pack };
         byId.set(e.id, a);
       } else if (e.split === 'unseen') {
         a.split = 'unseen'; // unseen anywhere means unseen everywhere (no leakage)
       }
       Object.assign(a.names, normalizeRecord(e.names));
-      Object.assign(a.young, normalizeRecord(e.young ?? {}));
+      for (const [lang, forms] of Object.entries(e.forms ?? {})) {
+        a.forms[lang] = { ...a.forms[lang], ...normalizeRecord(forms) };
+      }
+      for (const [lang, alts] of Object.entries(e.formsAlt ?? {})) {
+        a.formsAlt[lang] ??= {};
+        mergeWords(a.formsAlt[lang], alts);
+      }
       mergeWords(a.alt, e.alt);
-      mergeWords(a.youngAlt, e.youngAlt);
+      a.unsure = [...new Set([...a.unsure, ...(e.unsure ?? [])])];
       Object.assign(a.kindOverride, e.kindOverride ?? {});
     }
   }
@@ -217,6 +263,27 @@ export class Dataset {
     return tasks;
   }
 
+  /** Word-form tasks (name -> male / female / young) within each language. */
+  formTasks(filter?: (a: Animal) => boolean): Task[] {
+    const tasks: Task[] = [];
+    for (const animal of this.animals) {
+      if (filter && !filter(animal)) continue;
+      for (const lang of this.languageCodes) {
+        const name = animal.names[lang];
+        if (!name) continue;
+        for (const form of this.forms) {
+          const answer = animal.forms[lang]?.[form];
+          if (form === 'name' || !answer) continue;
+          tasks.push({
+            animal, from: lang, to: lang, form, source: name, answer,
+            accepted: [answer, ...(animal.formsAlt[lang]?.[form] ?? []).map(Vocab.normalize)],
+          });
+        }
+      }
+    }
+    return tasks;
+  }
+
   /** Token id of the target token for a language and form. */
   targetId(lang: string, form = 'name'): number {
     return this.vocab.id(targetToken(lang, form));
@@ -260,7 +327,10 @@ export interface ValidationOptions {
 }
 
 /** Check packs against the rules in the design (section 4.5). Returns a list of problems. */
-export function validatePacks(packs: readonly Pack[], vocab: Vocab, languages: readonly string[], opts: ValidationOptions = {}): string[] {
+export function validatePacks(
+  packs: readonly Pack[], vocab: Vocab, languages: readonly string[], forms: readonly string[], opts: ValidationOptions = {},
+): string[] {
+  const wordForms = forms.filter((f) => f !== 'name');
   const errors: string[] = [];
   const minSplit = opts.minPackSizeForSplits ?? 8;
   const ids = new Map<string, string>();
@@ -295,14 +365,28 @@ export function validatePacks(packs: readonly Pack[], vocab: Vocab, languages: r
         namesSeen.set(key, a.id);
       }
       if (Object.keys(a.names ?? {}).length === 0) errors.push(`${where}: no names`);
-      for (const [field, rec] of [['alt', a.alt], ['youngAlt', a.youngAlt]] as const) {
-        for (const [lang, words] of Object.entries(rec ?? {})) {
-          if (!Array.isArray(words)) { errors.push(`${where} ${field}.${lang}: must be a list`); continue; }
-          words.forEach((w) => checkWord(`${where} ${field}.${lang}`, lang, w));
+      for (const [lang, words] of Object.entries(a.alt ?? {})) {
+        if (!Array.isArray(words)) { errors.push(`${where} alt.${lang}: must be a list`); continue; }
+        words.forEach((w) => checkWord(`${where} alt.${lang}`, lang, w));
+      }
+      for (const [lang, fs] of Object.entries(a.forms ?? {})) {
+        if (!a.names?.[lang]) errors.push(`${where}: forms.${lang} but no ${lang} name`);
+        for (const [form, word] of Object.entries(fs)) {
+          if (!wordForms.includes(form)) errors.push(`${where}: unknown form "${form}"`);
+          checkWord(`${where} forms.${lang}.${form}`, lang, word);
         }
       }
-      for (const [lang, word] of Object.entries(a.young ?? {})) checkWord(`${where} young.${lang}`, lang, word);
-      if (a.youngAlt && !a.young) errors.push(`${where}: youngAlt without young`);
+      for (const [lang, fs] of Object.entries(a.formsAlt ?? {})) {
+        for (const [form, words] of Object.entries(fs)) {
+          if (!a.forms?.[lang]?.[form]) errors.push(`${where}: formsAlt.${lang}.${form} without a main form`);
+          if (!Array.isArray(words)) { errors.push(`${where} formsAlt.${lang}.${form}: must be a list`); continue; }
+          words.forEach((w) => checkWord(`${where} formsAlt.${lang}.${form}`, lang, w));
+        }
+      }
+      for (const u of a.unsure ?? []) {
+        const [lang, field] = u.split('.');
+        if (!(field === 'name' ? a.names?.[lang] : a.forms?.[lang]?.[field])) errors.push(`${where}: unsure "${u}" points at nothing`);
+      }
       for (const [k, v] of Object.entries(a.kindOverride ?? {})) {
         if (!KINDS.includes(v)) errors.push(`${where}: bad kindOverride ${k}=${v}`);
       }

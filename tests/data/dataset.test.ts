@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { allPacks, baseBundle } from '../../src/data/bundle';
-import { Dataset, Pack, classify, editDistance, mergePacks, validatePacks } from '../../src/data/dataset';
+import { Dataset, Pack, classify, editDistance, formKind, mergePacks, validatePacks } from '../../src/data/dataset';
 import { buildVocab } from '../../src/nn/vocab';
 
 const bundle = baseBundle();
@@ -9,22 +9,24 @@ const codes = bundle.languages.map((l) => l.code);
 
 describe('data files', () => {
   it('pass validation', () => {
-    expect(validatePacks(allPacks(), vocab, codes)).toEqual([]);
+    expect(validatePacks(allPacks(), vocab, codes, bundle.forms)).toEqual([]);
   });
 
-  it('vocabulary has 49 tokens in v1', () => {
-    expect(vocab.size).toBe(49);
+  it('vocabulary: 4 specials + 43 characters + one target token per language × form', () => {
+    expect(vocab.size).toBe(4 + 43 + codes.length * bundle.forms.length);
   });
 
-  it('base set has ~150 animals, 15–20% unseen, every kind has unseen examples', () => {
+  it('base set: ~150 animals, every language has never-seen forms of every kind', () => {
     const ds = new Dataset(bundle);
-    const n = ds.animals.length;
-    expect(n).toBeGreaterThan(130);
-    const unseen = ds.animals.filter((a) => a.split === 'unseen');
-    expect(unseen.length / n).toBeGreaterThan(0.14);
-    expect(unseen.length / n).toBeLessThan(0.21);
-    const kinds = new Set(unseen.map((a) => classify(a.names[codes[0]], a.names[codes[1]])));
-    expect([...kinds].sort()).toEqual(['different', 'lookalike', 'partial']);
+    expect(ds.animals.length).toBeGreaterThan(130);
+    const tasks = ds.formTasks();
+    const unseen = tasks.filter((t) => t.animal.split === 'unseen');
+    expect(unseen.length / tasks.length).toBeGreaterThan(0.1);
+    expect(unseen.length / tasks.length).toBeLessThan(0.25);
+    for (const lang of codes) {
+      const kinds = new Set(unseen.filter((t) => t.to === lang).map((t) => formKind(t.source, t.answer)));
+      expect([...kinds].sort(), lang).toEqual(['irregular', 'partly', 'pattern']);
+    }
   });
 });
 
@@ -35,6 +37,14 @@ describe('similarity', () => {
     expect(classify('krokodýl', 'crocodile')).toBe('lookalike');
     expect(classify('žirafa', 'giraffe')).toBe('partial');
     expect(classify('veverka', 'squirrel')).toBe('different');
+  });
+
+  it('classifies word forms by how much of the name they keep', () => {
+    expect(formKind('tygr', 'tygřice')).toBe('pattern');
+    expect(formKind('tygr', 'tygr')).toBe('pattern');
+    expect(formKind('lev', 'lvice')).toBe('partly');
+    expect(formKind('pes', 'štěně')).toBe('irregular');
+    expect(formKind('horse', 'mare')).toBe('irregular');
   });
 
   it('edit distance counts unicode characters', () => {
@@ -51,7 +61,7 @@ describe('validation catches problems', () => {
       { id: 'a', names: { cs: 'Kočka', en: 'cat' } },
       { id: 'a', names: { cs: 'pes', en: 'dög' } },
       { id: 'b', names: { cs: 'pes', en: 'x'.repeat(21) } },
-    ])], vocab, codes);
+    ])], vocab, codes, bundle.forms);
     expect(errs.some((e) => e.includes('lower-case'))).toBe(true);
     expect(errs.some((e) => e.includes('duplicate id'))).toBe(true);
     expect(errs.some((e) => e.includes('outside the vocabulary'))).toBe(true);
@@ -74,5 +84,15 @@ describe('merging', () => {
     const cat = ds.nameTasks((a) => a.id === 'cat');
     expect(cat.map((t) => `${t.source}->${t.answer}`).sort()).toEqual(['cat->kočka', 'kočka->cat']);
     expect(cat.find((t) => t.to === 'cs')!.accepted).toContain('kocour');
+  });
+
+  it('builds word-form tasks within each language, with alternatives', () => {
+    const ds = new Dataset(bundle);
+    const cat = ds.formTasks((a) => a.id === 'cat');
+    expect(cat.map((t) => `${t.to}:${t.form} ${t.source}->${t.answer}`).sort()).toEqual([
+      'cs:female kočka->kočka', 'cs:male kočka->kocour', 'cs:young kočka->kotě',
+      'en:female cat->queen', 'en:male cat->tom', 'en:young cat->kitten',
+    ]);
+    expect(cat.find((t) => t.form === 'young' && t.to === 'cs')!.accepted).toContain('koťátko');
   });
 });

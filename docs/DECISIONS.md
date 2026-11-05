@@ -32,3 +32,22 @@ Within-language forms (male / female / young), 26 Czech + 19 English training an
 | + copy practice on all 276 base names, dropout 0.1 | 66–72/72 | 43–46/46 | 5–7/20 | 0–1/13 |
 
 With copy practice the model gets regular Czech forms right (buvol → buvolice, páv → pávice, vlk → vlk) and makes plausible over-regularised mistakes (vlk → *vlkice*, ovce → *ovcour*, kůň → *koň*). English stays at ~0, as expected for irregular forms. The signal is real but small with ~30 animals; the full dataset is needed to judge it properly.
+
+## Dataset v2: word forms (male / female / young)
+
+Agreed with the user: the main task becomes **within-language word forms** instead of cs↔en translation. Input `<cs:female> tygr` → `tygřice`.
+
+- **Format:** each animal keeps `names` and gains optional `forms` (`{ cs: { male, female, young } }`), `formsAlt` (accepted alternatives, never trained) and `unsure` (entries waiting for native-speaker review, e.g. `"cs.female"`). The old `young`/`youngAlt` fields are gone.
+- `data/forms.json` is now `["name", "male", "female", "young"]`. `name` is used for "copy the name" practice (`<cs> slon → slon`). Vocabulary: 4 + 43 + 2 × 4 = 55 tokens.
+- **Missing forms are left empty** (žirafa, panda, …): they are what the model invents. Words unsuitable for an 11+ audience are left out.
+- **Form kind** (for colouring and the scoreboard) replaces lookalike/partial/different within a language: the share of the name's letters found in order in the form (LCS / name length, without diacritics): ≥ 0.75 `pattern` (tygr → tygřice), ≥ 0.5 `partly` (lev → lvice), otherwise `irregular` (pes → štěně).
+- **Draft content:** 151 animals; 92 have forms (Czech 49 animals / 128 forms, English 87 animals / 174 forms); 11 never-seen animals (53 forms); 19 entries marked unsure. Solid Czech male/female/young words exist for only ~50 common animals, not ~100 as hoped. `docs/DATA_REVIEW.md` lists everything for review.
+
+### Full-data check (`scripts/experiments/forms-full.ts`, 5 000 steps)
+
+| Setup | known cs | known en | never-seen cs exact (+ close) | never-seen en |
+|---|---|---|---|---|
+| plain, no dropout | 94/102 | 143/147 | 0/26 | 2/27 |
+| copy practice 1:1 + dropout 0.1, seeds 1–3 | 89–97/102 | 109–123/147 | 3–7/26 (+5) | 2–4/27 |
+
+Never-seen Czech "pattern" forms: 3–7 of 18 exact; most errors are plausible (vlk → *vlkice*, kamzík → *kamzíkice*, žába → *žábě*). English never-seen stays near zero, as expected. English known forms train more slowly with copy practice. Still short of the goal; the next lever is a copy-friendly model change.
