@@ -71,3 +71,12 @@ Conclusions:
 - What the model reliably generalises is **keeping the stem** (male vlk → vlk, female žába → žába). Adding an ending to a never-seen stem is hit-and-miss (buvol → buvolice in some runs, *bulice* in others; velbloud → *veliceud*). Consonant changes (vlk → vlčice, zajíc → zaječice) fail, with believable mistakes.
 - English never-seen forms stay near zero, as expected.
 - **Defaults chosen:** copy mechanism on, target-token start on, copy practice 1:1, dropout 0.1, LR 3e-3, batch 16. The never-seen set is small (26 Czech forms), so single-run numbers move by ±2.
+
+## M2 — trainer on word forms
+
+- `TranslatorTrainer` became **`FormTrainer`** (`src/train/trainer.ts`). Batches mix word-form tasks of train-split animals (`formTasks`) with "copy the name" practice (`nameTasks(…, true)`) at 1:1 (`copyWeight`). Defaults in `TRAINER_DEFAULTS`: copy mechanism, target-token start, dropout 0.1, Adam LR 3e-3, batch 16.
+- **Scoreboard per language** (`Scores`): known · never-seen pattern / partly / irregular · never-seen exact (`unseen`) · never-seen right-or-close (`close`) · fresh / old (Teach mode).
+- **Inventions:** `Dataset.missingFormTasks()` lists the forms the data lacks; `evaluate({ inventions: true })` asks for them too and marks them `invented` (never scored). `confidence(trace, eos)` = geometric mean of the chosen letters' probabilities (DESIGN §8.7).
+- `unsure` entries are still trained on, as in the experiments; dropping them is a data-review decision.
+- Check run (`npx tsx scripts/train-node.ts 5000 1`): known cs 98% / en 93%, never-seen cs 23% exact (35% incl. close), en 11%; 40 steps/s in Node.
+- **Evaluation cost:** the 355 real forms take ~250 ms, all 906 forms incl. inventions ~640 ms (Node). Evaluating everything every 50 steps would halve training speed, so the worker evaluates real forms on a schedule and inventions less often (see the worker entry).

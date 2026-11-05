@@ -284,6 +284,27 @@ export class Dataset {
     return tasks;
   }
 
+  /**
+   * Word forms the data does not have (žirafa has no Czech male/female/young
+   * word). Answer and accepted are empty: whatever the model writes is its
+   * own invention.
+   */
+  missingFormTasks(filter?: (a: Animal) => boolean): Task[] {
+    const tasks: Task[] = [];
+    for (const animal of this.animals) {
+      if (filter && !filter(animal)) continue;
+      for (const lang of this.languageCodes) {
+        const name = animal.names[lang];
+        if (!name) continue;
+        for (const form of this.forms) {
+          if (form === 'name' || animal.forms[lang]?.[form]) continue;
+          tasks.push({ animal, from: lang, to: lang, form, source: name, answer: '', accepted: [] });
+        }
+      }
+    }
+    return tasks;
+  }
+
   /** Token id of the target token for a language and form. */
   targetId(lang: string, form = 'name'): number {
     return this.vocab.id(targetToken(lang, form));
