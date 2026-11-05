@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alignTo, pca2 } from '../../src/nn/pca';
+import { alignTo, nearestRows, pca2 } from '../../src/nn/pca';
 import { Rng } from '../../src/nn/rng';
 
 describe('pca2', () => {
@@ -66,6 +66,27 @@ describe('alignTo', () => {
   it('leaves mismatched frames alone', () => {
     const next = Float32Array.from([1, 2]);
     expect(alignTo(prev, next)).toBe(next);
+  });
+});
+
+describe('nearestRows', () => {
+  it('lists the rows pointing the most the same way, closest first, among candidates only', () => {
+    // Candidates average to (0,0): 0 → (2,0), 1 → (1.8,0.4), 2 → (-2,0), 3 → (-1.8,-0.4), 4 → (0,1) not a candidate.
+    const data = new Float32Array([2, 0, 1.8, 0.4, -2, 0, -1.8, -0.4, 0, 1, 2, 0.01]);
+    const rows = [0, 1, 2, 3, 4, 5];
+    const near = nearestRows(data, 2, rows, [true, true, true, true, false, false], 2);
+    expect(near[0]).toEqual([1, 3]); // row 5 is closer but not a candidate
+    expect(near[2]).toEqual([3, 1]);
+    expect(near[4]).toEqual([]);
+    // Length doesn't matter, only direction.
+    const scaled = nearestRows(new Float32Array([1, 0, 9, 1, -1, 0, -9, -1]), 2, [0, 1, 2, 3], [true, true, true, true], 1);
+    expect(scaled[0]).toEqual([1]);
+  });
+
+  it('measures from the average letter, so a shared offset does not count', () => {
+    // All rows share a big (10, 10); only the small part tells them apart.
+    const data = new Float32Array([11, 10, 10.9, 10.2, 9, 10, 9.1, 9.8]);
+    expect(nearestRows(data, 2, [0, 1, 2, 3], [true, true, true, true], 1)).toEqual([[1], [0], [3], [2]]);
   });
 });
 

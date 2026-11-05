@@ -31,6 +31,17 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=practice] tr.ex')).toHaveCount(16);
   await expect(page.locator('[data-test=practice] td.answer .word-own')).toHaveCount(16);
   await expect(page.locator('[data-test=letter-map]')).toBeVisible();
+  // Letter map: pick a letter (here by typing it) to see its closest letters.
+  await expect(page.locator('[data-test=map-pick]')).toContainText(/Click a letter/);
+  await page.focus('[data-test=letter-map]');
+  await page.keyboard.press('a');
+  await expect(page.locator('[data-test=map-pick] .map-chip.on')).toHaveText('a');
+  await expect(page.locator('[data-test=map-pick] button.map-chip')).toHaveCount(4);
+  await page.locator('[data-test=map-pick] button.map-chip').first().click();
+  await expect(page.locator('[data-test=map-pick] .map-chip.on')).not.toHaveText('a');
+  await page.focus('[data-test=letter-map]');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-test=map-pick]')).toContainText(/Click a letter/);
 
   // Ask the model: the answer comes from the model at step 1; no training controls here.
   await page.click('[data-test=tab-ask]');

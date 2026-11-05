@@ -19,7 +19,7 @@ import type { PracticeBatch, Scores, TaskResult } from '../train/trainer';
 import { LETTER_KINDS, LetterKind, STATUS_COLORS, STATUS_ICONS, SCORE_STYLE } from '../viz/colors';
 import { attentionCellAt, drawAttentionGrid, GridSpec } from '../viz/attentionGrid';
 import { drawGuessBars, guessColumnAt } from '../viz/guessBars';
-import { LetterMapView, letterKind, letterLabel, marker } from '../viz/letterMap';
+import { LetterMapView, letterKind, letterLabel, marker, type LetterPoint } from '../viz/letterMap';
 import { drawLineChart } from '../viz/lineChart';
 import { parentWidth, prepare } from '../viz/canvas';
 import { setUiLang, t, uiLang, UI_LANGUAGES } from './i18n';
@@ -99,6 +99,9 @@ function letterSpan(l: { char: string; p: number }): HTMLElement {
 }
 
 /** A line's mistake: the number and a short bar. */
+/** Letters seen fewer times than this in the learning data get a "rare" note on the letter map. */
+const RARE_LETTER = 30;
+
 function lossBar(loss: number): HTMLElement {
   const w = Math.round(Math.min(1, loss / LOSS_FULL) * 100);
   return h('span', { class: 'loss-val', title: t('practice.lossTip') },
@@ -169,6 +172,8 @@ export class App {
     this.dataTab = new DataTab((text, lang, form) => this.askOnAskTab({ text, lang, form }));
     this.els = this.build();
     this.letterMap = new LetterMapView(this.els.mapCanvas, () => Math.min(360, parentWidth(this.els.mapCanvas, 320)));
+    this.letterMap.onSelect = (sel) => this.renderMapPick(sel);
+    this.renderMapPick(null);
     window.addEventListener('resize', () => { this.invalidate('loss', 'scores'); this.letterMap.draw(); });
     const seed = 1 + Math.floor(Math.random() * 9999);
     this.send({ type: 'init', seed, speed: 'max' });
@@ -398,10 +403,27 @@ export class App {
   private onLetterMap(msg: LetterMapMsg): void {
     if (!this.ready) return;
     const tokens = this.ready.tokens;
-    const points = msg.ids.map((id) => ({ token: tokens[id], label: letterLabel(tokens[id]), kind: letterKind(tokens[id]) }));
-    this.letterMap.update(points, msg.coords);
-    const p = (v: number) => Math.round(v * 100);
-    this.els.mapNote.textContent = t('map.note', { a: p(msg.explained[0]), b: p(msg.explained[1]) });
+    const points = msg.ids.map((id, i) => ({ token: tokens[id], label: letterLabel(tokens[id]), kind: letterKind(tokens[id]), count: msg.counts[i] }));
+    this.letterMap.update(points, msg.coords, msg.near);
+    this.els.mapNote.textContent = t('map.note', { p: Math.round((msg.explained[0] + msg.explained[1]) * 100) });
+  }
+
+  /** The line under the letter map: a hint, or the clicked letter's closest letters (clickable). */
+  private renderMapPick(sel: { point: LetterPoint; near: LetterPoint[] } | null): void {
+    const el = this.els.mapPick;
+    if (!sel) { el.replaceChildren(h('span', { class: 'hint' }, t('map.pick'))); return; }
+    const chip = (p: LetterPoint) => {
+      const b = h('button', { class: 'map-chip', title: p.token }, p.label);
+      b.onclick = () => this.letterMap.select(p.token);
+      return b;
+    };
+    const clear = h('button', { class: 'map-clear', title: t('map.clear'), 'aria-label': t('map.clear') }, '×');
+    clear.onclick = () => this.letterMap.select(null);
+    const count = sel.point.count ?? -1;
+    el.replaceChildren(
+      h('span', {}, ...t('map.near').split('{letter}').flatMap((part, i) => (i ? [h('b', { class: 'map-chip on' }, sel.point.label), part] : [part]))),
+      ' ', ...sel.near.map(chip), clear,
+      ...(count >= 0 && count < RARE_LETTER ? [h('p', { class: 'map-rare', 'data-test': 'map-rare' }, t('map.rare', { letter: sel.point.label, n: count }))] : []));
   }
 
   private setTab(tab: Tab): void {
@@ -529,7 +551,8 @@ export class App {
     const practiceHelp = help(t('practice.help', { shown: PRACTICE_SHOWN, batch: 16 }));
     const attention = h('div', { class: 'att-grids', 'data-test': 'attention' });
     const mapCanvas = h('canvas', { class: 'letter-map', 'data-test': 'letter-map' });
-    const mapNote = h('p', { class: 'small' });
+    const mapNote = h('p', { class: 'small map-note' });
+    const mapPick = h('div', { class: 'map-pick', 'data-test': 'map-pick', 'aria-live': 'polite' });
     const mapLegend = h('div', { class: 'map-legend' }, ...(Object.keys(LETTER_KINDS) as LetterKind[]).map((k) => {
       const c = h('canvas');
       const ctx = prepare(c, 16, 16);
@@ -593,11 +616,12 @@ export class App {
           practiceList)),
       h('aside', { class: 'right' },
         h('section', { class: 'panel map' },
-          h('h2', {}, t('map.title')),
+          h('div', { class: 'phase-head' }, h('h2', {}, t('map.title')), help(t('map.how'))),
+          h('p', { class: 'map-help', 'data-test': 'map-help' }, t('map.help')),
           h('div', { class: 'map-wrap' }, mapCanvas),
+          mapPick,
           mapLegend,
-          mapNote,
-          h('p', { class: 'small' }, t('map.help')))));
+          mapNote)));
     const askMain = h('main', { class: 'ask-main', hidden: this.tab !== 'ask' },
       h('section', { class: 'panel askbox phase ask' },
         h('div', { class: 'phase-head' }, h('h2', {}, t('ask.title')), help(t('ask.help'))),
@@ -635,7 +659,7 @@ export class App {
       testMain,
     );
     return {
-      play, speed, seed, status, goalBar, goalNote, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, tokenRows, tokenNote, attention, mapCanvas, mapNote, tabs,
+      play, speed, seed, status, goalBar, goalNote, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, tokenRows, tokenNote, attention, mapCanvas, mapNote, mapPick, tabs,
       dataMain, learnMain, askMain, insideMain, testMain, testLangPick, testWhen,
       stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp,
       playButtons: [play], learnings: [learning], cycles: [cycleA],

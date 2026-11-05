@@ -9,7 +9,7 @@
 import { Dataset, Animal } from '../data/dataset';
 import { baseBundle } from '../data/bundle';
 import { Vocab } from '../nn/vocab';
-import { pca2 } from '../nn/pca';
+import { nearestRows, pca2 } from '../nn/pca';
 import { FormTrainer, PracticeBatch, TRAINER_DEFAULTS, confidence, judge } from './trainer';
 import type {
   Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, FromWorker, InspectMode, LossPoint, MatrixInfo, Speed, StepGuess, ToWorker,
@@ -37,6 +37,8 @@ const SLICE_MS = 12;
 const TICK_MS = 50;
 /** Wall-clock speed is measured over windows of at least this long. */
 const WALL_WINDOW_MS = 1000;
+/** How many closest letters the letter map lists for a clicked letter. */
+const NEAR_LETTERS = 4;
 /** How many examples of the latest batch a tick carries. */
 export const PRACTICE_SAMPLE = 32;
 /** While the Model learning tab is open and training is fast: answers before a step at most this often. */
@@ -408,9 +410,13 @@ export class Engine {
     const emb = this.trainer.model.tokEmb;
     const ids: number[] = [];
     for (let i = 0; i < vocab.size; i++) if (vocab.isChar(i) || i === vocab.eos) ids.push(i);
+    const letters = ids.length;
     ids.push(...vocab.targetIds());
     const { coords, explained } = pca2(emb.data, emb.shape[1], ids);
-    this.host.post({ type: 'letterMap', id, step: this.trainer.step, ids, coords, explained }, [coords.buffer as ArrayBuffer]);
+    const near = nearestRows(emb.data, emb.shape[1], ids, ids.map((_, i) => i < letters), NEAR_LETTERS);
+    const seen = this.trainer.letterCounts();
+    const counts = ids.map((t, i) => (i < letters && vocab.isChar(t) ? seen.get(vocab.tokens[t]) ?? 0 : -1));
+    this.host.post({ type: 'letterMap', id, step: this.trainer.step, ids, coords, explained, near, counts }, [coords.buffer as ArrayBuffer]);
   }
 
   /** What the data says about this question (see `Badge`). */
