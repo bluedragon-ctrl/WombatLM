@@ -32,6 +32,12 @@ export type ToWorker =
   /** Evaluate now; `inventions` also asks for the forms the data lacks. */
   | { type: 'evaluate'; inventions?: boolean }
   /**
+   * The Practice tab is open (on) or closed (off). While on, the practice
+   * batch in ticks also carries the brain's own answers to the shown examples
+   * (sent at most every 500 ms while training fast).
+   */
+  | { type: 'watchPractice'; on: boolean }
+  /**
    * Look inside: the listed weight matrices (answered with `weights`, empty
    * list = none) and, if `letterMap`, the letter map (answered with `letterMap`).
    * `id` is echoed back.
@@ -110,7 +116,7 @@ export interface TickMsg {
   /** Raw batch losses of every step since the previous tick. */
   losses: LossPoint[];
   /**
-   * What the latest training step practised on (up to 32 examples with the
+   * What the latest training step practised on (up to 32 examples; with `watchPractice` also the brain's own answers) with the
    * model's guesses). Only present when there was a new step since the
    * previous tick.
    */

@@ -43,6 +43,22 @@ describe('FormTrainer', () => {
     expect(tr.trainStep()).toBe(other.trainStep());
   });
 
+  it('can also answer the shown examples on its own, without changing the brain', () => {
+    const tr = new FormTrainer(ds, { seed: 7 });
+    const twin = new FormTrainer(ds, { seed: 7 });
+    for (let i = 0; i < 30; i++) { tr.trainStep(); twin.trainStep(); }
+    const p = tr.practice(16, true)!;
+    expect(tr.practice(16)!.examples[0].own).toBeUndefined();
+    for (const ex of p.examples) {
+      expect(typeof ex.own).toBe('string');
+      expect(['correct', 'close', 'wrong']).toContain(ex.ownStatus);
+    }
+    expect(p.ownRightCount).toBe(p.examples.filter((e) => e.ownStatus === 'correct').length);
+    // Its own answers are exactly what asking gives.
+    expect(p.examples[0].own).toBe(tr.runTasks([{ ...ds.formTasks()[0], source: p.examples[0].source, to: p.examples[0].lang, form: p.examples[0].form }])[0]);
+    expect(tr.trainStep()).toBe(twin.trainStep());
+  });
+
   it('practice guesses become right once it has learned', () => {
     const tr = new FormTrainer(ds, { seed: 1 });
     for (let i = 0; i < 600; i++) tr.trainStep();

@@ -348,6 +348,7 @@ export class App {
     this.els.practiceMain.hidden = tab !== 'practice';
     this.els.insideMain.hidden = tab !== 'inside';
     if (tab === 'practice') this.invalidate('practice');
+    this.send({ type: 'watchPractice', on: tab === 'practice' });
     if (tab === 'forms') { this.invalidate('loss', 'scores', 'answer'); this.letterMap.draw(); }
     this.requestInspect(true);
   }
@@ -439,7 +440,7 @@ export class App {
     const cycleB = makeCycle('cycle-practice');
     const openPractice = h('button', { class: 'link small open-practice', 'data-test': 'open-practice' }, t('practice.open'));
     openPractice.onclick = () => this.setTab('practice');
-    const practiceList = h('ul', { class: 'practice-list', 'data-test': 'practice' });
+    const practiceList = h('div', { class: 'practice-table', 'data-test': 'practice' });
     const practiceHelp = help(t('practice.help', { shown: PRACTICE_SHOWN, batch: 16 }));
     const attention = h('div', { class: 'att-grids', 'data-test': 'attention' });
     const mapCanvas = h('canvas', { class: 'letter-map', 'data-test': 'letter-map' });
@@ -483,7 +484,10 @@ export class App {
     const practiceMain = h('main', { class: 'practice-main', hidden: true },
       h('section', { class: 'panel phase build' },
         h('div', { class: 'phase-head' }, h('h2', {}, t('practice.title')), practiceHelp),
-        h('p', { class: 'small' }, t('build.help')),
+        h('ul', { class: 'practice-explain' },
+          h('li', {}, h('span', { class: 'tag help' }, t('practice.col.help')), ' ', t('practice.explain.help')),
+          h('li', {}, h('span', { class: 'tag own' }, t('practice.col.own')), ' ', t('practice.explain.own')),
+          h('li', {}, h('span', { class: 'tag mistake' }, t('practice.col.mistake')), ' ', t('practice.explain.mistake'))),
         h('div', { class: 'row' }, play2, step1b, learning2),
         cycleB.el,
         cycleB.note,
@@ -817,30 +821,52 @@ export class App {
     if (this.tab !== 'practice') return; // the examples are drawn only while their tab is visible
     practiceHelp.querySelector('p')!.textContent = t('practice.help', { shown: Math.min(PRACTICE_SHOWN, p?.batchSize ?? 16), batch: p?.batchSize ?? 16 });
 
-    // The examples (revealed with the stages: answers, then guesses, then right/wrong).
+    // The examples, revealed with the stages: right answers, then guesses with
+    // help, then right/wrong and the mistake, then (after the nudge) its own answers.
     if (!p) {
-      practiceList.replaceChildren(h('li', { class: 'empty small' }, t('practice.empty')));
+      practiceList.replaceChildren(h('p', { class: 'empty small' }, t('practice.empty')));
       return;
     }
     const langName = (code: string) => this.ready!.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
+    const judged = phase >= 3;
+    const showOwn = phase >= 4;
+    const shownN = p.examples.length;
+    const summary = [t('practice.step', { step: p.step.toLocaleString(uiLang()) })];
+    if (judged) summary.push(t('practice.sumHelp', { right: p.examples.filter((e) => e.right).length, n: shownN }));
+    if (showOwn && p.ownRightCount !== undefined) summary.push(t('practice.sumOwn', { right: p.ownRightCount, n: shownN }));
+    const rows = p.examples.map((ex) => {
+      const task = ex.form === 'name' ? t('practice.copy') : `${t(`form.${ex.form}`)} · ${langName(ex.lang)}`;
+      const helpCell = h('td', { class: 'help' });
+      if (phase >= 2) {
+        if (judged) helpCell.append(h('span', { class: `mark ${ex.right ? 'correct' : 'wrong'}`, title: t(`status.${ex.right ? 'correct' : 'wrong'}`) }, ex.right ? '✓' : '✗'), ' ');
+        helpCell.append(this.guessLetters(ex, judged));
+      }
+      const mistakeCell = h('td', { class: 'mistake' });
+      if (judged) {
+        mistakeCell.append(
+          h('span', { class: 'mbar' }, h('span', { style: `width:${Math.round(Math.min(1, ex.loss / 3) * 100)}%` })),
+          h('span', { class: 'num' }, ex.loss.toFixed(2)));
+      }
+      const ownCell = h('td', { class: 'own' });
+      if (showOwn) {
+        if (ex.own === undefined) ownCell.append(h('span', { class: 'small' }, '…'));
+        else ownCell.append(h('span', { class: `word-own ${ex.ownStatus}`, title: t(`status.${ex.ownStatus}`) }, `${STATUS_ICONS[ex.ownStatus!]} ${ex.own || '∅'}`));
+      }
+      return h('tr', { class: 'ex' },
+        h('td', { class: 'example' }, h('span', { class: 'src' }, ex.source), h('span', { class: 'task' }, task)),
+        h('td', { class: 'tgt' }, ex.target),
+        helpCell, mistakeCell, ownCell);
+    });
     practiceList.replaceChildren(
-      h('li', { class: 'small step-of' }, t('practice.step', { step: p.step.toLocaleString(uiLang()) })),
-      ...p.examples.map((ex) => {
-        const judged = phase >= 3;
-        const task = ex.form === 'name' ? t('practice.copy') : `${t(`form.${ex.form}`)} · ${langName(ex.lang)}`;
-        const result: (Node | string)[] = [];
-        if (phase >= 2) {
-          if (judged && ex.right) result.push(h('span', { class: 'mark right' }, t('practice.right')));
-          else {
-            if (judged) result.push(h('span', { class: 'mark wrong' }, t('practice.wrong')), ' ');
-            result.push(this.guessLetters(ex, judged));
-          }
-        }
-        return h('li', { class: `ex ${judged ? (ex.right ? 'right' : 'wrong') : ''}` },
-          h('span', { class: 'pair' }, h('span', { class: 'src' }, ex.source), ' → ', h('span', { class: 'tgt' }, ex.target)),
-          h('span', { class: 'task' }, task),
-          h('span', { class: 'result' }, ...result));
-      }));
+      h('p', { class: 'small step-of' }, summary.join(' · ')),
+      h('table', {},
+        h('thead', {}, h('tr', {},
+          h('th', {}, t('practice.col.example')),
+          h('th', {}, t('practice.col.right')),
+          h('th', { class: 'help' }, t('practice.col.help')),
+          h('th', { class: 'mistake' }, t('practice.col.mistake')),
+          h('th', { class: 'own' }, t('practice.col.own')))),
+        h('tbody', {}, ...rows)));
   }
 
   /** The guessed letters; wrong ones marked (red, underlined) once judged. */

@@ -10,7 +10,7 @@ import { Dataset, Animal } from '../data/dataset';
 import { baseBundle } from '../data/bundle';
 import { Vocab } from '../nn/vocab';
 import { pca2 } from '../nn/pca';
-import { FormTrainer, TRAINER_DEFAULTS, confidence, judge } from './trainer';
+import { FormTrainer, PracticeBatch, TRAINER_DEFAULTS, confidence, judge } from './trainer';
 import type {
   Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, FromWorker, InspectMode, LossPoint, MatrixInfo, Speed, StepGuess, ToWorker,
 } from './protocol';
@@ -37,6 +37,8 @@ const SLICE_MS = 12;
 const TICK_MS = 50;
 /** How many examples of the latest batch a tick carries. */
 export const PRACTICE_SAMPLE = 32;
+/** While the Practice tab is open and training is fast: own answers at most this often. */
+const OWN_EVERY_MS = 500;
 
 export class Engine {
   dataset: Dataset;
@@ -62,6 +64,9 @@ export class Engine {
   private beforeStep: Float32Array[] | null = null;
   /** Step of the latest practice batch sent in a tick (sent once per new step). */
   private lastPracticeStep = -1;
+  /** The Practice tab is open: practice batches carry the brain's own answers (see `watchPractice`). */
+  private watchPractice = false;
+  private lastOwnAt = -Infinity;
 
   constructor(private host: EngineHost, dataset?: Dataset) {
     this.dataset = dataset ?? new Dataset(baseBundle());
@@ -133,6 +138,10 @@ export class Engine {
       case 'evaluate':
         this.evaluate(msg.inventions ?? false);
         break;
+      case 'watchPractice':
+        this.watchPractice = msg.on;
+        if (msg.on) { this.lastPracticeStep = -1; this.tick(true); } // send the current batch with own answers now
+        break;
       case 'inspect':
         if (msg.matrixIds.length) this.sendWeights(msg.id, msg.matrixIds, msg.mode);
         if (msg.letterMap) this.sendLetterMap(msg.id);
@@ -203,7 +212,15 @@ export class Engine {
     this.lastTick = now;
     const tr = this.trainer;
     // The latest batch it practised on (only when there is a new one).
-    const practice = tr.step !== this.lastPracticeStep ? tr.practice(PRACTICE_SAMPLE) ?? undefined : undefined;
+    let practice: PracticeBatch | undefined;
+    if (tr.step !== this.lastPracticeStep) {
+      if (!this.watchPractice) practice = tr.practice(PRACTICE_SAMPLE) ?? undefined;
+      else if (!this.running || this.speed !== 'max' && this.speed <= 5 || now - this.lastOwnAt >= OWN_EVERY_MS) {
+        // Answering the shown examples costs one greedy pass: at high speeds at most every OWN_EVERY_MS.
+        practice = tr.practice(PRACTICE_SAMPLE, true) ?? undefined;
+        this.lastOwnAt = now;
+      }
+    }
     if (practice) this.lastPracticeStep = practice.step;
     this.host.post({
       type: 'tick', step: tr.step, running: this.running, speed: this.speed, lossEma: tr.lossEma,

@@ -83,14 +83,23 @@ export interface PracticeExample {
   right: boolean;
   /** This example's share of the mistake: mean -log p(correct letter). */
   loss: number;
+  /**
+   * Only with `practice(limit, true)`: what the brain answers when asked the
+   * same question on its own (greedy decoding, no help, no dropout), right
+   * after this step, and how that answer scores.
+   */
+  own?: string;
+  ownStatus?: 'correct' | 'close' | 'wrong';
 }
 
 /** The latest training batch, as the UI shows it. */
 export interface PracticeBatch {
   step: number;
   batchSize: number;
-  /** How many examples of the whole batch were guessed fully right. */
+  /** How many examples of the whole batch were guessed fully right (with help). */
   rightCount: number;
+  /** With `own`: how many of the shown examples it answers right on its own. */
+  ownRightCount?: number;
   /** The batch loss (the mistake that was measured). */
   loss: number;
   /** The first examples of the batch (at most the limit asked for). */
@@ -223,8 +232,10 @@ export class FormTrainer {
    * What the latest step practised: the batch's examples with the model's
    * guesses (the argmax of the scores the loss was computed from), or null
    * before the first step. Cheap: no forward pass, called at most per tick.
+   * With `own`, also asks the brain each shown question on its own (one
+   * greedy pass over the shown examples; reads the weights, never changes them).
    */
-  practice(limit = 8): PracticeBatch | null {
+  practice(limit = 8, own = false): PracticeBatch | null {
     const last = this.last;
     if (!last) return null;
     const { batch, scores, tasks } = last;
@@ -254,7 +265,19 @@ export class FormTrainer {
         examples.push({ source: task.source, lang: task.to, form: task.form, target: task.answer, guess, right, loss: n ? nll / n : 0 });
       }
     });
-    return { step: last.step, batchSize: tasks.length, rightCount, loss: last.loss, examples };
+    const result: PracticeBatch = { step: last.step, batchSize: tasks.length, rightCount, loss: last.loss, examples };
+    if (own && examples.length) {
+      const shownTasks = tasks.slice(0, examples.length);
+      const outputs = this.runTasks(shownTasks);
+      let ownRight = 0;
+      examples.forEach((ex, i) => {
+        ex.own = outputs[i];
+        ex.ownStatus = judge(outputs[i], shownTasks[i].accepted) as 'correct' | 'close' | 'wrong';
+        if (ex.ownStatus === 'correct') ownRight++;
+      });
+      result.ownRightCount = ownRight;
+    }
+    return result;
   }
 
   setLearningRate(lr: number): void {

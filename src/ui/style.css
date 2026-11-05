@@ -160,19 +160,6 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 .cycle .stage.lit .see-change { display: inline; }
 .cycle-note { margin: 4px 0 6px; }
 
-/* Examples of the latest batch */
-.practice-list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
-.practice-list li { padding: 2px 0; border-bottom: 1px solid #f1f5f9; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
-.practice-list li.step-of, .practice-list li.empty { border: none; }
-.practice-list .pair { font-weight: 600; min-width: 150px; }
-.practice-list .src { color: var(--muted); font-weight: 500; }
-.practice-list .task { font-size: 11px; color: var(--muted); }
-.practice-list .result { margin-left: auto; }
-.practice-list .mark.right { color: var(--correct); font-weight: 600; }
-.practice-list .mark.wrong { color: var(--wrong); font-weight: 600; }
-.practice-list .guess { font-family: ui-monospace, monospace; letter-spacing: 0.04em; }
-.practice-list .miss { color: var(--wrong); font-weight: 700; text-decoration: underline wavy; text-underline-offset: 3px; }
-
 /* Answer: which brain answered */
 .stamp-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: -4px 0 10px; }
 .stamp { font-size: 13px; padding: 3px 8px; border-radius: 6px; background: #eff6ff; color: #1e3a8a; }
@@ -196,7 +183,33 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 main.practice-main { padding: 14px 20px; max-width: 1240px; }
 .practice-main .learning { margin-top: 0; }
 .practice-main .cycle { max-width: 760px; }
-.practice-main .practice-list { columns: 2; column-gap: 32px; font-size: 14px; }
-.practice-main .practice-list li { break-inside: avoid; }
-.practice-main .practice-list li.step-of { column-span: all; }
 .open-practice { padding: 0; margin-top: 2px; }
+
+/* Practice tab: with help vs on its own */
+.practice-explain { list-style: none; padding: 0; margin: 0 0 12px; font-size: 13px; color: var(--muted); max-width: 1000px; }
+.practice-explain li { margin-bottom: 4px; }
+.practice-explain .tag { display: inline-block; font-weight: 600; padding: 0 6px; border-radius: 4px; color: var(--ink); }
+.tag.help { background: #fef3c7; border: 1px solid #f59e0b; }
+.tag.own { background: #dbeafe; border: 1px solid var(--accent); }
+.tag.mistake { background: #f1f5f9; border: 1px solid #cbd5e1; }
+.practice-table table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.practice-table th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 4px 8px; border-bottom: 2px solid var(--line); }
+.practice-table th.help { border-bottom-color: #f59e0b; color: #92400e; }
+.practice-table th.own { border-bottom-color: var(--accent); color: var(--accent); }
+.practice-table td { padding: 3px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: baseline; }
+.practice-table td.help { background: #fffbeb; }
+.practice-table td.own { background: #f5f9ff; }
+.practice-table .example .src { font-weight: 500; }
+.practice-table .example .task { margin-left: 8px; font-size: 11px; color: var(--muted); }
+.practice-table td.tgt { font-weight: 600; }
+.practice-table .guess { font-family: ui-monospace, monospace; letter-spacing: 0.04em; }
+.practice-table .miss { color: var(--wrong); font-weight: 700; text-decoration: underline wavy; text-underline-offset: 3px; }
+.practice-table .mark.correct { color: var(--correct); font-weight: 700; }
+.practice-table .mark.wrong { color: var(--wrong); font-weight: 700; }
+.practice-table td.mistake { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.practice-table .mbar { display: inline-block; width: 70px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin-right: 6px; vertical-align: middle; }
+.practice-table .mbar span { display: block; height: 100%; background: #94a3b8; }
+.practice-table .word-own { font-weight: 600; }
+.practice-table .word-own.correct { color: var(--correct); }
+.practice-table .word-own.close { color: var(--close); }
+.practice-table .word-own.wrong { color: var(--wrong); }

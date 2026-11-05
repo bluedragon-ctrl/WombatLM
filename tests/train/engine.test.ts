@@ -206,6 +206,23 @@ describe('Engine', () => {
     expect((h.of('tick').at(-1) as TickMsg).practice).toBeUndefined();
   });
 
+  it('with the Practice tab open, practice batches carry its own answers', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'step', n: 1 });
+    expect((h.of('tick').at(-1) as TickMsg).practice!.examples[0].own).toBeUndefined();
+    e.handle({ type: 'watchPractice', on: true });
+    const p = (h.of('tick').at(-1) as TickMsg).practice!;
+    expect(p.step).toBe(1);
+    expect(p.examples.every((x) => typeof x.own === 'string')).toBe(true);
+    e.handle({ type: 'step', n: 1 });
+    expect((h.of('tick').at(-1) as TickMsg).practice!.examples[0].own).toBeDefined();
+    e.handle({ type: 'watchPractice', on: false });
+    e.handle({ type: 'step', n: 1 });
+    expect((h.of('tick').at(-1) as TickMsg).practice!.examples[0].own).toBeUndefined();
+  });
+
   it('answering and evaluating never change the brain', () => {
     const h = fakeHost();
     const e = new Engine(h.host, ds);
