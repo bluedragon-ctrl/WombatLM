@@ -132,7 +132,7 @@ Total: **71 tokens** (55 with cs and en only). Code never assumes 71 or a fixed 
 ### 4.2 Forms
 `data/forms.json` = `["name", "male", "female", "young"]`.
 - `male`, `female`, `young` are the word forms the model learns, within one language.
-- `name` means "copy the name" (`<cs> slon → slon`). It is used as **copy practice** during training (section 6.3) and is offered on the Ask tab as the form "same name" (with a tooltip saying what it does).
+- `name` means "copy the name" (`<cs> slon → slon`). It is used as **copy practice** during training (section 6.3) and is shown everywhere in the UI as "same name" (cs "stejné jméno"): the Ask tab form button (with a tooltip saying what it does), the Model learning batch and step views, and the Learning data tab.
 
 ### 4.3 Animal file format (version 2)
 ```json
