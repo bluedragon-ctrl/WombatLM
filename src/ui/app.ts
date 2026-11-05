@@ -1,10 +1,12 @@
 /**
- * The app: four tabs.
+ * The app: four tabs, plus a fifth in expert mode.
  * - Forms: controls, the question box with form and language pickers, guess
- *   bars, attention grids, letter map, loss chart, scoreboard, animal list.
+ *   bars, attention grids, letter map, loss chart.
  * - Learning data: everything the brain learns from (see dataTab.ts).
  * - Practice: the latest batch, and what it answered before learning from it.
  * - Inside the brain: weight heatmaps (see inside.ts).
+ * - Test (expert only): every animal tested, scoreboard. The brain is tested
+ *   only while this tab is open (or on request).
  *
  * All training happens in the worker; this file only sends messages and
  * draws what comes back.
@@ -23,8 +25,10 @@ import { InsideTab } from './inside';
 import { DataTab } from './dataTab';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
-type Tab = 'forms' | 'data' | 'practice' | 'inside';
-const TABS: Tab[] = ['forms', 'data', 'practice', 'inside'];
+type Tab = 'forms' | 'data' | 'practice' | 'inside' | 'test';
+const TABS: Tab[] = ['forms', 'data', 'practice', 'inside', 'test'];
+/** Tabs shown only in expert mode (advanced, not part of the beginner story). */
+const EXPERT_TABS: Tab[] = ['test'];
 /** Look-inside requests: at most one in flight, at most this often. */
 const INSPECT_MS = 250;
 /** "Write it slowly": time per letter, and the "reading the animal" pause before the first one. */
@@ -79,6 +83,8 @@ export class App {
   private revealed = false;
   private expert = false;
   private filter: Filter = 'all';
+  /** Data language shown on the Test tab. */
+  private testLang = '';
   private question = { text: '', lang: '', form: 'female' };
   private dirty = { controls: true, answer: true, loss: true, scores: true, animals: true, practice: true, stamp: true };
   /** The latest batch the brain practised on (learning), and when the strip last changed. */
@@ -117,7 +123,7 @@ export class App {
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => this.onMessage(e.data);
     this.worker.onerror = (e) => this.showError(e.message);
     this.inside = new InsideTab(() => this.requestInspect(true));
-    this.dataTab = new DataTab((text, lang, form) => { this.setTab('forms'); this.setQuestion({ text, lang, form }); });
+    this.dataTab = new DataTab((text, lang, form) => this.askOnForms({ text, lang, form }));
     this.els = this.build();
     this.letterMap = new LetterMapView(this.els.mapCanvas, () => Math.min(360, parentWidth(this.els.mapCanvas, 320)));
     window.addEventListener('resize', () => { this.invalidate('loss', 'scores'); this.letterMap.draw(); });
@@ -141,6 +147,7 @@ export class App {
         this.evals = [];
         this.results.clear();
         if (!this.question.lang) this.question.lang = msg.languages[0].code;
+        if (!this.testLang) this.testLang = msg.languages[0].code;
         if (!this.question.text) this.question.text = msg.animals.find((a) => a.forms[this.question.lang]?.female)?.names[this.question.lang] ?? '';
         this.els.seed.value = String(msg.seed);
         this.letterMap.reset();
@@ -354,6 +361,9 @@ export class App {
     this.els.practiceMain.hidden = tab !== 'practice';
     this.els.dataMain.hidden = tab !== 'data';
     this.els.insideMain.hidden = tab !== 'inside';
+    this.els.testMain.hidden = tab !== 'test';
+    this.send({ type: 'watchTests', on: tab === 'test' });
+    if (tab === 'test') this.invalidate('scores', 'animals');
     if (tab === 'practice') this.invalidate('practice');
     this.send({ type: 'watchPractice', on: tab === 'practice' });
     if (tab === 'forms') { this.invalidate('loss', 'scores', 'answer'); this.letterMap.draw(); }
@@ -397,6 +407,8 @@ export class App {
     expertBox.onchange = () => {
       this.expert = expertBox.checked;
       expertPanel.hidden = !this.expert;
+      for (const b of tabs.querySelectorAll<HTMLElement>('button')) if (EXPERT_TABS.includes(b.dataset.tab as Tab)) b.hidden = !this.expert;
+      if (!this.expert && EXPERT_TABS.includes(this.tab)) this.setTab('forms');
       this.inside.setExpert(this.expert);
       this.invalidate('loss', 'answer');
       this.requestInspect(true);
@@ -462,7 +474,7 @@ export class App {
       return h('span', {}, c, t(`map.kind.${k}`));
     }));
     const tabs = h('nav', { class: 'tabs', role: 'tablist' }, ...TABS.map((tab) => {
-      const b = h('button', { role: 'tab', 'data-tab': tab, 'data-test': `tab-${tab}`, class: tab === this.tab ? 'on' : '' }, t(`tab.${tab}`));
+      const b = h('button', { role: 'tab', 'data-tab': tab, 'data-test': `tab-${tab}`, class: tab === this.tab ? 'on' : '', hidden: EXPERT_TABS.includes(tab) }, t(`tab.${tab}`));
       b.onclick = () => this.setTab(tab);
       return b;
     }));
@@ -476,6 +488,12 @@ export class App {
       filters.append(b);
     }
     const animals = h('div', { class: 'animals', 'data-test': 'animals' });
+    const testLangPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('language') });
+    const testWhen = h('span', { class: 'small', 'data-test': 'test-when' });
+    const testAgain = h('button', { 'data-test': 'test-again' }, t('test.again'));
+    testAgain.onclick = () => this.send({ type: 'evaluate', inventions: true });
+    const testLegend = h('div', { class: 'test-legend small' },
+      ...(['correct', 'close', 'wrong', 'invented'] as const).map((k) => h('span', { class: `cell ${k}` }, `${STATUS_ICONS[k]} ${t(`status.${k}`)}`)));
     const params = h('div', { class: 'params' });
     const uiSwitch = h('button', { class: 'link' }, t('uiLanguage'));
     uiSwitch.onclick = () => {
@@ -485,7 +503,7 @@ export class App {
     const error = h('div', { class: 'error', hidden: true });
     const formsMain = this.buildForms({
       play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, barsWrap,
-      attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals,
+      attention, mapCanvas, mapNote, mapLegend, lossCanvas,
       stamp, liveLabel, slowBtn, slowCaption, learning, cycle: cycleA.el, cycleNote: cycleA.note, openPractice,
     });
     const practiceMain = h('main', { class: 'practice-main', hidden: true },
@@ -498,6 +516,15 @@ export class App {
         practiceList));
     const insideMain = h('main', { class: 'inside-main', hidden: true }, this.inside.el);
     const dataMain = h('main', { class: 'data-main', hidden: true }, this.dataTab.el);
+    const testMain = h('main', { class: 'test-main', hidden: true },
+      h('section', { class: 'panel test-intro' },
+        h('div', { class: 'phase-head' }, h('h2', {}, t('test.title')), help(t('test.help'))),
+        h('p', { class: 'practice-explain' }, t('test.explain')),
+        h('div', { class: 'row' }, testLangPick, testAgain, testWhen)),
+      h('div', { class: 'test-grid' },
+        h('section', { class: 'panel list' }, h('h2', {}, t('animals')), testLegend, filters, animals),
+        h('section', { class: 'panel' }, h('h2', {}, t('scoreboard')), h('p', { class: 'small' }, t('test.scoreHelp')),
+          h('div', { class: 'chart' }, scoreCanvas), scoreTable)));
 
     this.root.replaceChildren(
       h('header', {}, h('h1', {}, t('title')), h('span', { class: 'sub' }, t('subtitle')), tabs, params, uiSwitch),
@@ -506,10 +533,11 @@ export class App {
       dataMain,
       practiceMain,
       insideMain,
+      testMain,
     );
     return {
       play, speed, seed, status, input, langPick, formPick, hint, output, bars, barsWrap, attention, mapCanvas, mapNote, tabs, formsMain, insideMain,
-      stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp, practiceMain, dataMain,
+      stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp, practiceMain, dataMain, testMain, testLangPick, testWhen,
       playButtons: [play, play2], learnings: [learning, learning2], cycles: [cycleA, cycleB],
       lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
     };
@@ -517,7 +545,7 @@ export class App {
 
   private buildForms(parts: Record<string, HTMLElement>) {
     const { play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, barsWrap,
-      attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals,
+      attention, mapCanvas, mapNote, mapLegend, lossCanvas,
       stamp, liveLabel, slowBtn, slowCaption, learning, cycle, cycleNote, openPractice } = parts;
     return h('main', { class: 'forms' },
         h('aside', { class: 'left' },
@@ -533,8 +561,7 @@ export class App {
             h('div', { class: 'phase-head sub' }, h('h3', {}, t('cycle.title'))),
             cycle,
             cycleNote,
-            openPractice),
-          h('section', { class: 'panel list' }, h('h2', {}, t('animals')), filters, animals)),
+            openPractice)),
         h('section', { class: 'centre' },
           h('section', { class: 'panel askbox phase ask' },
             h('div', { class: 'phase-head' }, h('h2', {}, t('ask.title')), help(t('ask.help'))),
@@ -547,9 +574,7 @@ export class App {
             h('h2', {}, t('att.title')),
             h('p', { class: 'small' }, t('att.help')),
             attention),
-          h('div', { class: 'charts' },
-            h('section', { class: 'panel' }, h('h2', {}, t('loss')), h('div', { class: 'chart' }, lossCanvas)),
-            h('section', { class: 'panel' }, h('h2', {}, t('scoreboard')), h('div', { class: 'chart' }, scoreCanvas), scoreTable))),
+          h('section', { class: 'panel' }, h('h2', {}, t('loss')), h('div', { class: 'chart' }, lossCanvas))),
         h('aside', { class: 'right' },
           h('section', { class: 'panel map' },
             h('h2', {}, t('map.title')),
@@ -575,6 +600,12 @@ export class App {
     }));
     this.els.params.textContent = t('params', { n: this.ready.params.toLocaleString(uiLang()) });
     this.invalidate('answer');
+  }
+
+  /** A word clicked on another tab: ask it on the Forms tab. */
+  private askOnForms(q: Partial<App['question']>): void {
+    this.setTab('forms');
+    this.setQuestion(q);
   }
 
   private setQuestion(q: Partial<App['question']>, typed = false): void {
@@ -880,12 +911,23 @@ export class App {
   }
 
   private renderScores(): void {
-    if (!this.ready) return;
+    if (!this.ready || this.tab !== 'test') return; // drawn only while the Test tab is visible
+    const { testLangPick, testWhen } = this.els;
+    if (testLangPick.childElementCount !== this.ready.languages.length) {
+      testLangPick.replaceChildren(...this.ready.languages.map((l) => {
+        const b = h('button', { 'data-lang': l.code }, l.name[uiLang()] ?? l.code);
+        b.onclick = () => { this.testLang = l.code; this.invalidate('scores', 'animals'); };
+        return b;
+      }));
+    }
+    for (const b of testLangPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.lang === this.testLang);
+    const tested = this.evals[this.evals.length - 1];
+    testWhen.textContent = tested ? t('test.when', { step: tested.step.toLocaleString(uiLang()) }) : t('test.none');
     const c = this.els.scoreCanvas;
     const width = parentWidth(c);
     const langs = this.ready.languages.map((l) => l.code);
     // Lines for the selected language; the table below has every language.
-    const lang = this.question.lang;
+    const lang = this.testLang;
     const series = SCORE_LINES.map((k) => ({
       points: this.evals.flatMap((e) => (e.scores[lang]?.[k] != null ? [[e.step, e.scores[lang][k]!] as [number, number]] : [])),
       color: SCORE_STYLE[k].color,
@@ -903,8 +945,8 @@ export class App {
   }
 
   private renderAnimals(): void {
-    if (!this.ready) return;
-    const lang = this.question.lang;
+    if (!this.ready || this.tab !== 'test') return; // drawn only while the Test tab is visible
+    const lang = this.testLang;
     const forms = this.ready.forms.filter((f) => f !== 'name');
     for (const b of this.els.filters.querySelectorAll('button')) b.classList.toggle('on', b.dataset.filter === this.filter);
     const rows: HTMLElement[] = [];
@@ -917,12 +959,12 @@ export class App {
         if (!r) return h('td', { class: 'cell none' }, t('noForm'));
         const title = `${t(`form.${f}`)}: ${r.output} — ${t(`status.${r.status}`)}${r.answer && a.split === 'train' ? ` (${r.answer})` : ''}`;
         const cell = h('td', { class: `cell ${r.status}`, title }, `${STATUS_ICONS[r.status]} ${r.output || '∅'}`);
-        cell.onclick = (e) => { e.stopPropagation(); this.setQuestion({ text: a.names[lang], form: f }); };
+        cell.onclick = (e) => { e.stopPropagation(); this.askOnForms({ text: a.names[lang], lang, form: f }); };
         return cell;
       });
       const name = h('td', { class: 'name' }, a.names[lang], a.split === 'unseen' ? h('span', { class: 'never' }, t('neverSeen')) : null);
       const row = h('tr', { class: a.names[lang] === this.question.text ? 'sel' : '' }, name, ...cells);
-      row.onclick = () => this.setQuestion({ text: a.names[lang] });
+      row.onclick = () => this.askOnForms({ text: a.names[lang], lang });
       rows.push(row);
     }
     this.els.animals.replaceChildren(h('table', {},

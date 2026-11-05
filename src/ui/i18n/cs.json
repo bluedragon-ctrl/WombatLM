@@ -10,7 +10,7 @@
   "speedSteps": "{n} kroků/s",
   "reset": "Začít znovu",
   "seed": "Semínko",
-  "expert": "Pro pokročilé",
+  "expert": "Pro pokročilé (přidá nastavení a záložku Test)",
   "lr": "Rychlost učení",
   "batch": "Velikost dávky",
   "stepLabel": "Krok {step}",
@@ -195,5 +195,13 @@
   "data.tip.copy": "Učební příklad: opiš jméno, {word} → {word}. Klikni a zeptej se mozku.",
   "data.tip.missing": "V tomto jazyce skutečné slovo neexistuje: v učebních datech není.",
   "data.tip.kept": "Nikdy neviděné zvíře: mozek se z něj neučí. Klikni a zeptej se mozku.",
-  "data.tip.hidden": "Skryto: zaškrtni „ukázat odpovědi nikdy neviděných“."
+  "data.tip.hidden": "Skryto: zaškrtni „ukázat odpovědi nikdy neviděných“.",
+  "tab.test": "Test",
+  "test.title": "Test: co odpoví u každého zvířete",
+  "test.explain": "Doplněk na později, k pochopení mozku ho nepotřebuješ. Mozek dostane otázku na každý tvar každého zvířete a každá odpověď se porovná s učebními daty. Testují se i nikdy neviděná zvířata: ukážou, jestli se naučil pravidlo, nebo jen zapamatoval slova. Testuje se jen, když je tato záložka otevřená (každých 100 kroků učení), jinak učení nezdržuje.",
+  "test.help": "Tohle je zkouška, ne učební data: slova v tabulce jsou vlastní odpovědi mozku. ✓ správně, ≈ o písmeno vedle, ✗ špatně. ✨ znamená, že jazyk pro tento tvar nemá skutečné slovo, takže cokoli napsal, je jeho vlastní výmysl (ty se znovu testují každých 500 kroků). Najeď myší na slovo a uvidíš správné; kliknutím položíš otázku na záložce Tvary.",
+  "test.again": "Otestovat znovu",
+  "test.when": "Jeho odpovědi v kroku {step}.",
+  "test.none": "Zatím netestováno.",
+  "test.scoreHelp": "Kolik odpoví správně, v každém dosavadním testu (testuje se jen při otevřené záložce)."
 }

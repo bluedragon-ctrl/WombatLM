@@ -22,7 +22,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 | M2 training in the browser | **Done** (pending the user's data review). Dataset v2 + validator + review doc, `FormTrainer` with copy practice, engine + worker + protocol, minimal UI, Playwright smoke test. ~38 steps/s in the browser; known cs 98% / en 93% at 5k steps (accepted by the user). |
 | M3 seeing inside | **Done** (merged into `main`). Tabs (Forms · Inside the brain), attention grids linked to the guess bars, letter map (PCA + Procrustes + glide), weight / change / gradient heatmaps, "follow the signal" (expert). |
 | Learning vs answering | **Done in a PR** (user feedback after M3): ① Build / ② Ask phases, Practice tab with the latest batch: learning data vs what it answered before the step (`tick.practice`, `watchPractice`), frozen-brain step label, answer waits while training (+ "keep answering" toggle), Write it slowly, one-step cycle. See DECISIONS. |
-| Tab reorganisation (user, in steps) | **Step 1 done in a PR:** Learning data tab (`src/ui/dataTab.ts`): everything the brain learns from, counts checked against the trainer. Further steps to come from the user. See DECISIONS. |
+| Tab reorganisation (user, in steps) | **Steps 1–2 done in a PR:** ① Learning data tab (`src/ui/dataTab.ts`): everything the brain learns from, counts checked against the trainer. ② The full test (Animals table + Scoreboard) moved off the Forms tab to a Test tab shown only in expert mode; the engine tests only while that tab is open (`watchTests`). Further steps to come from the user. See DECISIONS. |
 | M4 time travel | **Next.** |
 | M5–M7 | Not started. |
 
@@ -37,7 +37,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 
 - `inspect` already serves any parameter by name; for time travel the engine needs a separate **view model** (DESIGN §7.3) and `inspect`/`ask`/`letterMap` must read from it while a snapshot is shown. `ParamSet.snapshot()`/`load()` exist.
 - The change mode keeps per-matrix baselines in the engine (`deltaBase`, `lastDelta`, `beforeStep`); seeking must clear them like `reset` does.
-- Panels request data only while visible: the Forms tab asks for the letter map, the Inside tab for the heatmaps (`App.requestInspect`, at most one in flight, every 250 ms).
+- Panels request data only while visible: the Forms tab asks for the letter map, the Inside tab for the heatmaps (`App.requestInspect`, at most one in flight, every 250 ms); the Test tab turns on testing (`watchTests`).
 - The UI is in `src/ui/app.ts` (Forms tab + tabs), `src/ui/dataTab.ts` (Learning data tab) and `src/ui/inside.ts` (Inside tab); visuals in `src/viz/` (`attentionGrid`, `letterMap`, `weightHeatmap`).
 - `npm run screenshots` regenerates the PR screenshots in `docs/screenshots/m3/` and `docs/screenshots/learn-vs-answer/` (opt-in, ~3 min).
 - Time travel must respect the learning/answering split: a seeked snapshot is a frozen brain too, so the step label under the answer ("Answer from the brain at step N") should show the snapshot's step, and the practice strip should be hidden or say it is history.
@@ -45,7 +45,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 ## Waiting for the user
 
 - **Data review:** 19 `unsure` entries; regenerate the table with `npm run validate-data -- --review` → `docs/DATA_REVIEW.md` (deferred by the user: "data tuning later").
-- **Czech UI copy:** `src/ui/i18n/cs.json` (M3 added ~70 strings: tabs, attention, letter map, Inside the brain; the learning-vs-answering PR added 42: `tab.practice`, `build.*`, `learning.*`, `practice.*`, `cycle.*`, `ask.*`, `stamp.*`, `slow.*`; the Learning data tab added 26: `tab.data`, `data.*`).
+- **Czech UI copy:** `src/ui/i18n/cs.json` (M3 added ~70 strings: tabs, attention, letter map, Inside the brain; the learning-vs-answering PR added 42: `tab.practice`, `build.*`, `learning.*`, `practice.*`, `cycle.*`, `ask.*`, `stamp.*`, `slow.*`; the Learning data tab added 26: `tab.data`, `data.*`; the Test tab added 8 and changed `expert`: `tab.test`, `test.*`).
 - **M3 review:** the PR's screenshots and questions.
 
 ## Hosting
@@ -55,7 +55,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 ## Useful commands
 
 ```
-npm test                                   # vitest (83 tests)
+npm test                                   # vitest (84 tests)
 npm run build                              # typecheck + vite build
 npm run e2e                                # Playwright smoke test (builds + previews on :4173)
 npm run screenshots                        # PR screenshots (docs/screenshots/m3, docs/screenshots/learn-vs-answer)

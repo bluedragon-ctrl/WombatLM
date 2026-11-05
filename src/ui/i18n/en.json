@@ -10,7 +10,7 @@
   "speedSteps": "{n} steps/s",
   "reset": "Reset",
   "seed": "Seed",
-  "expert": "Expert",
+  "expert": "Expert (adds settings and the Test tab)",
   "lr": "Learning rate",
   "batch": "Batch size",
   "stepLabel": "Step {step}",
@@ -195,5 +195,13 @@
   "data.tip.copy": "Learning example: copy the name, {word} → {word}. Click to ask the brain.",
   "data.tip.missing": "No real word in this language: not in the learning data.",
   "data.tip.kept": "Never-seen animal: the brain does not learn from it. Click to ask the brain.",
-  "data.tip.hidden": "Hidden: tick \"show the never-seen answers\" to see it."
+  "data.tip.hidden": "Hidden: tick \"show the never-seen answers\" to see it.",
+  "tab.test": "Test",
+  "test.title": "Test: what it answers for every animal",
+  "test.explain": "An extra for later, not needed to understand the brain. The brain is asked every form of every animal, and each answer is compared with the learning data. Never-seen animals are tested too: they show whether it learned the pattern or only memorised the words. It is tested only while this tab is open (every 100 training steps), so learning is not slowed down otherwise.",
+  "test.help": "This is an exam, not learning data: the words in the table are the brain's own answers. ✓ right, ≈ one letter off, ✗ wrong. ✨ means the language has no real word for that form, so whatever it wrote is its own invention (those are re-tested every 500 steps). Hover over a word to see the right one; click it to ask the question on the Forms tab.",
+  "test.again": "Test again now",
+  "test.when": "Its answers at step {step}.",
+  "test.none": "Not tested yet.",
+  "test.scoreHelp": "How many it answers right, at each test so far (it is tested only while this tab is open)."
 }

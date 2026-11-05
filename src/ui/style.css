@@ -225,3 +225,11 @@ main.data-main { padding: 14px 20px; max-width: 1240px; }
 .data-table tr.kept td.cell:not(.missing) { color: var(--muted); }
 .data-table tr.kept td.kept:not(.hidden):hover { background: #f1f5f9; }
 .data-table .never { margin-left: 6px; font-size: 11px; font-weight: 500; padding: 0 5px; border: 1px dashed var(--muted); border-radius: 8px; color: var(--muted); }
+
+/* Test tab (expert): every animal tested, scoreboard */
+main.test-main { padding: 14px 20px; max-width: 1240px; }
+.test-main .test-intro .row { margin-bottom: 0; }
+.test-main .test-intro .picker { margin-bottom: 0; }
+.test-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.test-main .animals td { max-width: 160px; }
+.test-legend { display: flex; gap: 12px; margin-bottom: 8px; }

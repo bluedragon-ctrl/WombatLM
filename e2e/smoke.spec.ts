@@ -5,7 +5,9 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
   await expect(page.locator('[data-test=output] .word')).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('[data-test=animals] tr').nth(50)).toBeVisible();
+  // The full test is an expert extra: no Test tab, no animal table at first.
+  await expect(page.locator('[data-test=tab-test]')).toBeHidden();
+  await expect(page.locator('[data-test=animals]')).toBeHidden();
 
   // Learning and answering are separate: nothing is practised before a step.
   await expect(page.locator('[data-test=learning]')).toContainText(/not learning/);
@@ -61,5 +63,15 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.locator('[data-test=data-table] td.learned:not(.name)').first().click();
   await expect(page.locator('[data-test=bars]')).toBeVisible();
   await expect(page.locator('[data-test=output] .badge')).toContainText(/.+/);
+
+  // Expert mode adds the Test tab: every animal tested, on request.
+  await page.locator('[data-test=expert]').check();
+  await page.click('[data-test=tab-test]');
+  await expect(page.locator('[data-test=animals] tr').nth(50)).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('[data-test=test-when]')).toContainText(/step \d/);
+  await page.locator('[data-test=animals] td.cell').first().click(); // asks it on the Forms tab
+  await expect(page.locator('[data-test=bars]')).toBeVisible();
+  await page.locator('[data-test=expert]').uncheck();
+  await expect(page.locator('[data-test=tab-test]')).toBeHidden();
   expect(errors).toEqual([]);
 });

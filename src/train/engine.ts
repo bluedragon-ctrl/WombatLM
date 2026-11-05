@@ -1,7 +1,7 @@
 /**
  * The training engine behind the worker: handles protocol messages, runs the
  * training loop in short time slices (so messages such as `pause` are handled
- * promptly), evaluates on a schedule and answers questions.
+ * promptly), tests every animal on a schedule while the Test tab is open and answers questions.
  *
  * It does not touch worker globals: `worker.ts` passes in how to post
  * messages and how to schedule the next slice, so tests can drive it in Node.
@@ -69,6 +69,11 @@ export class Engine {
   private lastOwnAt = -Infinity;
   /** The latest batch the brain answered before learning from it. */
   private answered: PracticeBatch | undefined;
+  /**
+   * The Test tab is open: test every animal on the EVAL schedule. Off by
+   * default (beginners only learn and ask); `evaluate` still tests on request.
+   */
+  private watchTests = false;
 
   constructor(private host: EngineHost, dataset?: Dataset) {
     this.dataset = dataset ?? new Dataset(baseBundle());
@@ -97,7 +102,7 @@ export class Engine {
           tokens: this.dataset.vocab.tokens.slice(),
           matrices: this.matrices(),
         });
-        this.evaluate(true);
+        if (this.watchTests) this.evaluate(true);
         this.tick(true);
         break;
       case 'play':
@@ -116,7 +121,7 @@ export class Engine {
         break;
       case 'step':
         for (let i = 0; i < msg.n; i++) this.trainOne();
-        this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
+        if (this.watchTests) this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
         this.tick(true);
         break;
       case 'setSpeed':
@@ -131,7 +136,7 @@ export class Engine {
         break;
       case 'reset':
         this.reset(msg.seed);
-        this.evaluate(true);
+        if (this.watchTests) this.evaluate(true);
         this.tick(true);
         break;
       case 'ask':
@@ -139,6 +144,13 @@ export class Engine {
         break;
       case 'evaluate':
         this.evaluate(msg.inventions ?? false);
+        break;
+      case 'watchTests':
+        this.watchTests = msg.on;
+        // Test now if this brain has not been tested yet (with the inventions if they are out of date).
+        if (msg.on && this.lastEvalStep !== this.trainer.step) {
+          this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps || this.lastInventionStep < 0);
+        }
         break;
       case 'watchPractice':
         this.watchPractice = msg.on;
@@ -223,7 +235,7 @@ export class Engine {
     }
     this.lastSlice = start;
     const sinceEval = this.trainer.step - this.lastEvalStep;
-    if (sinceEval >= EVAL.everySteps || (sinceEval > 0 && start - this.lastEvalTime >= EVAL.everyMs)) {
+    if (this.watchTests && (sinceEval >= EVAL.everySteps || (sinceEval > 0 && start - this.lastEvalTime >= EVAL.everyMs))) {
       this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
     }
     this.tick(false);

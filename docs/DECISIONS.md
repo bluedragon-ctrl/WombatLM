@@ -148,3 +148,12 @@ User: "I do not fully understand tabs shown, so I would like to reorganise them 
 - **Never-seen animals are listed, greyed, with their answers hidden** behind "show the never-seen answers" (like the reveal on the Forms tab), so the tab does not give away the test. Searching does not match hidden answers.
 - **Clicking a word asks the brain** that question on the Forms tab, linking "learning data" to "answering".
 - Alternative accepted spellings (`formsAlt`, `alt`) are not shown: they are used only for judging answers, never trained on.
+
+## Tab reorganisation, step 2: the full test becomes an expert extra (user request)
+
+User: "I do not understand table Animals on the Forms tab. Are those learning data, sample data or what?" — it was the brain's own answers for every animal (the scheduled evaluation), marked against the learning data, but it looked like data. User decision: "fully remove the full test for now or have it available on request. The story should be as simple as possible in the beginning: 1. learning data goes in, 2. the model is established, I can ask it questions about single animals. Extra steps for evaluation are advanced data for the beginner."
+
+- **Forms tab** no longer has the Animals table or the Scoreboard. It keeps ① Build (with the loss chart: that is learning) and ② Ask (single animals).
+- **New Test tab, shown only in expert mode** ("Expert (adds settings and the Test tab)"): the Animals table (with a ✓ ≈ ✗ ✨ legend, filters and its own data-language picker), the Scoreboard, "Test again now" and "Its answers at step N". It is introduced as "an extra for later" and the help says plainly that the words are the brain's answers, not learning data. Clicking a word asks it on the Forms tab. Turning expert mode off while on the tab goes back to Forms.
+- **The engine tests only on request** (`watchTests`, like `watchPractice`): on init / reset / Step and in the training loop it evaluates only while the Test tab is open (same EVAL schedule: every 100 steps or 3 s, inventions every 500). Opening the tab tests the current brain right away (~0.7 s in the browser at step ~200, with inventions) unless it was already tested at this step; `evaluate` still works any time. So without the Test tab the training loop no longer spends time on evaluation.
+- The scoreboard history therefore has points only from steps when the tab was open.
