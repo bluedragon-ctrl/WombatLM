@@ -8,6 +8,7 @@
  * lets the model keep the stem of animals it has never seen.
  */
 import { Tape } from '../nn/autograd';
+import type { LetterExplain } from '../nn/explain';
 import { Adam } from '../nn/optim';
 import { Rng } from '../nn/rng';
 import { Example, SpecialIds, TRANSLATOR_DEFAULTS, TranslationTrace, Translator, TranslatorConfig, makeBatch } from '../nn/translator';
@@ -313,6 +314,12 @@ export class FormTrainer {
   inspect(text: string, lang: string, form: string, model: Translator = this.model): TranslationTrace {
     const src = this.vocab.encodeWord(text).slice(0, model.config.maxLen - 2);
     return model.inspect(this.dataset.targetId(lang, form), src, this.ids);
+  }
+
+  /** "Look inside one letter" of the answer to free text (see nn/explain.ts). */
+  explain(text: string, lang: string, form: string, position: number): LetterExplain {
+    const src = this.vocab.encodeWord(text).slice(0, this.model.config.maxLen - 2);
+    return this.model.explain(this.dataset.targetId(lang, form), src, this.ids, position);
   }
 }
 

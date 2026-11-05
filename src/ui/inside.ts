@@ -1,14 +1,23 @@
 /**
- * "Inside the model" tab: a heatmap per weight matrix (weights, their
- * change in the last steps, or the gradient), and in expert mode
- * "follow the signal" for the current word.
+ * "Inside the model" tab:
+ * - "Where is it learning?": a diagram of the model's parts, each with how
+ *   much of its numbers changed per step lately (one scale for all) and a
+ *   line of that over time; clicking a part scrolls to its heatmaps;
+ * - "Look inside one letter" (see explainView.ts);
+ * - a heatmap per weight matrix (weights, their change in the last steps, or
+ *   the gradient), with letters / positions on the axes where they mean
+ *   something and plain-language tooltips;
+ * - in expert mode, "follow the signal" for the current word.
  */
 import type { AxisKind } from '../nn/transformer';
-import type { AnswerMsg, InspectMode, MatrixInfo, ReadyMsg, WeightsMsg } from '../train/protocol';
-import { DIVERGING_ENDS, symmetricScale } from '../viz/colors';
-import { drawHeatmap, heatmapCellAt, heatmapLayout, HeatmapLayout } from '../viz/weightHeatmap';
+import type { AnswerMsg, ExplainMsg, InspectMode, MatrixChange, MatrixInfo, ReadyMsg, WeightsMsg } from '../train/protocol';
+import { DIVERGING_ENDS, INK, symmetricScale } from '../viz/colors';
+import { prepare } from '../viz/canvas';
+import { drawHeatmap, heatmapCellAt, heatmapLayout, HeatmapLayout, HeatmapMarks } from '../viz/weightHeatmap';
 import { h, showTip } from './dom';
+import { ExplainView, Question } from './explainView';
 import { t, uiLang } from './i18n';
+import { shortLabel } from './tokens';
 
 const MODES: InspectMode[] = ['weights', 'delta', 'grad'];
 
@@ -26,13 +35,42 @@ function part(name: string): string {
   return m[1].startsWith('ln') ? 'norm' : m[1];
 }
 
+/**
+ * Boxes of the "where is it learning" diagram, in the order the signal flows.
+ * Each volume knob counts with the step it prepares.
+ */
+const BOXES: { id: string; column: string; match: RegExp; target: string }[] = [
+  { id: 'letters', column: 'letters', match: /^(tokEmb|outBias)$/, target: '[data-matrix-card=tokEmb]' },
+  { id: 'positions', column: 'letters', match: /^(encPos|decPos)$/, target: '[data-matrix-card=encPos]' },
+  { id: 'enc.self', column: 'encoder', match: /^enc\d+\.(self|ln1)\./, target: '[data-part="encoder.self"]' },
+  { id: 'enc.ffn', column: 'encoder', match: /^(enc\d+\.(ffn|ln2)\.|encNorm)/, target: '[data-part="encoder.ffn"]' },
+  { id: 'dec.self', column: 'decoder', match: /^dec\d+\.(self|ln1)\./, target: '[data-part="decoder.self"]' },
+  { id: 'dec.cross', column: 'decoder', match: /^dec\d+\.(cross|lnX)\./, target: '[data-part="decoder.cross"]' },
+  { id: 'dec.ffn', column: 'decoder', match: /^(dec\d+\.(ffn|ln2)\.|decNorm)/, target: '[data-part="decoder.ffn"]' },
+];
+
+/** Points kept per box for the "over time" line. */
+const HISTORY = 240;
+
 interface Card {
   info: MatrixInfo;
   canvas: HTMLCanvasElement;
   scaleLabel: HTMLElement;
+  rateLabel: HTMLElement;
   layout: HeatmapLayout;
   data: Float32Array | null;
+  /** Own colour scale (99th percentile of |values|) and the one in use (own or shared). */
+  ownScale: number;
   scale: number;
+}
+
+interface Box {
+  el: HTMLElement;
+  fill: HTMLElement;
+  value: HTMLElement;
+  spark: HTMLCanvasElement;
+  history: { step: number; rate: number }[];
+  rate: number | null;
 }
 
 export class InsideTab {
@@ -46,8 +84,19 @@ export class InsideTab {
   private body: HTMLElement;
   private signal: HTMLElement;
   private answer?: AnswerMsg;
+  /** One colour scale for every heatmap (honest sizes), or one per matrix. */
+  private shared = true;
+  private overview: HTMLElement;
+  private flow: HTMLElement;
+  private boxes = new Map<string, Box>();
+  private lastSummaryStep = -1;
+  /** Change per step of each matrix (share of its size), from the latest summary. */
+  private rates = new Map<string, number>();
+  private explain: ExplainView;
+  /** Weights used by the letter in "look inside one letter", outlined in the heatmaps. */
+  private marks = new Map<string, HeatmapMarks>();
 
-  constructor(private onModeChange: () => void) {
+  constructor(private onModeChange: () => void, requestExplain: (q: Question, position: number) => void) {
     this.modeNote = h('span', { class: 'small', 'data-test': 'mode-note' });
     const modes = h('div', { class: 'picker', role: 'group', 'aria-label': t('inside.mode') });
     for (const m of MODES) {
@@ -56,15 +105,29 @@ export class InsideTab {
       modes.append(b);
       this.modeButtons.push(b);
     }
+    const sharedBox = h('input', { type: 'checkbox', checked: true, 'data-test': 'shared-scale' });
+    sharedBox.onchange = () => { this.shared = sharedBox.checked; this.rescale(); };
     const legend = h('div', { class: 'legend' },
       h('span', { class: 'swatch-box', style: `background:${DIVERGING_ENDS.neg}` }), t('inside.negative'),
       h('span', { class: 'swatch-box', style: 'background:#fff' }), t('inside.zero'),
-      h('span', { class: 'swatch-box', style: `background:${DIVERGING_ENDS.pos}` }), t('inside.positive'));
+      h('span', { class: 'swatch-box', style: `background:${DIVERGING_ENDS.pos}` }), t('inside.positive'),
+      h('label', { class: 'shared', title: t('inside.sharedHelp') }, sharedBox, ' ', t('inside.shared')));
     this.body = h('div', { class: 'inside-body', 'data-test': 'heatmaps' });
     this.signal = h('section', { class: 'panel signal', hidden: true, 'data-test': 'signal' });
+    this.flow = h('div', { class: 'flow' });
+    this.overview = h('section', { class: 'panel overview', 'data-test': 'overview' },
+      h('h2', {}, t('flow.title')),
+      h('p', { class: 'small' }, t('flow.help')),
+      this.flow);
+    this.explain = new ExplainView(requestExplain, (marks) => { this.marks = marks; for (const c of this.cards) this.draw(c); }, (code) => this.langName(code));
     this.el = h('div', { class: 'inside' },
       h('section', { class: 'panel inside-head' },
         h('p', { class: 'intro', 'data-test': 'inside-intro' }),
+        h('p', { class: 'small' }, t('inside.guide'))),
+      this.overview,
+      this.explain.el,
+      h('section', { class: 'panel inside-head' },
+        h('h2', {}, t('inside.heatTitle')),
         h('div', { class: 'row' }, modes, this.modeNote),
         h('p', { class: 'small' }, t(`inside.help`)),
         legend),
@@ -82,12 +145,16 @@ export class InsideTab {
   setReady(ready: ReadyMsg): void {
     this.ready = ready;
     this.el.querySelector('.intro')!.textContent = t('inside.intro', { n: ready.params.toLocaleString(uiLang()) });
+    this.lastSummaryStep = -1;
+    this.rates.clear();
+    this.buildFlow();
     this.build();
   }
 
   setExpert(on: boolean): void {
     this.expert = on;
     this.signal.hidden = !on;
+    this.explain.setExpert(on);
     this.build();
     this.renderSignal();
   }
@@ -97,9 +164,120 @@ export class InsideTab {
     return this.cards.map((c) => c.info.name);
   }
 
+  /** The tab became visible (or its answer changed while visible): bring "look inside one letter" up to date. */
+  shown(): void {
+    this.explain.refresh();
+  }
+
+  /** Look inside letter `position` of the current answer (from a click on the guess bars). */
+  explainAt(position: number): void {
+    this.explain.select(position);
+  }
+
+  scrollToExplain(): void {
+    this.explain.el.scrollIntoView?.({ block: 'start' });
+  }
+
+  onExplain(msg: ExplainMsg): void {
+    this.explain.onExplain(msg);
+  }
+
+  private langName(code: string): string {
+    return this.ready?.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
+  }
+
   private visible(m: MatrixInfo): boolean {
     return this.expert || m.rows > 1;
   }
+
+  // -------------------------------------------------------------------------
+  // "Where is it learning?"
+
+  private buildFlow(): void {
+    if (!this.ready) return;
+    const names = this.ready.matrices.map((m) => m.name);
+    this.boxes.clear();
+    const columns = new Map<string, HTMLElement[]>();
+    for (const b of BOXES) {
+      if (!names.some((n) => b.match.test(n))) continue; // e.g. a model without an encoder
+      const fill = h('span', { class: 'fill' });
+      const value = h('span', { class: 'val' }, '—');
+      const spark = h('canvas', { class: 'spark' });
+      const el = h('button', { class: 'flow-box', 'data-box': b.id, title: t('flow.click') },
+        h('span', { class: 'name' }, t(`flow.${b.id}`)),
+        h('span', { class: 'track' }, fill),
+        value,
+        spark);
+      el.onclick = () => this.el.querySelector(b.target)?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+      this.boxes.set(b.id, { el, fill, value, spark, history: [], rate: null });
+      if (!columns.has(b.column)) columns.set(b.column, []);
+      columns.get(b.column)!.push(el);
+    }
+    const cols = ['letters', 'encoder', 'decoder'].filter((c) => columns.has(c)).map((c) => h('div', { class: `flow-col ${c}` },
+      h('h3', {}, t(`inside.group.${c}`)),
+      ...columns.get(c)!));
+    const arrow = () => h('span', { class: 'flow-arrow', 'aria-hidden': 'true' }, '→');
+    const parts: HTMLElement[] = [];
+    cols.forEach((c, i) => { if (i) parts.push(arrow()); parts.push(c); });
+    parts.push(arrow(), h('div', { class: 'flow-end' }, t('flow.end')));
+    this.flow.replaceChildren(...parts);
+    this.drawFlow();
+  }
+
+  /** New change summary: one rate per box (share of its numbers changed per step), and per matrix for the captions. */
+  private onSummary(step: number, summary: MatrixChange[]): void {
+    if (step < this.lastSummaryStep) { for (const b of this.boxes.values()) b.history = []; }
+    this.rates.clear();
+    for (const m of summary) if (m.steps > 0 && m.norm > 0) this.rates.set(m.name, m.change / m.norm / m.steps);
+    const fresh = step !== this.lastSummaryStep;
+    for (const def of BOXES) {
+      const box = this.boxes.get(def.id);
+      if (!box) continue;
+      let c2 = 0, n2 = 0, steps = 0;
+      for (const m of summary) if (def.match.test(m.name)) { c2 += m.change * m.change; n2 += m.norm * m.norm; steps = Math.max(steps, m.steps); }
+      box.rate = steps > 0 && n2 > 0 ? Math.sqrt(c2) / Math.sqrt(n2) / steps : null;
+      if (fresh && box.rate !== null) {
+        box.history.push({ step, rate: box.rate });
+        if (box.history.length > HISTORY) box.history = box.history.filter((_, i) => i % 2 === 0);
+      }
+    }
+    this.lastSummaryStep = step;
+    this.drawFlow();
+    for (const c of this.cards) {
+      const r = this.rates.get(c.info.name);
+      c.rateLabel.textContent = r === undefined ? '' : ` · ${t('inside.rate', { pct: pct(r) })}`;
+    }
+  }
+
+  private drawFlow(): void {
+    const boxes = [...this.boxes.values()];
+    const max = Math.max(1e-12, ...boxes.map((b) => b.rate ?? 0));
+    const histMax = Math.max(1e-12, ...boxes.flatMap((b) => b.history.map((p) => p.rate)));
+    const first = Math.min(...boxes.flatMap((b) => b.history.map((p) => p.step)));
+    const last = Math.max(...boxes.flatMap((b) => b.history.map((p) => p.step)));
+    for (const b of boxes) {
+      b.fill.style.width = b.rate === null ? '0' : `${Math.max(2, Math.round((b.rate / max) * 100))}%`;
+      b.value.textContent = b.rate === null ? t('flow.none') : t('inside.rate', { pct: pct(b.rate) });
+      const W = 120, H = 26;
+      const ctx = prepare(b.spark, W, H);
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.beginPath(); ctx.moveTo(0, H - 1.5); ctx.lineTo(W, H - 1.5); ctx.stroke();
+      if (b.history.length < 2 || last <= first) continue;
+      // One scale for every box, so the lines can be compared too.
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      b.history.forEach((p, i) => {
+        const x = ((p.step - first) / (last - first)) * (W - 2) + 1;
+        const y = H - 2 - (p.rate / histMax) * (H - 4);
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      });
+      ctx.stroke();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Heatmaps
 
   private build(): void {
     if (!this.ready) return;
@@ -117,19 +295,35 @@ export class InsideTab {
     }
     const order = ['letters', 'encoder', 'decoder'];
     const sorted = [...groups].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
-    this.body.replaceChildren(...sorted.map(([g, parts]) => h('section', { class: `panel group ${g}` },
+    this.body.replaceChildren(...sorted.map(([g, parts]) => h('section', { class: `panel group ${g}`, 'data-group': g },
       h('h2', {}, t(`inside.group.${g}`)),
       h('p', { class: 'small' }, t(`inside.groupHelp.${g}`)),
-      h('div', { class: 'parts' }, ...[...parts].map(([p, cards]) => h('div', { class: 'part' },
+      h('div', { class: 'parts' }, ...[...parts].map(([p, cards]) => h('div', { class: 'part', 'data-part': `${g}.${p}` },
         p ? h('h3', {}, t(`inside.part.${p}`)) : null,
         h('div', { class: 'cards' }, ...cards)))))));
-    for (const c of this.cards) this.draw(c);
+    this.rescale();
+  }
+
+  /** Labels for an axis that means something (letters, positions); none for plain "number n" axes. */
+  private axisLabels(kind: AxisKind, n: number): string[] | undefined {
+    if (kind === 'token') return this.ready!.tokens.slice(0, n).map(shortLabel);
+    if (kind === 'position') return Array.from({ length: n }, (_, i) => String(i + 1));
+    return undefined;
   }
 
   private card(info: MatrixInfo, prev?: Card): HTMLElement {
     const canvas = h('canvas', { class: 'heat', 'data-matrix': info.name });
     const scaleLabel = h('span', { class: 'scale' });
-    const c: Card = { info, canvas, scaleLabel, layout: heatmapLayout(info.rows, info.cols), data: prev?.data ?? null, scale: prev?.scale ?? 1 };
+    const r = this.rates.get(info.name);
+    const rateLabel = h('span', { class: 'rate' }, r === undefined ? '' : ` · ${t('inside.rate', { pct: pct(r) })}`);
+    // Plain mode: the number × number matrices have no readable axes, so they are small thumbnails.
+    const plainAxes = (k: AxisKind) => k === 'dim' || k === 'hidden';
+    const thumb = !this.expert && plainAxes(info.rowKind) && plainAxes(info.colKind);
+    const layout = heatmapLayout(info.rows, info.cols, thumb ? 3 : 5, {
+      rows: info.rows > 1 ? this.axisLabels(info.rowKind, info.rows) : undefined,
+      cols: this.axisLabels(info.colKind, info.cols),
+    });
+    const c: Card = { info, canvas, scaleLabel, rateLabel, layout, data: prev?.data ?? null, ownScale: prev?.ownScale ?? 1, scale: prev?.scale ?? 1 };
     this.cards.push(c);
     canvas.addEventListener('mousemove', (e) => {
       const cell = heatmapCellAt(c.layout, e.offsetX, e.offsetY);
@@ -139,34 +333,48 @@ export class InsideTab {
     canvas.addEventListener('mouseleave', (e) => { showTip(e, null); this.draw(c); });
     const label = h('div', { class: 'label' }, roleLabel(info));
     if (this.expert) label.append(h('code', {}, ` ${info.name}`));
-    return h('figure', { class: 'card' }, label, canvas,
-      h('figcaption', { class: 'small' }, `${info.rows} × ${info.cols}`, scaleLabel));
+    return h('figure', { class: `card${thumb ? ' thumb' : ''}`, 'data-matrix-card': info.name }, label, canvas,
+      h('figcaption', { class: 'small' }, `${info.rows} × ${info.cols}`, scaleLabel, rateLabel));
   }
 
   private describe(c: Card, row: number, col: number): string {
     const v = c.data![row * c.info.cols + col];
-    const r = axisText(c.info.rowKind, row, this.ready!.tokens), k = axisText(c.info.colKind, col, this.ready!.tokens);
+    const tokens = this.ready!.tokens;
+    const r = axisText(c.info.rowKind, row, tokens), k = axisText(c.info.colKind, col, tokens);
     // A layer's matrix connects an incoming number (row) to an outgoing one (column).
     const layer = /^(dim|hidden)$/.test(c.info.rowKind) && /^(dim|hidden)$/.test(c.info.colKind);
     const where = layer ? `${r} → ${k}` : [r, k].filter(Boolean).join(', ');
-    return `${roleLabel(c.info)} — ${where}: ${fmt(v)}`;
+    const lines = [`${roleLabel(c.info)} — ${where}`, tipText(c.info, row, col, tokens), t(`inside.val.${this.mode}`, { v: fmt(v) })];
+    if (this.expert) lines.push(`${c.info.name}[${row}, ${col}]`);
+    return lines.filter(Boolean).join('\n');
   }
 
   private draw(c: Card, highlight: { row: number; col: number } | null = null): void {
-    drawHeatmap(c.canvas, c.data ?? new Float32Array(c.info.rows * c.info.cols), c.layout, c.scale, highlight);
+    drawHeatmap(c.canvas, c.data ?? new Float32Array(c.info.rows * c.info.cols), c.layout, c.scale, highlight, this.marks.get(c.info.name));
+  }
+
+  /** Colour scale per matrix, or one shared by all (the largest of the matrices' own scales). */
+  private rescale(): void {
+    const big = this.cards.filter((c) => c.info.rows > 1 && c.data?.some((v) => v !== 0));
+    const shared = Math.max(1e-12, ...big.map((c) => c.ownScale));
+    for (const c of this.cards) {
+      c.scale = this.shared && big.length ? shared : c.ownScale;
+      c.scaleLabel.textContent = c.data?.some((v) => v !== 0) ? ` · ±${fmt(c.scale)}` : '';
+      this.draw(c);
+    }
   }
 
   onWeights(msg: WeightsMsg): void {
+    if (msg.summary) this.onSummary(msg.step, msg.summary);
     if (msg.mode !== this.mode) return;
     const byName = new Map(msg.matrices.map((m) => [m.name, m.data]));
     for (const c of this.cards) {
       const d = byName.get(c.info.name);
       if (!d) continue;
       c.data = d;
-      c.scale = symmetricScale(d);
-      c.scaleLabel.textContent = d.some((v) => v !== 0) ? ` · ±${fmt(c.scale)}` : '';
-      this.draw(c);
+      c.ownScale = symmetricScale(d);
     }
+    this.rescale();
     this.modeNote.textContent = msg.mode === 'weights' ? t('inside.note.weights', { step: msg.step })
       : msg.steps === 0 ? t(`inside.note.${msg.mode}None`)
         : msg.mode === 'delta' ? t(msg.steps === 1 ? 'inside.note.delta1' : 'inside.note.delta', { n: msg.steps }) : t('inside.note.grad', { step: msg.step });
@@ -174,6 +382,7 @@ export class InsideTab {
 
   setAnswer(a: AnswerMsg | undefined): void {
     this.answer = a;
+    this.explain.setAnswer(a);
     if (this.expert) this.renderSignal();
   }
 
@@ -186,16 +395,20 @@ export class InsideTab {
     const a = this.answer;
     if (!this.expert || !a) return;
     const input = a.input.map((tok, i) => (i === 0 ? '✱' : tok === ' ' ? '␣' : tok));
-    const decIn = ['✱', ...a.steps.map((s) => s.chosen || '⏎')];
+    // Decoder row i: the letter going in at position i, and the letter it is used to guess.
+    const decIn = ['✱', ...a.steps.map((s) => shortLabel(s.chosen))];
+    const decRows = decIn.map((tok, i) => (i < a.steps.length ? `${tok}→${shortLabel(a.steps[i].chosen)}` : tok));
     const strips = a.activations.map((act) => {
-      const labels = (act.name.startsWith('enc') ? input : decIn).slice(0, act.T);
+      const enc = act.name.startsWith('enc');
+      const labels = (enc ? input : decRows).slice(0, act.T);
       const layout = heatmapLayout(act.T, act.d, 12);
       const canvas = h('canvas', { class: 'heat' });
       const scale = symmetricScale(act.data);
       drawHeatmap(canvas, act.data, layout, scale);
       canvas.addEventListener('mousemove', (e) => {
         const cell = heatmapCellAt(layout, e.offsetX, e.offsetY);
-        showTip(e, cell ? `'${labels[cell.row]}', ${t('axis.dim', { n: cell.col + 1 })}: ${fmt(act.data[cell.row * act.d + cell.col])}` : null);
+        const who = enc ? `'${labels[cell?.row ?? 0]}'` : t('signal.decRow', { tok: decIn[cell?.row ?? 0], next: shortLabel(a.steps[cell?.row ?? 0]?.chosen ?? '') });
+        showTip(e, cell ? `${who}, ${t('axis.dim', { n: cell.col + 1 })}: ${fmt(act.data[cell.row * act.d + cell.col])}` : null);
       });
       canvas.addEventListener('mouseleave', (e) => showTip(e, null));
       return h('figure', { class: 'card strip' },
@@ -216,6 +429,12 @@ function fmt(v: number): string {
   return a === 0 ? '0' : a >= 0.01 ? v.toFixed(3) : v.toExponential(1);
 }
 
+/** A share (0..1) as a percentage with enough digits for small changes. */
+function pct(r: number): string {
+  const p = r * 100;
+  return p >= 1 ? p.toFixed(1) : p >= 0.01 ? p.toFixed(2) : p.toExponential(1);
+}
+
 /** Plain-language name of a matrix (technical name in expert mode is added by the caller). */
 export function roleLabel(m: MatrixInfo): string {
   if (m.name === 'encPos') return t('role.encPos');
@@ -223,6 +442,15 @@ export function roleLabel(m: MatrixInfo): string {
   const key = m.role.endsWith('.bias') ? 'role.bias' : `role.${m.role}`;
   const s = t(key);
   return s === key ? m.role : s;
+}
+
+/** What one number of a matrix does, in plain words. */
+export function tipText(m: MatrixInfo, row: number, col: number, tokens: readonly string[]): string {
+  const vars = { r: row + 1, c: col + 1, tok: axisText('token', m.rowKind === 'token' ? row : col, tokens), d: m.cols };
+  if (m.role.endsWith('.bias')) return t('tip.bias', { what: axisText(m.colKind, col, tokens) });
+  const key = `tip.${m.role}`;
+  const s = t(key, vars);
+  return s === key ? '' : s;
 }
 
 /** What row/column number `i` of an axis means, e.g. "letter 'ž'". */

@@ -163,12 +163,16 @@ export class App {
   private inspectDirty = false;
   private lastInspect = -Infinity;
   private inspectTimer = 0;
+  /** Latest "look inside one letter" request (older replies are dropped). */
+  private explainId = 0;
 
   constructor(private root: HTMLElement) {
     this.worker = new Worker(new URL('../train/worker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => this.onMessage(e.data);
     this.worker.onerror = (e) => this.showError(e.message);
-    this.inside = new InsideTab(() => this.requestInspect(true));
+    this.inside = new InsideTab(() => this.requestInspect(true), (q, position) => {
+      this.send({ type: 'explain', id: ++this.explainId, ...q, position });
+    });
     this.dataTab = new DataTab((text, lang, form) => this.askOnAskTab({ text, lang, form }));
     this.els = this.build();
     this.letterMap = new LetterMapView(this.els.mapCanvas, () => Math.min(360, parentWidth(this.els.mapCanvas, 320)));
@@ -249,12 +253,16 @@ export class App {
           this.answer = msg;
           this.invalidate('answer', 'stamp');
           this.inside.setAnswer(msg);
+          if (this.tab === 'inside') this.inside.shown();
         }
         if (this.askDirty) this.ask();
         break;
       case 'weights':
         this.inspectDone(msg.id);
         this.inside.onWeights(msg);
+        break;
+      case 'explain':
+        if (msg.id === this.explainId) this.inside.onExplain(msg);
         break;
       case 'letterMap':
         this.inspectDone(msg.id);
@@ -442,6 +450,7 @@ export class App {
     if (tab === 'test') this.invalidate('scores', 'animals');
     if (tab === 'learn') { this.invalidate('practice', 'loss'); this.letterMap.draw(); }
     if (tab === 'ask') this.invalidate('answer', 'stamp');
+    if (tab === 'inside') this.inside.shown();
     this.requestInspect(true);
   }
 
@@ -535,6 +544,15 @@ export class App {
       bars.title = specials.map((c) => `${shortLabel(c)} = ${this.fullName(c)}`).join('\n');
     };
     bars.onmouseleave = () => { if (!this.slow) this.setHover(null); };
+    // A click on a letter's column looks inside the model while it writes that letter.
+    bars.onclick = (e) => {
+      const steps = this.shown()?.steps ?? [];
+      const col = guessColumnAt(e.offsetX, steps.length);
+      if (col === null || this.slow) return;
+      this.inside.explainAt(col);
+      this.setTab('inside');
+      this.inside.scrollToExplain();
+    };
     const barsWrap = h('div', { class: 'bars-wrap' }, bars);
     const slowBtn = h('button', { class: 'small-btn', 'data-test': 'slow' }, t('slow.button'));
     slowBtn.onclick = () => this.toggleSlow();
@@ -635,7 +653,8 @@ export class App {
         h('div', { class: 'stamp-row' }, stamp),
         tokensPanel,
         h('div', { class: 'row guess-head' }, h('h2', {}, t('guessBars')), slowBtn, slowCaption),
-        barsWrap),
+        barsWrap,
+        h('p', { class: 'small', 'data-test': 'bars-hint' }, t('ask.lookInside'))),
       h('section', { class: 'panel attention' },
         h('h2', {}, t('att.title')),
         h('p', { class: 'small' }, t('att.help')),

@@ -32,7 +32,9 @@ async function shoot(page: Page, when: string) {
   await page.locator('.panel.map').screenshot({ path: `${DIR}/${when}-letter-map.png` });
   await page.click('[data-test=tab-inside]');
   await page.waitForTimeout(800);
-  await page.locator('.inside-head').screenshot({ path: `${DIR}/${when}-inside-head.png` });
+  await page.locator('.inside-head').last().screenshot({ path: `${DIR}/${when}-inside-head.png` });
+  await page.locator('[data-test=overview]').screenshot({ path: `${DIR}/${when}-inside-overview.png` });
+  await page.locator('[data-test=explain]').screenshot({ path: `${DIR}/${when}-inside-explain.png` });
   await page.locator('.group.letters').screenshot({ path: `${DIR}/${when}-inside-letters.png` });
   await page.locator('.group.decoder').screenshot({ path: `${DIR}/${when}-inside-decoder.png` });
   await page.click('[data-mode=weights]');

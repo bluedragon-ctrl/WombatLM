@@ -193,6 +193,48 @@ describe('Engine', () => {
     expect(w.matrices[0].data.some((v) => v !== 0)).toBe(true);
   });
 
+  it('weights carry a change summary of every matrix', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    const last = () => h.of('weights').at(-1) as WeightsMsg;
+    e.handle({ type: 'inspect', id: 1, matrixIds: ['tokEmb'], mode: 'weights' });
+    expect(last().summary.map((m) => m.name)).toEqual(e.trainer.model.params.names());
+    expect(last().summary.every((m) => m.steps === 0 && m.change === 0)).toBe(true);
+    expect(last().summary.find((m) => m.name === 'tokEmb')!.norm).toBeGreaterThan(0);
+    e.handle({ type: 'step', n: 4 });
+    e.handle({ type: 'inspect', id: 2, matrixIds: ['tokEmb'], mode: 'grad' });
+    const s = last().summary.find((m) => m.name === 'tokEmb')!;
+    expect(s.steps).toBe(4);
+    expect(s.change).toBeGreaterThan(0);
+    // Nothing trained since: the same summary again.
+    e.handle({ type: 'inspect', id: 3, matrixIds: ['tokEmb'], mode: 'delta' });
+    expect(last().summary.find((m) => m.name === 'tokEmb')).toEqual(s);
+  });
+
+  it('explain looks inside one letter of the answer', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'step', n: 2 });
+    e.handle({ type: 'ask', id: 1, text: 'tygr', lang: 'cs', form: 'female' });
+    const ans = h.of('answer').at(-1) as AnswerMsg;
+    e.handle({ type: 'explain', id: 5, text: 'tygr', lang: 'cs', form: 'female', position: 1 });
+    const ex = h.of('explain').at(-1)!;
+    expect(ex.id).toBe(5);
+    expect(ex.output).toBe(ans.output);
+    expect(ex.columns).toBe(ans.steps.length);
+    expect(ex.chosen).toBe(ans.steps[1].chosen);
+    expect(ex.decIn).toHaveLength(2);
+    expect(ex.input).toEqual(ans.input);
+    expect(ex.stages.map((st) => st.name)).toEqual(['dec0.self', 'dec0.cross', 'dec0.ffn']);
+    expect(ex.guesses).toHaveLength(5);
+    // Same guesses as the guess bars.
+    ex.guesses.forEach((g, i) => { expect(g.char).toBe(ans.steps[1].top[i].char); expect(g.p).toBeCloseTo(ans.steps[1].top[i].p, 5); });
+    const g = ex.guesses[0];
+    expect(g.contrib.reduce((a, b) => a + b, g.bias)).toBeCloseTo(g.score, 4);
+  });
+
   it('inspect sends the letter map: characters, end of word and task tokens', () => {
     const h = fakeHost();
     const e = new Engine(h.host, ds);

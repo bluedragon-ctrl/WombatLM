@@ -96,6 +96,22 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=mode-note]')).toContainText(/changed/);
   await page.click('[data-mode=grad]');
   await expect(page.locator('[data-test=mode-note]')).toContainText(/batch/);
+  // Where is it learning: one box per part of the model, with a change per step.
+  await expect(page.locator('[data-test=overview] .flow-box')).toHaveCount(7);
+  await expect(page.locator('[data-test=overview] .flow-box').first()).toContainText(/per step/);
+
+  // Look inside one letter: from a click on a guess-bar column.
+  await page.click('[data-test=tab-ask]');
+  const bars = (await page.locator('[data-test=bars]').boundingBox())!;
+  await page.mouse.click(bars.x + 78 + 30, bars.y + 60);
+  await expect(page.locator('[data-test=tab-inside]')).toHaveClass(/on/);
+  await expect(page.locator('[data-test=explain-caption]')).toContainText(/letter 2 of/);
+  await expect(page.locator('.xletter[data-pos="1"]')).toHaveClass(/on/);
+  await expect(page.locator('[data-test=explain-guesses] button')).toHaveCount(5);
+  await page.locator('canvas[data-strip="dec0.cross:add"]').click({ position: { x: 7, y: 7 } });
+  await expect(page.locator('[data-test=explain-detail]')).toContainText(/Where it comes from/);
+  await page.locator('[data-test=explain-guesses] button').first().click();
+  await expect(page.locator('[data-test=explain-detail]')).toContainText(/favourite-letter bonus/);
 
   // A learning example can be asked on the Ask tab.
   await page.click('[data-test=tab-data]');

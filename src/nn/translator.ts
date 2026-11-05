@@ -13,6 +13,7 @@
  */
 import { add, crossEntropy, dropout, gather, matmul } from './ops';
 import { Rng } from './rng';
+import { LetterExplain, explainLetter } from './explain';
 import { growVocab } from './serialize';
 import { Tensor } from './tensor';
 import {
@@ -200,7 +201,9 @@ export class Translator {
     trace?.set('enc.in', x);
     const mask = keyPaddingMask(srcValid, B, Ts, Ts);
     for (const block of this.enc) x = block.forward(x, B, Ts, mask, undefined, trace, this.drop);
-    return this.encNorm.forward(x);
+    const memory = this.encNorm.forward(x);
+    trace?.set('memory', memory);
+    return memory;
   }
 
   /** Decoder with teacher forcing. Returns output logits [B*Tt, V]. */
@@ -213,7 +216,9 @@ export class Translator {
       const kv = block.cross!.keysValues(memory, B, Ts);
       y = block.forward(y, B, Tt, selfMask, { kv, mask: crossMask }, trace, this.drop);
     }
-    return this.project(this.decNorm.forward(y));
+    const final = this.decNorm.forward(y);
+    trace?.set('dec.final', final);
+    return this.project(final);
   }
 
   /** Hidden states -> scores for every token (tied with the embedding table). */
@@ -309,8 +314,25 @@ export class Translator {
     const activations: TranslationTrace['activations'] = {};
     for (const [name, t] of trace) {
       if (t.shape.length === 3) attention[name] = { heads: t.shape[0], Tq: t.shape[1], Tk: t.shape[2], data: t.data.slice() };
-      else activations[name] = { T: t.shape[0], d: t.shape[1], data: t.data.slice() };
+      else if (SIGNAL.test(name)) activations[name] = { T: t.shape[0], d: t.shape[1], data: t.data.slice() };
     }
     return { input: [target, ...src], output, finished, probs, attention, activations };
   }
+
+  /**
+   * "Look inside one letter": every number on the way to output letter
+   * `position` of this word's answer, and where each one comes from.
+   */
+  explain(target: number, src: number[], ids: SpecialIds, position: number): LetterExplain {
+    const [output] = this.greedy([{ target, src }], ids);
+    const tgt = output.slice(0, this.config.maxLen - 1);
+    const batch = makeBatch([{ target, src, tgt }], ids);
+    const trace: Trace = new Map();
+    const logits = this.logits(batch, trace);
+    const p = Math.max(0, Math.min(position, batch.Tt - 1));
+    return explainLetter(this, trace, Array.from(this.decoderInput(batch)), p, logits.data.subarray(p * this.vocabSize, (p + 1) * this.vocabSize), output);
+  }
 }
+
+/** Trace entries that "follow the signal" shows (the rest are for `explain`). */
+const SIGNAL = /^(enc|dec)\d*\.(in|out)$/;

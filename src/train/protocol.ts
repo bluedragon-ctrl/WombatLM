@@ -4,6 +4,7 @@
  * The worker owns the model, the optimiser and the dataset. The main thread
  * never holds live weights; it receives data ready to draw.
  */
+import type { ExplainStage } from '../nn/explain';
 import type { AxisKind } from '../nn/transformer';
 import type { PracticeBatch, Scores, TaskResult } from './trainer';
 
@@ -59,7 +60,13 @@ export type ToWorker =
    * list = none) and, if `letterMap`, the letter map (answered with `letterMap`).
    * `id` is echoed back.
    */
-  | { type: 'inspect'; id: number; matrixIds: string[]; mode: InspectMode; letterMap?: boolean };
+  | { type: 'inspect'; id: number; matrixIds: string[]; mode: InspectMode; letterMap?: boolean }
+  /**
+   * "Look inside one letter": every number on the way to output letter
+   * `position` (a guess-bar column) of the answer to this question. Answered
+   * with `explain`; `id` is echoed back.
+   */
+  | { type: 'explain'; id: number; text: string; lang: string; form: string; position: number };
 
 /**
  * What a weight heatmap shows:
@@ -236,6 +243,71 @@ export interface WeightsMsg {
   steps: number;
   /** Requested matrices, same shapes as in `ready.matrices` (transferred buffers). */
   matrices: { name: string; data: Float32Array }[];
+  /** How much every matrix of the model changed lately (all of them, not only the requested ones). */
+  summary: MatrixChange[];
+}
+
+/**
+ * Size of a matrix and of its latest change: `change` / `norm` / `steps` is
+ * "the share of it that changes per step", comparable between matrices.
+ */
+export interface MatrixChange {
+  name: string;
+  /** Size of the numbers: √(Σ w²). */
+  norm: number;
+  /** Size of their change over the last `steps` training steps: √(Σ Δw²). */
+  change: number;
+  /** Steps the change covers (0 = no change yet). */
+  steps: number;
+}
+
+/** One step of "look inside one letter" (see nn/explain.ts). */
+export type { ExplainStage };
+
+/** One of the top guesses at the end of "look inside one letter". */
+export interface ExplainGuess {
+  /** The letter ('' = end of word) and its token id (= its row in the letter table). */
+  char: string;
+  token: number;
+  p: number;
+  /** Its score before softmax: Σ contrib + bias. */
+  score: number;
+  /** [d] its row of the letter table. */
+  row: Float32Array;
+  /** [d] final[i] · row[i]: what each number adds to the score. */
+  contrib: Float32Array;
+  /** "Favourite letters": outBias[token]. */
+  bias: number;
+}
+
+export interface ExplainMsg {
+  type: 'explain';
+  id: number;
+  step: number;
+  text: string;
+  lang: string;
+  form: string;
+  /** The whole answer. */
+  output: string;
+  /** Number of guess columns (letters + end of word if it finished). */
+  columns: number;
+  /** Which column is explained. */
+  position: number;
+  /** The letter written there ('' = end of word). */
+  chosen: string;
+  /** Encoder input tokens (task token + letters) and their ids. */
+  input: string[];
+  inputIds: number[];
+  /** Decoder input tokens 0..position (task token, then the answer so far) and their ids. */
+  decIn: string[];
+  decInIds: number[];
+  /** The letter going in: its letter-table row, its position row and their sum. */
+  start: { token: Float32Array; pos: Float32Array; x: Float32Array };
+  stages: ExplainStage[];
+  /** After the last volume knobs: the numbers that make the guess. */
+  final: Float32Array;
+  /** Top 5 guesses, most likely first. */
+  guesses: ExplainGuess[];
 }
 
 export interface LetterMapMsg {
@@ -257,4 +329,4 @@ export interface LetterMapMsg {
   counts: number[];
 }
 
-export type FromWorker = ReadyMsg | TickMsg | EvalMsg | AnswerMsg | WeightsMsg | LetterMapMsg | ErrorMsg;
+export type FromWorker = ReadyMsg | TickMsg | EvalMsg | AnswerMsg | WeightsMsg | ExplainMsg | LetterMapMsg | ErrorMsg;
