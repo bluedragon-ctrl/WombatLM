@@ -116,3 +116,9 @@ WombatLM is a teaching demo. Its value is in **showing how a model works**: how 
 - **Letter map:** PCA in the worker (`src/nn/pca.ts`, power iteration on the 32×32 covariance, deterministic start), over characters, end-of-word and the task tokens (not `<pad> <bos> <unk>`, which barely train). The UI aligns each frame to the previous one with 2-D orthogonal Procrustes, trying the mirror image too (this subsumes PCA sign alignment), then glides points and the view. Categories: vowel ○, consonant □, accented letter ◇, end/space/hyphen △, task ☆ (shape + colour). The panel says how much of the variation the two axes show (after 2 000 steps ~23 % + 7 %; honest that the flat map is a squeeze).
 - **Layout:** the Forms tab has three columns (430 px · flexible · 340 px letter map), the attention panel sits under the guess bars. Attention grids: one per head for cross-attention plus the copy attention; rows are the output letters, the task token is shown as ✱. Hovering a guess column highlights the matching attention rows and vice versa.
 - **Screenshots:** `npm run screenshots` (opt-in Playwright spec, seed 1, 2 000 steps) writes `docs/screenshots/m3/` for PR review; `npm run e2e` stays fast and now also checks the tabs, attention grids, letter map and heatmap modes.
+
+## GitHub Pages deploy (pulled forward from M7)
+
+- `.github/workflows/deploy.yml` builds (after `npm test`) and publishes `dist/` to GitHub Pages on every push to `main`, or by hand (`workflow_dispatch`). The site lives at `https://bluedragon-ctrl.github.io/WombatLM/`; `vite.config.ts` already uses `base: './'` and the data is bundled, so no other change was needed.
+- Pulled forward from M7 at the user's request so the current state can be tried online. Until M4's replay lands, visitors start from an untrained brain and press Play.
+- One-time repository setting (done by the user): Settings → Pages → Source: **GitHub Actions**.

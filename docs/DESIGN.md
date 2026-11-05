@@ -391,7 +391,7 @@ Each milestone ends with tests green, `npm run build` passing, and a merged pull
 **M6: Invent.** Namer model and its tab; inventions gallery for the form model.
 ✔ Plausible names at temperature 0.8, mostly "new!" · the gallery fills with inventions within ~1 min of training · the user reviews a sample of inventions.
 
-**M7: Polish and ship.** CZ/EN strings complete, help popovers, tour, About page, dark mode, GitHub Pages deploy workflow, Playwright smoke test (load, play, ask a word, switch tabs and language).
+**M7: Polish and ship.** CZ/EN strings complete, help popovers, tour, About page, dark mode, GitHub Pages deploy workflow (✔ done early), Playwright smoke test (load, play, ask a word, switch tabs and language).
 ✔ Live URL works in Chrome, Edge and Firefox · **the user reviews the Czech copy**.
 
 *v1 is complete here.* Then: more languages (section 15).

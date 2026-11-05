@@ -45,6 +45,10 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 - **Czech UI copy:** `src/ui/i18n/cs.json` (M3 added ~70 strings: tabs, attention, letter map, Inside the brain).
 - **M3 review:** the PR's screenshots and questions.
 
+## Hosting
+
+- **Live site:** `https://bluedragon-ctrl.github.io/WombatLM/`, deployed by `.github/workflows/deploy.yml` on every push to `main` (needs Settings → Pages → Source: GitHub Actions, once).
+
 ## Useful commands
 
 ```
