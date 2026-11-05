@@ -78,6 +78,8 @@ export class Engine {
   private watchTests = false;
   /** Quiet learning: skip work that is only for the pictures while training runs. */
   private quiet = false;
+  /** Learn until this step, then stop by itself (null = no limit). */
+  goal: number | null = null;
   /** Wall-clock speed: steps and time at the start of the current measuring window. */
   private wallMark: { t: number; step: number } | null = null;
   private wallStepsPerSec = 0;
@@ -113,7 +115,7 @@ export class Engine {
         this.tick(true);
         break;
       case 'play':
-        if (!this.running) {
+        if (!this.running && !this.goalReached()) {
           this.running = true;
           this.budget = 1; // the first step happens right away, even at slow speeds
           this.lastSlice = this.host.now();
@@ -125,10 +127,7 @@ export class Engine {
         this.tick(true);
         break;
       case 'pause':
-        this.stop();
-        // Quiet learning skipped the tests while running: catch up now.
-        if (this.quiet && this.watchTests && this.lastEvalStep !== this.trainer.step) this.evaluate(true);
-        this.tick(true);
+        this.finish();
         break;
       case 'step':
         for (let i = 0; i < msg.n; i++) this.trainOne();
@@ -173,6 +172,11 @@ export class Engine {
         this.wallStepsPerSec = 0;
         this.tick(true);
         break;
+      case 'setGoal':
+        this.goal = msg.steps === null ? null : Math.max(1, Math.round(msg.steps));
+        if (this.running && this.goalReached()) this.finish(true);
+        else this.tick(true);
+        break;
       case 'inspect':
         if (msg.matrixIds.length) this.sendWeights(msg.id, msg.matrixIds, msg.mode);
         if (msg.letterMap) this.sendLetterMap(msg.id);
@@ -193,6 +197,22 @@ export class Engine {
     this.beforeStep = null;
     this.lastPracticeStep = -1;
     this.answered = undefined;
+  }
+
+  /** The step goal is reached (Play does nothing until the goal is raised). */
+  goalReached(): boolean {
+    return this.goal !== null && this.trainer.step >= this.goal;
+  }
+
+  /**
+   * Stop training (pause or goal reached) and report. Tests once more if the
+   * Test tab is open and `test` (quiet learning skipped the tests while running;
+   * a reached goal is the final model).
+   */
+  private finish(test = this.quiet): void {
+    this.stop();
+    if (test && this.watchTests && this.lastEvalStep !== this.trainer.step) this.evaluate(true);
+    this.tick(true);
   }
 
   private stop(): void {
@@ -244,12 +264,13 @@ export class Engine {
     if (gen !== this.generation || !this.running) return;
     const start = this.host.now();
     if (this.speed === 'max') {
-      do this.trainOne(); while (this.host.now() - start < SLICE_MS);
+      do this.trainOne(); while (this.host.now() - start < SLICE_MS && !this.goalReached());
     } else {
       // Steps are "earned" over time; never bank more than a quarter second's worth.
       this.budget = Math.min(this.budget + ((start - this.lastSlice) * this.speed) / 1000, Math.max(1, this.speed / 4));
-      while (this.budget >= 1 && this.host.now() - start < SLICE_MS) { this.trainOne(); this.budget -= 1; }
+      while (this.budget >= 1 && this.host.now() - start < SLICE_MS && !this.goalReached()) { this.trainOne(); this.budget -= 1; }
     }
+    if (this.goalReached()) { this.finish(true); return; } // stops by itself
     this.lastSlice = start;
     const sinceEval = this.trainer.step - this.lastEvalStep;
     if (this.watchTests && !this.quiet && (sinceEval >= EVAL.everySteps || (sinceEval > 0 && start - this.lastEvalTime >= EVAL.everyMs))) {
@@ -279,7 +300,7 @@ export class Engine {
     this.host.post({
       type: 'tick', step: tr.step, running: this.running, speed: this.speed, lossEma: tr.lossEma,
       lr: this.lr, batchSize: tr.batchSize, gradNorm: tr.lastGradNorm, stepsPerSec: this.stepsPerSec,
-      wallStepsPerSec: this.wallStepsPerSec, quiet: this.quiet, losses: this.losses, practice,
+      wallStepsPerSec: this.wallStepsPerSec, quiet: this.quiet, goal: this.goal, losses: this.losses, practice,
     });
     this.losses = [];
   }

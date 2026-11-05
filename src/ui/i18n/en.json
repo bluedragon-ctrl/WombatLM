@@ -239,5 +239,14 @@
   "wallPerSec": "real speed {n} steps/s",
   "quiet.label": "Quiet learning (faster)",
   "quiet.help": "While it learns, skip the pictures: no testing, no answering the batch first, no letter map or weights. Everything updates again when you pause.",
-  "quiet.note": "Quiet learning is on: the pictures wait until you pause."
+  "quiet.note": "Quiet learning is on: the pictures wait until you pause.",
+  "goal.label": "Learn until",
+  "goal.option": "step {n}",
+  "goal.none": "no limit",
+  "goal.help": "Learning stops by itself at this step. Around step 2,500 the model knows most animals it learns from, around 5,000 almost all of them. After that its answers barely change, so more steps mostly mean waiting. You can still press Step, or pick a higher goal to keep learning.",
+  "goal.of": "step {step} of {goal}",
+  "goal.left": "about {t} left",
+  "goal.sec": "{n} s",
+  "goal.min": "{n} min",
+  "goal.reached": "Done: it learned until step {n}. Pick a higher goal to keep learning."
 }

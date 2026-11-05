@@ -288,3 +288,8 @@ header .params { text-align: right; }
 .learn-main.quiet .quiet-note { display: block; }
 .learn-main.quiet .practice-table,
 .learn-main.quiet .panel.map { opacity: 0.45; }
+
+/* "Learn until": progress towards the step goal. */
+.goal-bar { width: 100%; height: 6px; margin: 4px 0 2px; accent-color: #2563eb; }
+.goal-note { color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.2em; }
+button.primary:disabled { opacity: 0.5; cursor: not-allowed; }

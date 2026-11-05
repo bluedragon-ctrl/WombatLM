@@ -185,3 +185,11 @@ The user asked to show how tokenization works: how words become tokens, what tok
 - The note says plainly that big chat models use pieces of words (~100,000 tokens) while this one uses single letters (55 tokens).
 - Shared helpers in `src/ui/tokens.ts`; `tokenizeWord` is tested to give the same ids as `Vocab.encodeWord`.
 
+
+## Build time: quiet learning, real speed and a step goal (user request)
+The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–40 steps/s, i.e. ~35–45k steps.
+- **GPU (WebGPU) not started.** At this size (24.5k weights, ~22 ms/step, ~80 % in 160×32·32×32 matrix products, ~240 tiny kernels per step) per-launch overhead dominates; it could pay off only with bigger batches (below). Still a non-goal of DESIGN §1 for now.
+- **Quiet learning + real speed** (PR #7): a switch that skips testing, answering first, letter map / weights and live re-asking while running; the status shows steps per wall-clock second. Headless Chromium: ~30–34 → ~36 steps/s. On the user's T14s: practically no difference, so the pictures are not the cost.
+- **Steps-to-quality (Node, seed 1, known forms cs / en):** batch 16: 2,500 steps 85 / 74 %, 5,000 98 / 93 %, 7,500 99 / 99 %, 15,000–22,500 100 / 100 %. Never-seen forms do not improve after ~5,000 steps (cs 12–27 %, en 0–11 %, noisy). So the long builds bought nothing visible.
+- **Bigger batches (same examples seen, same CPU time):** batch 64 (LR 3e-3) 1,250 steps 98 / 95 %; batch 64 (LR 6e-3) also better on never-seen (cs 27–38 %, en 15–22 %, one seed); batch 256 (LR 1.2e-2) 624 steps 99 / 99 %. On a CPU a bigger step costs proportionally more; on a GPU it would not — the case for a later WebGPU experiment.
+- **Step goal ("Learn until"):** training stops by itself at step 1,000 / 2,500 / **5,000 (default)** / 10,000 / no limit. Play is disabled once the goal is reached (Step still works; a higher goal enables Play again; Reset starts over). A progress bar and "about N left" (from the real speed) under the status. The final model is tested once if the Test tab is open. Protocol: `setGoal{steps}`, `tick.goal`.

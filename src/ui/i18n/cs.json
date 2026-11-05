@@ -239,5 +239,14 @@
   "wallPerSec": "skutečně {n} kroků/s",
   "quiet.label": "Tiché učení (rychlejší)",
   "quiet.help": "Během učení vynechá obrázky: žádné testování, žádné odpovídání na dávku předem, žádná mapa písmen ani váhy. Po zastavení se vše zase aktualizuje.",
-  "quiet.note": "Tiché učení je zapnuté: obrázky počkají, až učení zastavíš."
+  "quiet.note": "Tiché učení je zapnuté: obrázky počkají, až učení zastavíš.",
+  "goal.label": "Učit do",
+  "goal.option": "kroku {n}",
+  "goal.none": "bez omezení",
+  "goal.help": "U tohoto kroku se učení samo zastaví. Kolem kroku 2 500 model zná většinu zvířat, ze kterých se učí, kolem 5 000 skoro všechna. Potom se jeho odpovědi už skoro nemění, takže další kroky jsou hlavně čekání. Pořád můžeš zmáčknout Krok nebo vybrat vyšší cíl a učit dál.",
+  "goal.of": "krok {step} z {goal}",
+  "goal.left": "zbývá asi {t}",
+  "goal.sec": "{n} s",
+  "goal.min": "{n} min",
+  "goal.reached": "Hotovo: učil se do kroku {n}. Pro další učení vyber vyšší cíl."
 }
