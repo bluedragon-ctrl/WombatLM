@@ -778,11 +778,11 @@ export class App {
     if (!a.finished) parts.push(h('span', { class: 'small' }, t('notFinished')));
     const badge = h('div', { class: `badge ${a.badge}` }, t(`badge.${a.badge}`));
     if (a.answer && a.badge === 'real') {
-      badge.append(' ', h('span', { class: 'small' }, `${STATUS_ICONS[a.answer.status]} ${t('realAnswer', { word: a.answer.accepted.join(' / ') })}`));
+      badge.append(' ', h('span', { class: 'small' }, `${STATUS_ICONS[a.answer.status]} ${t('realAnswer', { word: a.answer.word })}`));
     }
     if (a.answer && a.badge === 'hidden') {
       if (this.revealed) {
-        badge.append(' ', h('span', { class: 'small' }, `${STATUS_ICONS[a.answer.status]} ${t('realAnswer', { word: a.answer.accepted.join(' / ') })}`));
+        badge.append(' ', h('span', { class: 'small' }, `${STATUS_ICONS[a.answer.status]} ${t('realAnswer', { word: a.answer.word })}`));
       } else {
         const reveal = h('button', { class: 'small' }, t('reveal'));
         reveal.onclick = () => { this.revealed = true; this.invalidate('answer'); };

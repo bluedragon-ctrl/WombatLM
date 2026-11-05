@@ -10,26 +10,15 @@ export type Split = 'train' | 'unseen';
 export type Kind = 'lookalike' | 'partial' | 'different';
 export const KINDS: readonly Kind[] = ['lookalike', 'partial', 'different'];
 
-/** Per-language word lists, e.g. { cs: ["kocour"] }. */
-export type LangWords = Record<string, string[]>;
-
 /** Word forms per language, e.g. { cs: { male: "tygr", female: "tygřice", young: "tygře" } }. */
 export type LangForms = Record<string, Record<string, string>>;
-
-/** Accepted alternative forms per language, e.g. { cs: { young: ["koťátko"] } }. */
-export type LangFormAlts = Record<string, Record<string, string[]>>;
 
 export interface AnimalEntry {
   id: string;
   names: Record<string, string>;
   split?: Split;
-  alt?: LangWords;
   /** Male / female / young forms of the name, per language. Missing = no real word. */
   forms?: LangForms;
-  /** Alternative forms accepted when scoring (never trained on). */
-  formsAlt?: LangFormAlts;
-  /** Entries a native speaker still has to confirm, e.g. ["cs.female"]. Ignored by training. */
-  unsure?: string[];
   /** Override the computed kind for a language pair, key "cs-en" (sorted codes). */
   kindOverride?: Record<string, Kind>;
 }
@@ -46,10 +35,7 @@ export interface Animal {
   id: string;
   names: Record<string, string>;
   split: Split;
-  alt: LangWords;
   forms: LangForms;
-  formsAlt: LangFormAlts;
-  unsure: string[];
   kindOverride: Record<string, Kind>;
   /** Pack that introduced the animal. */
   pack: string;
@@ -147,12 +133,6 @@ export function animalKind(animal: Animal, langA: string, langB: string): Kind |
 // Merging packs
 // ---------------------------------------------------------------------------
 
-function mergeWords(into: LangWords, from?: LangWords) {
-  for (const [lang, words] of Object.entries(from ?? {})) {
-    into[lang] = [...new Set([...(into[lang] ?? []), ...words])];
-  }
-}
-
 /** Merge packs in order. Entries with the same id are combined (later packs add languages). */
 export function mergePacks(packs: readonly Pack[]): Animal[] {
   const byId = new Map<string, Animal>();
@@ -160,7 +140,7 @@ export function mergePacks(packs: readonly Pack[]): Animal[] {
     for (const e of pack.animals) {
       let a = byId.get(e.id);
       if (!a) {
-        a = { id: e.id, names: {}, split: e.split ?? 'train', alt: {}, forms: {}, formsAlt: {}, unsure: [], kindOverride: {}, pack: pack.pack };
+        a = { id: e.id, names: {}, split: e.split ?? 'train', forms: {}, kindOverride: {}, pack: pack.pack };
         byId.set(e.id, a);
       } else if (e.split === 'unseen') {
         a.split = 'unseen'; // unseen anywhere means unseen everywhere (no leakage)
@@ -169,12 +149,6 @@ export function mergePacks(packs: readonly Pack[]): Animal[] {
       for (const [lang, forms] of Object.entries(e.forms ?? {})) {
         a.forms[lang] = { ...a.forms[lang], ...normalizeRecord(forms) };
       }
-      for (const [lang, alts] of Object.entries(e.formsAlt ?? {})) {
-        a.formsAlt[lang] ??= {};
-        mergeWords(a.formsAlt[lang], alts);
-      }
-      mergeWords(a.alt, e.alt);
-      a.unsure = [...new Set([...a.unsure, ...(e.unsure ?? [])])];
       Object.assign(a.kindOverride, e.kindOverride ?? {});
     }
   }
@@ -196,10 +170,8 @@ export interface Task {
   to: string;
   form: string;
   source: string;
-  /** Main answer (used for training). */
+  /** The right answer ('' when the language has no real word). */
   answer: string;
-  /** All accepted answers (main + alternatives), for evaluation. */
-  accepted: string[];
 }
 
 export interface DataBundle {
@@ -254,9 +226,7 @@ export class Dataset {
           if ((from === to) !== identity) continue;
           const answer = animal.names[to];
           tasks.push({
-            animal, from, to, form: 'name', source: animal.names[from], answer,
-            accepted: [answer, ...(animal.alt[to] ?? []).map(Vocab.normalize)],
-          });
+animal, from, to, form: 'name', source: animal.names[from], answer });
         }
       }
     }
@@ -274,10 +244,7 @@ export class Dataset {
         for (const form of this.forms) {
           const answer = animal.forms[lang]?.[form];
           if (form === 'name' || !answer) continue;
-          tasks.push({
-            animal, from: lang, to: lang, form, source: name, answer,
-            accepted: [answer, ...(animal.formsAlt[lang]?.[form] ?? []).map(Vocab.normalize)],
-          });
+          tasks.push({ animal, from: lang, to: lang, form, source: name, answer });
         }
       }
     }
@@ -286,7 +253,7 @@ export class Dataset {
 
   /**
    * Word forms the data does not have (žirafa has no Czech male/female/young
-   * word). Answer and accepted are empty: whatever the model writes is its
+   * word). The answer is empty: whatever the model writes is its
    * own invention.
    */
   missingFormTasks(filter?: (a: Animal) => boolean): Task[] {
@@ -298,7 +265,7 @@ export class Dataset {
         if (!name) continue;
         for (const form of this.forms) {
           if (form === 'name' || animal.forms[lang]?.[form]) continue;
-          tasks.push({ animal, from: lang, to: lang, form, source: name, answer: '', accepted: [] });
+          tasks.push({ animal, from: lang, to: lang, form, source: name, answer: '' });
         }
       }
     }
@@ -312,13 +279,13 @@ export class Dataset {
 
   /**
    * Guess which language a word is in by looking it up in the data
-   * (any form, main or alternative). Returns undefined if unknown.
+   * (by its name). Returns undefined if unknown.
    */
   detectLanguage(word: string): string | undefined {
     const w = Vocab.normalize(word);
     for (const a of this.animals) {
       for (const lang of this.languageCodes) {
-        if (a.names[lang] === w || (a.alt[lang] ?? []).includes(w)) return lang;
+        if (a.names[lang] === w) return lang;
       }
     }
     return undefined;
@@ -329,7 +296,7 @@ export class Dataset {
     const w = Vocab.normalize(word);
     for (const a of this.animals) {
       for (const lang of this.languageCodes) {
-        if (a.names[lang] === w || (a.alt[lang] ?? []).includes(w)) return { animal: a, lang };
+        if (a.names[lang] === w) return { animal: a, lang };
       }
     }
     return undefined;
@@ -341,6 +308,9 @@ export class Dataset {
 // ---------------------------------------------------------------------------
 
 export const MAX_WORD_LENGTH = 20;
+
+/** The fields an animal entry may have. One right word per answer: no alternatives. */
+const ENTRY_FIELDS = ['id', 'names', 'split', 'forms', 'kindOverride'];
 
 export interface ValidationOptions {
   /** Packs smaller than this need not have both splits (user packs). */
@@ -386,9 +356,8 @@ export function validatePacks(
         namesSeen.set(key, a.id);
       }
       if (Object.keys(a.names ?? {}).length === 0) errors.push(`${where}: no names`);
-      for (const [lang, words] of Object.entries(a.alt ?? {})) {
-        if (!Array.isArray(words)) { errors.push(`${where} alt.${lang}: must be a list`); continue; }
-        words.forEach((w) => checkWord(`${where} alt.${lang}`, lang, w));
+      for (const key of Object.keys(a)) {
+        if (!ENTRY_FIELDS.includes(key)) errors.push(`${where}: unknown field "${key}"`);
       }
       for (const [lang, fs] of Object.entries(a.forms ?? {})) {
         if (!a.names?.[lang]) errors.push(`${where}: forms.${lang} but no ${lang} name`);
@@ -396,17 +365,6 @@ export function validatePacks(
           if (!wordForms.includes(form)) errors.push(`${where}: unknown form "${form}"`);
           checkWord(`${where} forms.${lang}.${form}`, lang, word);
         }
-      }
-      for (const [lang, fs] of Object.entries(a.formsAlt ?? {})) {
-        for (const [form, words] of Object.entries(fs)) {
-          if (!a.forms?.[lang]?.[form]) errors.push(`${where}: formsAlt.${lang}.${form} without a main form`);
-          if (!Array.isArray(words)) { errors.push(`${where} formsAlt.${lang}.${form}: must be a list`); continue; }
-          words.forEach((w) => checkWord(`${where} formsAlt.${lang}.${form}`, lang, w));
-        }
-      }
-      for (const u of a.unsure ?? []) {
-        const [lang, field] = u.split('.');
-        if (!(field === 'name' ? a.names?.[lang] : a.forms?.[lang]?.[field])) errors.push(`${where}: unsure "${u}" points at nothing`);
       }
       for (const [k, v] of Object.entries(a.kindOverride ?? {})) {
         if (!KINDS.includes(v)) errors.push(`${where}: bad kindOverride ${k}=${v}`);

@@ -421,20 +421,15 @@ export class Engine {
 
   /** What the data says about this question (see `Badge`). */
   private badge(word: string, lang: string, form: string, output: string): Pick<AnswerMsg, 'badge' | 'answer' | 'animalId'> {
-    const animal = this.dataset.animals.find((a) => a.names[lang] === word || (a.alt[lang] ?? []).includes(word));
+    const animal = this.dataset.animals.find((a) => a.names[lang] === word);
     if (!animal) return { badge: 'free' };
     const main = form === 'name' ? animal.names[lang] : animal.forms[lang]?.[form];
     if (!main) return { badge: 'invention', animalId: animal.id };
-    const alts = form === 'name' ? animal.alt[lang] ?? [] : animal.formsAlt[lang]?.[form] ?? [];
-    const accepted = [main, ...alts];
     const badge: Badge = animal.split === 'train' ? 'real' : 'hidden';
-    return { badge, animalId: animal.id, answer: { accepted, status: judge(output, accepted) as 'correct' | 'close' | 'wrong' } };
+    return { badge, animalId: animal.id, answer: { word: main, status: judge(output, main) as 'correct' | 'close' | 'wrong' } };
   }
 }
 
 function animalInfo(a: Animal): AnimalInfo {
-  return {
-    id: a.id, split: a.split, pack: a.pack, names: { ...a.names }, forms: structuredClone(a.forms),
-    alt: structuredClone(a.alt), formsAlt: structuredClone(a.formsAlt), unsure: a.unsure.slice(),
-  };
+  return { id: a.id, split: a.split, pack: a.pack, names: { ...a.names }, forms: structuredClone(a.forms) };
 }

@@ -144,18 +144,16 @@ Total: **55 tokens**. Code never assumes 55 or a fixed set of languages. Max wor
     { "id": "wolf", "names": { "cs": "vlk", "en": "wolf" },
       "forms": { "cs": { "male": "vlk", "female": "vlčice", "young": "vlče" },
                  "en": { "female": "she-wolf", "young": "pup" } },
-      "formsAlt": { "en": { "young": ["cub"] } },
       "split": "unseen" },
     { "id": "giraffe", "names": { "cs": "žirafa", "en": "giraffe" },
       "forms": { "en": { "male": "bull", "female": "cow", "young": "calf" } },
-      "split": "unseen", "unsure": ["en.male"] }
+      "split": "unseen" }
   ]
 }
 ```
-- `names`: one entry per language code; `alt`: accepted alternative names. Packs **merge by `id`**, so a later pack can add languages or forms to existing animals.
+- `names`: one entry per language code. Packs **merge by `id`**, so a later pack can add languages or forms to existing animals.
 - `forms`: per language, any subset of the word forms. **Missing forms are deliberate**: no real word exists (žirafa has no Czech male/female/young word), and that is what the model invents. Generic phrases (*mládě*, *baby tiger*) are never main entries. Words unsuitable for an 11+ audience are left out.
-- `formsAlt`: accepted alternatives, for evaluation only (never trained).
-- `unsure`: entries waiting for native-speaker review, e.g. `"cs.female"`. Currently still trained on (as in the experiments).
+- **One right word per answer.** No alternative names or forms, no "unsure" flags: a doubtful word is fixed or deleted in the data (the user edits it). The validator rejects any other field.
 - `split`: `train` or `unseen`, **per animal** (an unseen animal is unseen in all languages and forms, so nothing leaks). Never-seen animals give the "hidden real answers".
 
 ### 4.4 Form kind
@@ -169,13 +167,13 @@ Used for colours, the scoreboard lines and the explanations. Thresholds live in 
 ### 4.5 Base dataset
 151 animals: mammals, birds, reptiles, fish, insects, sea animals. 92 have forms (Czech 49 animals / 128 forms, English 87 / 174). 11 never-seen animals (53 forms), chosen so every language has never-seen forms of every kind. Solid Czech male/female/young words exist for only ~50 common animals; the rest are inventions by design.
 
-**The user (native Czech speaker) reviews the data.** `npm run validate-data -- --review` writes `docs/DATA_REVIEW.md` with every form and the `unsure` entries.
+**The user (native Czech speaker) reviews the data.** `npm run validate-data -- --review` writes `docs/DATA_REVIEW.md` with every form.
 
 ### 4.6 Extension packs (Teach mode)
 Separate files, same format. Existing: `ocean` and `insects` (names only, from the translation design) and `farm-babies` (now redundant with `young` forms). **Rework in M5** into packs with forms, e.g. "farm animals" (kůň → klisna / hříbě, horse → mare / foal) and "birds" (páv → pávice). Adding animals later means adding a JSON file, no code changes.
 
 ### 4.7 Validation (`scripts/validate-data.ts`, also a test)
-All characters in the vocabulary · lengths ≤ 20 · NFC · lower-case · no duplicate ids within a pack · no name used by two animals · forms only for languages with a name · known form names · `formsAlt` only next to a main form · `unsure` points at something · packs of ≥ 8 animals have both splits.
+All characters in the vocabulary · lengths ≤ 20 · NFC · lower-case · no duplicate ids within a pack · no name used by two animals · forms only for languages with a name · known form names · no unknown fields · packs of ≥ 8 animals have both splits.
 
 ### 4.8 User additions
 In Teach mode a user can type an animal with forms. Stored in `localStorage` as pack `user`; export/import as JSON in the same format.
@@ -419,7 +417,7 @@ Each milestone ends with tests green, `npm run build` passing, and a merged pull
 | Kids take inventions as real words | ✨ badge and "its own invention" wording everywhere, confidence meter with "can still be wrong", help on hallucination |
 | Letter map is jittery or meaningless | Procrustes alignment and lerp; if structure is weak, colour by vowel/consonant and say so honestly |
 | Forgetting demo too weak or too strong | Tune pack size, LR and steps in Teach mode |
-| Dataset mistakes (Czech forms) | Validator, `unsure` markers, mandatory user review |
+| Dataset mistakes (Czech forms) | Validator, user review (fix or delete doubtful words) |
 | Memory growth from snapshots | Cap the count and thin old ones out |
 
 ---
