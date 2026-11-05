@@ -33,7 +33,7 @@ A tiny neural network that learns **animal word forms** (male / female / young) 
 **Supported:** desktop Chrome, Edge, Firefox (current versions), viewport ≥ 1280×720.
 
 ### 1.1 History: why word forms and not translation
-The first design taught cs↔en translation of animal names. Experiments (M2, `docs/DECISIONS.md`) showed it cannot generalise on ~150 animals: never-seen animals scored 0%, even identical words (leopard → "kowpa"). The data simply has no learnable rule. Within-language word forms do have rules, so the main task changed to forms. Translation may return as a Teach scenario ("teach the brain a new kind of task"); the model and `Dataset.nameTasks()` still support it.
+The first design taught cs↔en translation of animal names. Experiments (M2, `docs/DECISIONS.md`) showed it cannot generalise on ~150 animals: never-seen animals scored 0%, even identical words (leopard → "kowpa"). The data simply has no learnable rule. Within-language word forms do have rules, so the main task changed to forms. Translation may return as a Teach scenario ("teach the brain a new kind of task"); the model and `Dataset.nameTasks()` still support it. **Update:** translation returns as a second task mode for its teaching value (memorising vs understanding, confident nonsense); experiment in `docs/DECISIONS.md`, plan in `docs/TRANSLATION_PLAN.md`.
 
 ---
 
@@ -456,7 +456,7 @@ Adding a language = an entry in `languages.json`, its letters in `vocab.json` (i
 ---
 
 ## 16. Open items for later (not v1)
-- Translation as a Teach scenario (section 8.3), including zero-shot directions once there are 3+ languages.
+- Translation: planned as a task mode (`docs/TRANSLATION_PLAN.md`) and later as a Teach scenario (section 8.3), including zero-shot directions once there are 3+ languages.
 - Comparison mode: the same data on a no-attention model to show why attention helps.
 - "Break the brain": zero out a weight or a head and see what fails (ablation).
 - Beam search / top-3 decodings for the inventions gallery.

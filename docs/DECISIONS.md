@@ -248,3 +248,24 @@ The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–
 - Not done (proposal D): "what one training step did" (the same trace before and after a step); it can reuse `explain`.
 - "Follow the signal" (expert): decoder rows are labelled with the letter going in and the letter it is used to guess ("b→u"), since row `b` produces `u`.
 - `Block.forward` records more trace points (volume-knob outputs, what each step adds, the thinking units); `Translator.inspect` keeps only the `*.in` / `*.out` ones for "follow the signal".
+
+## Translation as a teaching mode: experiment (`scripts/experiments/translate-check.ts`)
+User: translation should come back for its **teaching value**, not its accuracy (DESIGN §1.1 explains why it stopped being the main task). The experiment checks which lessons the model actually shows. Plan: `docs/TRANSLATION_PLAN.md`.
+
+- **Data:** every pack (205 animals, cs → en and en → cs, 410 questions). Held out: every 5th animal of each similarity kind (`classify()`: lookalike / partial / different, sorted by id), 41 animals = 82 questions (28 lookalike, 12 partial, 42 different). Held-out names are not in the copy practice either.
+- **Setups**, 8 000 steps each (~190 s in Node): `plain` (translation only, no dropout), `copy` (+ "copy the name" practice 1:1, dropout 0.1), `mixed` (the app's forms training plus translation).
+
+| Setup | known | held-out lookalike exact (≤ 1 letter off) | partial | different |
+|---|---|---|---|---|
+| plain, seeds 1–2 | 90–94% | 0% (0/28) | 0% | 0% |
+| copy, seeds 1–3 | 53–59% | 7–18% (7–9/28) | 0% | 0% |
+| mixed, seeds 1–2 | 32–33% | 4–7% | 0% | 0% |
+
+- **Memorising vs understanding:** plain knows 66% of the trained animals after 1 000 steps and 90% at the end, while held-out stays at 0% the whole time. Even identical words fail (leopard → *coce*, serval → *l*): the plain model never learns to read the letters.
+- **Copy practice makes lookalikes work:** alpaka → *alpaca* ✓, serval ✓, marabou → *marabu* ✓, caiman → *kaman* ≈; many near misses (delfín → *delfing*, wombat → *volbat*). Different pairs stay at 0% in every run. The cost: known animals learn slowly (~56% at 8 000 steps).
+- **Confident nonsense:** 97–100% of the wrong held-out answers have a confidence above 0.5 (mean 0.74–0.86), e.g. kočka → *gango* 0.88, shark → *ele* 0.96.
+- **It answers with a word it learned for another animal** (1–4 per run): treska → *tiger*, losos → *moose*, piraňa → *prase*, kůzle → *horse*, mosquito → *mouse*.
+- **It does not know which letters belong to which language:** plain writes 3–6 English answers with Czech letters (zajíc → *čakidd*, žralok → *mowrdřid*); with copy practice almost none.
+- **Attention: the expected lesson was wrong.** The guess was that unrelated pairs would show spread-out attention. The shape depends on the *training*, not on the word: the plain model barely reads left to right for any word (diag 0.25–0.5), the copy-practice model reads letter by letter for every word, unrelated ones too (owl → *vel*, wasp → *vak*; diag 0.8–0.95). Peak and task-token share do not differ. The usable lesson is comparing the grids of the two models, not of two words.
+- **Mixing translation into the forms model hurts both:** forms known 69% at 8 000 steps (forms-only training: ~91% at 5 000), translation known 32%. Not a clean comparison (forms got 1/3 of the batches instead of 1/2), but enough to keep translation as its own model.
+- **Decision:** translation becomes a separate **task mode** with its own model, copy practice as a switch, a scoreboard split by similarity and a held-out set of its own. Steps in `docs/TRANSLATION_PLAN.md`.
