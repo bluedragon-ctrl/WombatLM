@@ -50,6 +50,11 @@ export type ToWorker =
    */
   | { type: 'quiet'; on: boolean }
   /**
+   * Learn until this step, then stop by itself (null = no limit). Play does
+   * nothing once the goal is reached; Step still works.
+   */
+  | { type: 'setGoal'; steps: number | null }
+  /**
    * Look inside: the listed weight matrices (answered with `weights`, empty
    * list = none) and, if `letterMap`, the letter map (answered with `letterMap`).
    * `id` is echoed back.
@@ -133,6 +138,8 @@ export interface TickMsg {
   wallStepsPerSec: number;
   /** Quiet learning is on (see `quiet`). */
   quiet: boolean;
+  /** Learning stops by itself at this step (null = no limit). */
+  goal: number | null;
   /** Raw batch losses of every step since the previous tick. */
   losses: LossPoint[];
   /**

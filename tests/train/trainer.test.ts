@@ -48,6 +48,26 @@ describe('FormTrainer', () => {
     expect(before.runTasks(p.examples.map((e) => ({ ...ds.formTasks()[0], source: e.source, to: e.lang, form: e.form })))).toEqual(p.examples.map((e) => e.answer));
   });
 
+  it('gives each example of the batch its mistake, from its letters; together they make the batch loss', () => {
+    const tr = new FormTrainer(ds, { seed: 4, batchSize: 8 });
+    for (let i = 0; i < 30; i++) tr.trainStep();
+    const p = tr.practice(8)!;
+    let total = 0;
+    let count = 0;
+    for (const ex of p.examples) {
+      expect(ex.letters.map((l) => l.char).join('')).toBe(ex.target); // its letters, then the end of the word
+      expect(ex.letters.at(-1)!.char).toBe('');
+      for (const l of ex.letters) { expect(l.p).toBeGreaterThan(0); expect(l.p).toBeLessThanOrEqual(1); }
+      const mistakes = ex.letters.map((l) => -Math.log(l.p + 1e-9));
+      expect(ex.loss).toBeCloseTo(mistakes.reduce((a, b) => a + b, 0) / mistakes.length, 5);
+      total += mistakes.reduce((a, b) => a + b, 0);
+      count += mistakes.length;
+    }
+    // The batch loss is the average over every letter of every example.
+    expect(p.letterCount).toBe(count);
+    expect(total / count).toBeCloseTo(p.loss, 4);
+  });
+
   it('answering first does not change training', () => {
     const a = new FormTrainer(ds, { seed: 7 });
     const b = new FormTrainer(ds, { seed: 7 });

@@ -288,3 +288,19 @@ header .params { text-align: right; }
 .learn-main.quiet .quiet-note { display: block; }
 .learn-main.quiet .practice-table,
 .learn-main.quiet .panel.map { opacity: 0.45; }
+
+/* "Learn until": progress towards the step goal. */
+.goal-bar { width: 100%; height: 6px; margin: 4px 0 2px; accent-color: #2563eb; }
+.goal-note { color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.2em; }
+button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Mistake (loss) per example and per letter on the Model learning tab. */
+.practice-table th.loss { border-bottom-color: #dc2626; color: #991b1b; white-space: nowrap; }
+.practice-table td.loss { white-space: nowrap; }
+.practice-table .let { display: inline-block; min-width: 0.7em; text-align: center; padding: 0 1px; border-radius: 3px; margin-right: 1px; cursor: help; }
+.practice-table .let.end { color: var(--muted); font-weight: 400; }
+.loss-val { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; cursor: help; }
+.loss-val .num { min-width: 2.6em; text-align: right; }
+.loss-val .track { display: inline-block; width: 60px; height: 8px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+.loss-val .fill { display: block; height: 100%; background: #dc2626; opacity: 0.7; }
+.loss-explain { max-width: 900px; margin-top: 8px; }

@@ -262,6 +262,46 @@ describe('Engine', () => {
     expect(h.of('eval').at(-1)!.step).toBe(e.trainer.step); // tested on pause
   });
 
+  it('stops by itself at the step goal; Play does nothing there, Step still works', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3, speed: 'max' });
+    e.handle({ type: 'watchTests', on: true });
+    e.handle({ type: 'setGoal', steps: 7 });
+    e.handle({ type: 'play' });
+    for (let i = 0; i < 50 && h.tasks.length; i++) h.runDue(1);
+    expect(e.trainer.step).toBe(7);
+    expect(e.running).toBe(false);
+    const last = h.of('tick').at(-1) as TickMsg;
+    expect(last).toMatchObject({ step: 7, running: false, goal: 7 });
+    expect(h.of('eval').at(-1)!.step).toBe(7); // the final model is tested
+    e.handle({ type: 'play' });
+    expect(e.running).toBe(false);
+    e.handle({ type: 'step', n: 2 });
+    expect(e.trainer.step).toBe(9);
+    e.handle({ type: 'setGoal', steps: 12 }); // a higher goal: Play works again
+    e.handle({ type: 'play' });
+    for (let i = 0; i < 50 && h.tasks.length; i++) h.runDue(1);
+    expect(e.trainer.step).toBe(12);
+    e.handle({ type: 'setGoal', steps: null });
+    e.handle({ type: 'play' });
+    h.runDue(3);
+    expect(e.trainer.step).toBeGreaterThan(12);
+    e.handle({ type: 'pause' });
+  });
+
+  it('lowering the goal below the current step while running stops it', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3, speed: 'max' });
+    e.handle({ type: 'play' });
+    h.runDue(2);
+    expect(e.running).toBe(true);
+    e.handle({ type: 'setGoal', steps: 1 });
+    expect(e.running).toBe(false);
+    expect((h.of('tick').at(-1) as TickMsg).running).toBe(false);
+  });
+
   it('reports the real (wall-clock) speed while running', () => {
     const sent: FromWorker[] = [];
     const tasks: (() => void)[] = [];

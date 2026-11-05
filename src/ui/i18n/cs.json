@@ -239,5 +239,19 @@
   "wallPerSec": "skutečně {n} kroků/s",
   "quiet.label": "Tiché učení (rychlejší)",
   "quiet.help": "Během učení vynechá obrázky: žádné testování, žádné odpovídání na dávku předem, žádná mapa písmen ani váhy. Po zastavení se vše zase aktualizuje.",
-  "quiet.note": "Tiché učení je zapnuté: obrázky počkají, až učení zastavíš."
+  "quiet.note": "Tiché učení je zapnuté: obrázky počkají, až učení zastavíš.",
+  "goal.label": "Učit do",
+  "goal.option": "kroku {n}",
+  "goal.none": "bez omezení",
+  "goal.help": "U tohoto kroku se učení samo zastaví. Kolem kroku 2 500 model zná většinu zvířat, ze kterých se učí, kolem 5 000 skoro všechna. Potom se jeho odpovědi už skoro nemění, takže další kroky jsou hlavně čekání. Pořád můžeš zmáčknout Krok nebo vybrat vyšší cíl a učit dál.",
+  "goal.of": "krok {step} z {goal}",
+  "goal.left": "zbývá asi {t}",
+  "goal.sec": "{n} s",
+  "goal.min": "{n} min",
+  "goal.reached": "Hotovo: učil se do kroku {n}. Pro další učení vyber vyšší cíl.",
+  "practice.col.loss": "Chyba (loss)",
+  "practice.end": "konec slova",
+  "practice.letterTip": "{char}: správnému písmenu dal {p} % → chyba {m}",
+  "practice.lossTip": "Průměrná chyba přes písmena této odpovědi (najeď na písmeno a uvidíš jeho vlastní).",
+  "practice.lossExplain": "Jak se chyba měří: model vidí správnou odpověď písmeno po písmenu a hádá vždy další písmeno. Chyba písmene říká, jak moc ho to správné písmeno překvapilo: když mu dal 100 %, chyba je 0; 50 % → 0,69; 10 % → 2,3; 1 % → 4,6 (je to −ln té šance). Červenější písmena ho překvapila víc. Chyba řádku je průměr přes jeho písmena a chyba kroku {loss} je průměr přes všech {n} písmen všech {b} příkladů. Učení posouvá čísla tak, aby se tyhle chyby zmenšovaly. I správná odpověď může mít chybu: trefil se, ale nebyl si jistý."
 }

@@ -65,12 +65,46 @@ interface AttGrid {
 
 const tokenLabel = (tok: string, i: number) => (i === 0 ? '✱' : tok === ' ' ? '␣' : tok);
 const SPEEDS: Speed[] = [1, 5, 20, 'max'];
+/**
+ * "Learn until" choices (steps, null = no limit). Measured with seed 1 at
+ * batch 16: ~2,500 steps knows most known animals (cs 85 %, en 74 %), ~5,000
+ * almost all (98 % / 93 %), ~7,500 all; more steps barely change the answers.
+ */
+const GOALS: (number | null)[] = [1000, 2500, 5000, 10000, null];
+const DEFAULT_GOAL = 5000;
 const SCORE_LINES = ['known', 'pattern', 'partly', 'irregular'] as const;
 /** Examples of the latest batch a tick carries at most (engine PRACTICE_SAMPLE). */
 const PRACTICE_SHOWN = 32;
 
 /** Training runs with quiet learning on: the pictures wait. */
 const quietRun = (tk: TickMsg | undefined) => !!tk?.quiet && !!tk.running;
+
+/** A rough duration for "about … left": seconds below 90 s, else minutes. */
+const duration = (sec: number) => (sec < 90 ? t('goal.sec', { n: Math.max(1, Math.round(sec)) }) : t('goal.min', { n: Math.round(sec / 60) }));
+
+/** Mistake (loss) of one letter: −ln of the chance the model gave the right one. */
+const letterLoss = (p: number) => -Math.log(p + 1e-9);
+/** Mistakes above this count as "very surprised" (full colour); −ln 5 % ≈ 3. */
+const LOSS_FULL = 3;
+
+/** One letter of the right answer, tinted by its mistake, with the numbers on hover. */
+function letterSpan(l: { char: string; p: number }): HTMLElement {
+  const m = letterLoss(l.p);
+  const k = Math.min(1, m / LOSS_FULL);
+  return h('span', {
+    class: `let${l.char === '' ? ' end' : ''}`,
+    style: `background: rgba(220, 38, 38, ${(0.06 + 0.6 * k).toFixed(2)})`,
+    title: t('practice.letterTip', { char: l.char === '' ? t('practice.end') : l.char, p: Math.round(l.p * 100), m: m.toFixed(2) }),
+  }, l.char === '' ? '⏎' : l.char === ' ' ? '␣' : l.char);
+}
+
+/** A line's mistake: the number and a short bar. */
+function lossBar(loss: number): HTMLElement {
+  const w = Math.round(Math.min(1, loss / LOSS_FULL) * 100);
+  return h('span', { class: 'loss-val', title: t('practice.lossTip') },
+    h('span', { class: 'num' }, loss.toFixed(2)),
+    h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${w}%` })));
+}
 
 const resultKey = (id: string, lang: string, form: string) => `${id}|${lang}|${form}`;
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '–' : `${Math.round(v * 100)} %`);
@@ -138,6 +172,7 @@ export class App {
     window.addEventListener('resize', () => { this.invalidate('loss', 'scores'); this.letterMap.draw(); });
     const seed = 1 + Math.floor(Math.random() * 9999);
     this.send({ type: 'init', seed, speed: 'max' });
+    this.send({ type: 'setGoal', steps: DEFAULT_GOAL });
   }
 
   private send(msg: ToWorker): void {
@@ -413,6 +448,12 @@ export class App {
     for (const s of SPEEDS) speed.append(h('option', { value: String(s) }, s === 'max' ? t('speedMax') : t('speedSteps', { n: s })));
     speed.value = 'max';
     speed.onchange = () => this.send({ type: 'setSpeed', speed: speed.value === 'max' ? 'max' : Number(speed.value) });
+    const goal = h('select', { 'aria-label': t('goal.label'), 'data-test': 'goal' });
+    for (const g of GOALS) goal.append(h('option', { value: String(g) }, g === null ? t('goal.none') : t('goal.option', { n: g.toLocaleString(uiLang()) })));
+    goal.value = String(DEFAULT_GOAL);
+    goal.onchange = () => this.send({ type: 'setGoal', steps: goal.value === 'null' ? null : Number(goal.value) });
+    const goalBar = h('progress', { class: 'goal-bar', max: 1, value: 0, 'data-test': 'goal-bar' });
+    const goalNote = h('div', { class: 'goal-note small', 'data-test': 'goal-note', 'aria-live': 'polite' });
     const seed = h('input', { type: 'number', min: 1, step: 1, class: 'seed', 'aria-label': t('seed') });
     const reset = h('button', {}, t('reset'));
     reset.onclick = () => this.send({ type: 'reset', seed: Number(seed.value) || 1 });
@@ -532,10 +573,13 @@ export class App {
           h('div', { class: 'phase-head' }, h('h2', {}, t('build.title')), help(t('build.help'))),
           h('div', { class: 'row' }, play, step1, step10),
           h('label', { class: 'row' }, t('speed'), ' ', speed),
+          h('div', { class: 'row' }, h('label', {}, t('goal.label'), ' ', goal), help(t('goal.help'))),
           quietLabel,
           h('div', { class: 'row' }, h('label', {}, t('seed'), ' ', seed), reset),
           expertPanel,
           status,
+          goalBar,
+          goalNote,
           learning,
           h('div', { class: 'phase-head sub' }, h('h3', {}, t('cycle.title'))),
           cycleA.el,
@@ -591,7 +635,7 @@ export class App {
       testMain,
     );
     return {
-      play, speed, seed, status, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, tokenRows, tokenNote, attention, mapCanvas, mapNote, tabs,
+      play, speed, seed, status, goalBar, goalNote, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, tokenRows, tokenNote, attention, mapCanvas, mapNote, tabs,
       dataMain, learnMain, askMain, insideMain, testMain, testLangPick, testWhen,
       stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp,
       playButtons: [play], learnings: [learning], cycles: [cycleA],
@@ -671,7 +715,23 @@ export class App {
     if (tk.running && tk.wallStepsPerSec > 0) parts.push(t('wallPerSec', { n: tk.wallStepsPerSec.toFixed(0) }));
     if (tk.lossEma !== null) parts.push(`loss ${tk.lossEma.toFixed(3)}`);
     this.els.status.textContent = parts.join(' · ');
+    this.renderGoal(tk);
     this.els.askStatusText.textContent = t(tk.running ? 'askStatus.learning' : 'askStatus.paused', { step: tk.step.toLocaleString(uiLang()) });
+  }
+
+  /** "Learn until": progress towards the step goal, time left, and Play off once it is reached. */
+  private renderGoal(tk: TickMsg): void {
+    const { goalBar, goalNote, play } = this.els;
+    const reached = tk.goal !== null && tk.step >= tk.goal && !tk.running;
+    play.disabled = reached;
+    play.title = reached ? t('goal.reached', { n: tk.goal!.toLocaleString(uiLang()) }) : '';
+    goalBar.hidden = tk.goal === null;
+    if (tk.goal === null) { goalNote.textContent = ''; return; }
+    goalBar.value = Math.min(1, tk.step / tk.goal);
+    if (reached) { goalNote.textContent = t('goal.reached', { n: tk.goal.toLocaleString(uiLang()) }); return; }
+    const parts = [t('goal.of', { step: tk.step.toLocaleString(uiLang()), goal: tk.goal.toLocaleString(uiLang()) })];
+    if (tk.running && tk.wallStepsPerSec > 0) parts.push(t('goal.left', { t: duration((tk.goal - tk.step) / tk.wallStepsPerSec) }));
+    goalNote.textContent = parts.join(' · ');
   }
 
   private renderAnswer(): void {
@@ -924,10 +984,15 @@ export class App {
         answerCell.append(h('span', { class: `word-own ${judged ? ex.status : ''}`, title: judged ? t(`status.${ex.status}`) : '' },
           `${judged ? STATUS_ICONS[ex.status!] + ' ' : ''}${ex.answer || '∅'}`));
       }
+      // Once the mistake is measured: each letter of the right answer tinted by how surprised the model was.
+      const measured = phase >= 3;
+      const tgtCell = h('td', { class: 'tgt' }, ...(measured ? ex.letters.map((l) => letterSpan(l)) : [ex.target]));
+      const lossCell = h('td', { class: 'loss' }, measured ? lossBar(ex.loss) : '');
       return h('tr', { class: 'ex' },
         h('td', { class: 'example' }, h('span', { class: 'src' }, ex.source), h('span', { class: 'task' }, task)),
-        h('td', { class: 'tgt' }, ex.target),
-        answerCell);
+        tgtCell,
+        answerCell,
+        lossCell);
     });
     practiceList.replaceChildren(
       h('p', { class: 'small step-of' }, summary.join(' · ')),
@@ -936,8 +1001,11 @@ export class App {
         h('thead', {}, h('tr', {},
           h('th', {}, t('practice.col.example')),
           h('th', { class: 'data' }, t('practice.col.right')),
-          h('th', { class: 'answer' }, t('practice.col.answer')))),
-        h('tbody', {}, ...rows)));
+          h('th', { class: 'answer' }, t('practice.col.answer')),
+          h('th', { class: 'loss' }, t('practice.col.loss')))),
+        h('tbody', {}, ...rows)),
+      phase >= 3 ? h('p', { class: 'small loss-explain', 'data-test': 'loss-explain' },
+        t('practice.lossExplain', { loss: p.loss.toFixed(2), n: p.letterCount.toLocaleString(uiLang()), b: p.batchSize })) : '');
   }
 
   private renderLoss(): void {

@@ -239,5 +239,19 @@
   "wallPerSec": "real speed {n} steps/s",
   "quiet.label": "Quiet learning (faster)",
   "quiet.help": "While it learns, skip the pictures: no testing, no answering the batch first, no letter map or weights. Everything updates again when you pause.",
-  "quiet.note": "Quiet learning is on: the pictures wait until you pause."
+  "quiet.note": "Quiet learning is on: the pictures wait until you pause.",
+  "goal.label": "Learn until",
+  "goal.option": "step {n}",
+  "goal.none": "no limit",
+  "goal.help": "Learning stops by itself at this step. Around step 2,500 the model knows most animals it learns from, around 5,000 almost all of them. After that its answers barely change, so more steps mostly mean waiting. You can still press Step, or pick a higher goal to keep learning.",
+  "goal.of": "step {step} of {goal}",
+  "goal.left": "about {t} left",
+  "goal.sec": "{n} s",
+  "goal.min": "{n} min",
+  "goal.reached": "Done: it learned until step {n}. Pick a higher goal to keep learning.",
+  "practice.col.loss": "Mistake (loss)",
+  "practice.end": "end of the word",
+  "practice.letterTip": "{char}: it gave the right letter {p} % → mistake {m}",
+  "practice.lossTip": "The average mistake over the letters of this answer (point at a letter to see its own).",
+  "practice.lossExplain": "How the mistake is measured: the model is shown the right answer letter by letter and has to guess each next letter. A letter's mistake is how surprised it was by the right one: if it gave the right letter 100 %, the mistake is 0; 50 % → 0.69; 10 % → 2.3; 1 % → 4.6 (that is −ln of the chance). Redder letters surprised it more. A line's mistake is the average over its letters, and the step's mistake {loss} is the average over all {n} letters of all {b} examples. Learning nudges the numbers so that these mistakes get smaller. A right answer can still have a mistake: it was right, but not sure."
 }

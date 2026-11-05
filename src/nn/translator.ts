@@ -98,6 +98,26 @@ export function makeBatch(examples: readonly Example[], ids: SpecialIds): Batch 
   return { B, Ts, Tt, src, srcValid, tgtIn, tgtOut };
 }
 
+/**
+ * For each row of `scores` ([N, V], probabilities when `isProbs`, else
+ * logits), the probability of the target token (NaN where the target is
+ * padding).
+ */
+export function rightTokenProbs(scores: Tensor, targets: Int32Array, padId: number, isProbs: boolean, out: Float32Array): void {
+  const V = scores.shape[1];
+  const d = scores.data;
+  for (let i = 0; i < targets.length; i++) {
+    if (targets[i] === padId) { out[i] = NaN; continue; }
+    const o = i * V;
+    if (isProbs) { out[i] = d[o + targets[i]]; continue; }
+    let max = -Infinity;
+    for (let j = 0; j < V; j++) if (d[o + j] > max) max = d[o + j];
+    let sum = 0;
+    for (let j = 0; j < V; j++) sum += Math.exp(d[o + j] - max);
+    out[i] = Math.exp(d[o + targets[i]] - max) / sum;
+  }
+}
+
 /** Everything the visualisations need about one translation. */
 export interface TranslationTrace {
   /** Encoder input tokens (target token + source). */
@@ -257,10 +277,17 @@ export class Translator {
   }
 
   /** Mean cross-entropy over all real target characters. */
-  loss(batch: Batch, padId: number): Tensor {
+  /**
+   * The training loss: the average mistake over every letter of the batch.
+   * If `tokenP` is given ([B*Tt]), it receives for each position the
+   * probability the model gave the right token (NaN for padding), read from
+   * the same forward pass: the mistake of one letter is −ln of it.
+   */
+  loss(batch: Batch, padId: number, tokenP?: Float32Array): Tensor {
     this.training = true;
     try {
       const scores = this.logits(batch);
+      if (tokenP) rightTokenProbs(scores, batch.tgtOut, padId, !!this.config.copy, tokenP);
       return this.config.copy ? nllFromProbs(scores, batch.tgtOut, padId) : crossEntropy(scores, batch.tgtOut, padId);
     } finally {
       this.training = false;

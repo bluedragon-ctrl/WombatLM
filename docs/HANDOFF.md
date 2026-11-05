@@ -24,6 +24,8 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 | Learning vs answering | **Done in a PR** (user feedback after M3): ① Build / ② Ask phases, Practice tab (now part of Model learning) with the latest batch: learning data vs what it answered before the step (`tick.practice`, `watchPractice`), frozen-brain step label, answer waits while training (+ "keep answering" toggle), Write it slowly, one-step cycle. See DECISIONS. |
 | Tab reorganisation (user, in steps) | **Steps 1–3 done in a PR.** Tabs now follow the story: Learning data (opens first, `src/ui/dataTab.ts`) · Model learning (build controls, cycle, batch, loss, letter map) · Ask the model (question, answer, guesses, attention; status line, no training controls) · Inside the model · Test (every animal, tested only while open: `watchTests`). Expert checkbox in the header. All UI text says "model" (not "brain"). Further steps to come from the user. See DECISIONS. |
 | Tokens on screen (user) | **Steps 1–2 done** (branch `claude/sweet-einstein-p7md6p`). Ask tab: token strip (reads / writes, numbers, `<unk>` warning, hover linked to the guess bars). Learning data tab: clicking a word shows that learning example as tokens (reads / shown so far / guess next). Helpers in `src/ui/tokens.ts`. Step 3 (vocabulary list, toy subword tokenizer comparison) proposed, not started. See DECISIONS. |
+| Build time (user) | **Done in PRs.** Quiet learning switch + real (wall-clock) speed (PR #7); "Learn until" step goal, default 5,000 (training stops by itself). Measured: known forms ~99 % by 7,500 steps, nothing gained after; bigger batches need far fewer steps (possible later WebGPU experiment). See DECISIONS. |
+| Mistake per line (user) | **Done in a PR.** Practice table: mistake (loss) per example, letters tinted by their own mistake, an explanation how the step's mistake is the average over all letters. See DECISIONS. |
 | M4 time travel | **Next.** |
 | M5–M7 | Not started. |
 
@@ -46,7 +48,8 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 ## Waiting for the user
 
 - **Data review:** 19 `unsure` entries; regenerate the table with `npm run validate-data -- --review` → `docs/DATA_REVIEW.md` (deferred by the user: "data tuning later").
-- **Czech UI copy:** `src/ui/i18n/cs.json` (M3 added ~70 strings: tabs, attention, letter map, Inside the model; the learning-vs-answering PR added 42: `tab.practice`, `build.*`, `learning.*`, `practice.*`, `cycle.*`, `ask.*`, `stamp.*`, `slow.*`; the Learning data tab added 26: `tab.data`, `data.*`; the tab reorganisation added `tab.test`, `tab.learn`, `tab.ask`, `test.*`, `askStatus.*` and reworded `data.explain`, `data.help`).
+- **Czech UI copy:** new in the build-time PRs: `quiet.*`, `wallPerSec`, `goal.*`, `practice.col.loss`, `practice.end`, `practice.letterTip`, `practice.lossTip`, `practice.lossExplain`.
+- **Czech UI copy (earlier):** `src/ui/i18n/cs.json` (M3 added ~70 strings: tabs, attention, letter map, Inside the model; the learning-vs-answering PR added 42: `tab.practice`, `build.*`, `learning.*`, `practice.*`, `cycle.*`, `ask.*`, `stamp.*`, `slow.*`; the Learning data tab added 26: `tab.data`, `data.*`; the tab reorganisation added `tab.test`, `tab.learn`, `tab.ask`, `test.*`, `askStatus.*` and reworded `data.explain`, `data.help`).
 - **M3 review:** the PR's screenshots and questions.
 
 ## Hosting
@@ -56,7 +59,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 ## Useful commands
 
 ```
-npm test                                   # vitest (88 tests)
+npm test                                   # vitest (93 tests)
 npm run build                              # typecheck + vite build
 npm run e2e                                # Playwright smoke test (builds + previews on :4173)
 npm run screenshots                        # PR screenshots (docs/screenshots/m3, docs/screenshots/learn-vs-answer)
