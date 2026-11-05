@@ -11,17 +11,22 @@
  * - a "theme", if those moments clearly share something (the next letter,
  *   the letter just written, the language and form, ...), much more often
  *   than chance;
- * - the letters it pushes towards when on: its pattern (row of "thinking,
- *   part 2") through the last volume knobs and the letter table. This is the
- *   direct, straight-line effect; the rest of the numbers change it, so it is
- *   a good hint, not an exact answer.
+ * - what it really does there: at each of those moments the unit is switched
+ *   off (its part of the numbers taken away) and the guess is made again.
+ *   How much the right letter's chance falls, and which letters lose the
+ *   most, is measured, not estimated: in the last writing layer, the unit
+ *   only adds its pattern to the numbers that go to the last volume knobs and
+ *   the letter table;
+ * - the letters its pattern points to by itself (a straight-line hint, for
+ *   Expert).
  *
  * Small models often have units without a clear theme (they help with many
  * things at once). They are reported as such, not hidden.
  */
 import type { Dataset, Task } from '../data/dataset';
 import { makeBatch, type Example, type SpecialIds, type Translator } from '../nn/translator';
-import type { Trace } from '../nn/transformer';
+import { rowSoftmax, type Trace } from '../nn/transformer';
+import { lensLogits } from '../nn/explain';
 import type { UnitInfo, UnitMoment, UnitTheme } from './protocol';
 
 /** A unit is "on" above this value (as in "look inside one letter"). */
@@ -30,6 +35,8 @@ export const ON = 0.05;
 export const TOP = 8;
 /** A theme needs at least this many of the TOP moments, and this many times its share among all moments. */
 const THEME_MIN = 6;
+/** A letter counts as helped if switching the unit off lowers its chance by more than this (on average). */
+const HELPS_MIN = 0.005;
 const THEME_LIFT = 2;
 
 interface Moment {
@@ -39,6 +46,8 @@ interface Moment {
   /** Features of the moment, for themes. */
   next: string;
   prev: string;
+  /** Token id of the right letter (or the end). */
+  right: number;
 }
 
 /** Features a theme can be about, from most to least specific. */
@@ -65,6 +74,7 @@ export function profileUnits(model: Translator, dataset: Dataset, tasks: readonl
   }));
   const moments: Moment[] = [];
   const rows: Float32Array[] = []; // one per moment: every unit's value
+  const res: Float32Array[] = []; // one per moment: the letter's numbers after the layer
   for (let s = 0; s < examples.length; s += batchSize) {
     const part = examples.slice(s, s + batchSize);
     const batch = makeBatch(part, ids);
@@ -73,15 +83,19 @@ export function profileUnits(model: Translator, dataset: Dataset, tasks: readonl
     const hidden = trace.get(`${layer}.ffn.hidden`);
     if (!hidden) throw new Error(`units: missing trace ${layer}.ffn.hidden`);
     const units = hidden.shape[hidden.shape.length - 1];
+    const out = trace.get(`${layer}.out`)!;
+    const dm = out.shape[out.shape.length - 1];
     part.forEach((ex, b) => {
       // Letter t of the answer is written after t letters (t = tgt.length: the end of the word).
       for (let t = 0; t <= ex.tgt.length; t++) {
         const r = b * batch.Tt + t;
         rows.push(hidden.data.slice(r * units, (r + 1) * units));
+        res.push(out.data.slice(r * dm, (r + 1) * dm));
         moments.push({
           task: s + b, at: t,
           next: t < ex.tgt.length ? charOf(ex.tgt[t]) : '',
           prev: t === 0 ? '<start>' : charOf(ex.tgt[t - 1]),
+          right: t < ex.tgt.length ? ex.tgt[t] : ids.eos,
         });
       }
     });
@@ -99,6 +113,8 @@ export function profileUnits(model: Translator, dataset: Dataset, tasks: readonl
   const letters: number[] = [];
   for (let i = 0; i < V; i++) if (i === ids.eos || vocab.isChar(i)) letters.push(i);
 
+  // Switching a unit off is exact only in the last writing layer (later layers would react to it).
+  const last = model.dec[model.dec.length - 1].name === layer;
   const units: UnitInfo[] = [];
   for (let k = 0; k < nUnits; k++) {
     let on = 0;
@@ -142,7 +158,26 @@ export function profileUnits(model: Translator, dataset: Dataset, tasks: readonl
       for (let j = 0; j < d; j++) s += dir[j] * model.tokEmb.data[tok * d + j];
       return { char: charOf(tok), score: s };
     }).sort((a, b) => b.score - a.score);
-    units.push({ unit: k, on: rows.length ? on / rows.length : 0, top: best, theme, pushes: scores.slice(0, 3) });
+    // Switched off at its strongest moments: the right letter's chance with and without it, and who loses most.
+    let off: UnitInfo['off'] = null;
+    if (last && top.length) {
+      let withP = 0, withoutP = 0;
+      const drop = new Float64Array(V);
+      for (const i of top) {
+        const x = res[i];
+        const p1 = rowSoftmax(lensLogits(model, x), 0, V);
+        const xo = Float32Array.from(x, (v, j) => v - rows[i][k] * row[j]);
+        const p0 = rowSoftmax(lensLogits(model, xo), 0, V);
+        withP += p1[moments[i].right];
+        withoutP += p0[moments[i].right];
+        for (const tok of letters) drop[tok] += p1[tok] - p0[tok];
+      }
+      const n = top.length;
+      const helps = letters.map((tok) => ({ char: charOf(tok), drop: drop[tok] / n }))
+        .filter((x) => x.drop > HELPS_MIN).sort((a, b) => b.drop - a.drop).slice(0, 3);
+      off = { withP: withP / n, withoutP: withoutP / n, helps };
+    }
+    units.push({ unit: k, on: rows.length ? on / rows.length : 0, top: best, theme, pushes: scores.slice(0, 3), off });
   }
   return { units, moments: moments.length };
 }

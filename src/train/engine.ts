@@ -23,6 +23,7 @@ import type {
 } from './protocol';
 import { changeStats, explainNumber, topNumbers } from './stepDetail';
 import { profileUnits } from './units';
+import { lensLogits } from '../nn/explain';
 import { rowSoftmax } from '../nn/transformer';
 
 export interface EngineHost {
@@ -611,6 +612,18 @@ export class Engine {
       const top = cands.slice().sort((a, b) => pr[b] - pr[a]).slice(0, 3).map((tok) => ({ char: charOf(tok), p: pr[tok] }));
       return { top, chosen: pr[chosenTok] };
     });
+    // Switching each thinking unit off for this letter (last stage only: nothing comes after it but the guess).
+    const lastStage = ex.stages[ex.stages.length - 1];
+    let unitsOff: Float32Array | null = null;
+    if (lastStage?.kind === 'think') {
+      const d = lastStage.x.length;
+      unitsOff = new Float32Array(lastStage.sources);
+      for (let k = 0; k < lastStage.sources; k++) {
+        const xo = lastStage.x.map((v, j) => v - lastStage.contrib[k * d + j]);
+        const pr = rowSoftmax(lensLogits(model, xo), 0, ex.logits.length);
+        unitsOff[k] = pr[chosenTok];
+      }
+    }
     const input = [this.dataset.targetId(lang, form), ...vocab.encodeWord(word).slice(0, model.config.maxLen - 2)];
     const msg: ExplainMsg = {
       type: 'explain', id, step: this.trainer.step, text: word, lang, form, output: vocab.decode(ex.output),
@@ -618,7 +631,7 @@ export class Engine {
       chosen: p < ex.output.length ? charOf(ex.output[p]) : '',
       input: input.map((i) => tokens[i]), inputIds: input,
       decIn: ex.decIn.map((i) => tokens[i]), decInIds: ex.decIn,
-      start: ex.start, stages: ex.stages, final: ex.final, guesses, lens,
+      start: ex.start, stages: ex.stages, final: ex.final, guesses, lens, unitsOff,
     };
     this.host.post(msg);
   }

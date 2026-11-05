@@ -34,6 +34,17 @@ describe('what the thinking units have learned', () => {
     }
   });
 
+  it('switching a unit off at its strongest moments is measured (one writing layer: exact)', () => {
+    for (const u of units) {
+      if (!u.top.length) continue;
+      expect(u.off).not.toBeNull();
+      const o = u.off!;
+      for (const p of [o.withP, o.withoutP]) { expect(p).toBeGreaterThanOrEqual(0); expect(p).toBeLessThanOrEqual(1); }
+      for (let i = 1; i < o.helps.length; i++) expect(o.helps[i].drop).toBeLessThanOrEqual(o.helps[i - 1].drop);
+      for (const x of o.helps) expect(x.drop).toBeGreaterThan(0);
+    }
+  });
+
   it('a theme is shared by as many of the strongest moments as it says', () => {
     for (const u of units) {
       if (!u.theme) continue;

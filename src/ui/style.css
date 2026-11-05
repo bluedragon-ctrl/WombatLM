@@ -411,7 +411,7 @@ header .params { text-align: right; }
 /* "What would it write now" (logit lens) */
 .xlens { display: flex; align-items: center; gap: 6px; }
 .xlens .xlabel { width: 150px; flex: none; text-align: right; margin-right: 2px; }
-.xlens-g { display: inline-grid; grid-template-columns: 16px 56px 40px; align-items: center; gap: 5px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.xlens-g { display: inline-grid; grid-template-columns: 16px 56px 46px; white-space: nowrap; align-items: center; gap: 5px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 .xlens-g b { font-size: 15px; text-align: center; }
 .xlens-g .track, .xladder-chip .track { display: block; height: 8px; background: #eef2f7; border-radius: 4px; overflow: hidden; }
 .xlens-g .fill, .xladder-chip .fill { display: block; height: 100%; background: var(--accent); }
@@ -583,3 +583,10 @@ main.ask-main > .journey { grid-column: 1 / -1; }
 .xunitcards { margin: 4px 0 4px 158px; }
 .xunitcards > p { margin: 0 0 4px; }
 .xunitcards .ucard { width: 260px; }
+.uoff { margin: 6px 0 0; }
+.uoff.now { font-weight: 600; color: #9a3412; }
+.uhelps { margin-top: 3px; color: var(--muted); }
+.uhelp { margin-left: 6px; color: var(--muted); }
+.uhelp b { color: var(--ink); font-size: 14px; margin-right: 1px; }
+.units-team { margin: 4px 0 0; font-weight: 600; }
+.units-team:empty { display: none; }

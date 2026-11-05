@@ -343,6 +343,12 @@ export interface ExplainMsg {
   guesses: ExplainGuess[];
   /** "What would it write now?" after the start and after each stage (1 + stages.length). */
   lens: ExplainLens[];
+  /**
+   * For the last thinking stage: the chance of the written letter if thinking
+   * unit k were switched off for this letter (exact: it only removes the
+   * unit's part of what thinking adds). Null if thinking is not the last stage.
+   */
+  unitsOff: Float32Array | null;
 }
 
 /** One of a thinking unit's strongest moments in the learning data. */
@@ -380,6 +386,13 @@ export interface UnitInfo {
   theme: UnitTheme | null;
   /** The 3 letters its pattern pushes towards most when it is on (direct effect, a hint). */
   pushes: { char: string; score: number }[];
+  /**
+   * Measured at its strongest moments by switching it off (null if it is not
+   * in the last writing layer, where this is exact): the right letter's
+   * average chance with and without it, and the letters whose chance falls
+   * the most without it (average fall, 0..1).
+   */
+  off: { withP: number; withoutP: number; helps: { char: string; drop: number }[] } | null;
 }
 
 export interface UnitsMsg {

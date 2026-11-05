@@ -16,6 +16,7 @@
 import { EOS } from '../nn/vocab';
 import type { AnswerMsg, ExplainLens, ExplainMsg, ExplainStage, UnitsMsg } from '../train/protocol';
 import { unitCard } from './unitCard';
+import { pctText } from './format';
 import { sequential, symmetricScale } from '../viz/colors';
 import { drawStrip, stripCellAt, stripLayout, topIndices } from '../viz/vectorStrip';
 import type { HeatmapMarks } from '../viz/weightHeatmap';
@@ -38,6 +39,8 @@ interface Pick {
 
 /** Thinking units shown in the Think stage (the most strongly on). */
 const STRONG_UNITS = 3;
+/** A unit is "needed" for a letter if switching it off lowers the letter's chance by at least this. */
+const NEEDED = 0.02;
 /** How many squares with the biggest change get an outline. */
 const TOP = 3;
 /** Contributions listed one by one (the rest are summed up). */
@@ -253,14 +256,27 @@ export class ExplainView {
       verdict ? h('p', { class: 'small xverdict' }, verdict) : null);
   }
 
-  /** The thinking units most strongly on for this letter, with what they usually do. */
+  /**
+   * The thinking units this letter needs most: switched off one at a time,
+   * the written letter loses the most chance (measured). If none matters much
+   * on its own, the ones most strongly on, with a sentence that they work as a team.
+   */
   private strongUnits(s: ExplainStage): HTMLElement {
     const u = this.units;
     if (!u || u.layer !== s.name.split('.')[0]) return h('p', { class: 'small xunits' }, t('explain.ffn.unitsWait'));
-    const strongest = Array.from(s.hidden, (v, k) => ({ v, k })).filter((x) => x.v > 0.05).sort((a, b) => b.v - a.v).slice(0, STRONG_UNITS);
+    const m = this.msg!;
+    const withP = m.lens.at(-1)?.chosen ?? 0;
+    const on = Array.from(s.hidden, (v, k) => ({ v, k, drop: m.unitsOff ? withP - m.unitsOff[k] : 0 })).filter((x) => x.v > 0.05);
+    const needed = on.filter((x) => x.drop >= NEEDED).sort((a, b) => b.drop - a.drop);
+    const team = needed.length === 0;
+    const strongest = (team ? on.sort((a, b) => b.v - a.v) : needed).slice(0, STRONG_UNITS);
+    const tok = shortLabel(m.chosen);
     return h('div', { class: 'xunitcards', 'data-test': 'explain-units' },
-      h('p', { class: 'small' }, t('explain.ffn.units')),
-      h('div', { class: 'ucards' }, ...strongest.map((x) => unitCard(u.units[x.k], this.langName, { now: x.v, expert: this.expert }))));
+      h('p', { class: 'small' }, team ? t('explain.ffn.unitsTeam', { tok }) : t('explain.ffn.unitsNeeded', { tok })),
+      h('div', { class: 'ucards' }, ...strongest.map((x) => unitCard(u.units[x.k], this.langName, {
+        now: x.v, expert: this.expert,
+        nowOff: this.msg?.unitsOff ? { letter: this.msg.chosen, withP: this.msg.lens.at(-1)?.chosen ?? 0, withoutP: this.msg.unitsOff[x.k] } : undefined,
+      }))));
   }
 
   /** "Would write now": the 3 most likely letters at this point, the finally written one outlined. */
@@ -466,12 +482,7 @@ function unitsOn(s: ExplainStage): number {
   return s.hidden.filter((v) => v > 0.05).length;
 }
 
-/** A chance as a whole percentage; below 1 % as "<1 %" rather than a misleading 0. */
-export function pctText(p: number): string {
-  if (p > 0 && p < 0.005) return '<1 %';
-  if (p > 0.995 && p < 1) return '>99 %';
-  return `${Math.round(p * 100)} %`;
-}
+export { pctText };
 
 /**
  * The most interesting letter of an answer to start with: the first one where

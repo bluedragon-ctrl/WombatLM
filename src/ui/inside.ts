@@ -18,7 +18,7 @@
  */
 import type { AxisKind } from '../nn/transformer';
 import type { AnswerMsg, ExplainMsg, InspectMode, MatrixChange, MatrixInfo, ReadyMsg, UnitsMsg, WeightsMsg } from '../train/protocol';
-import { clearestFirst, unitCard } from './unitCard';
+import { clearestFirst, matters, unitCard } from './unitCard';
 import { DIVERGING_ENDS, INK, symmetricScale } from '../viz/colors';
 import { prepare } from '../viz/canvas';
 import { drawHeatmap, heatmapCellAt, heatmapLayout, HeatmapLayout, HeatmapMarks } from '../viz/weightHeatmap';
@@ -141,6 +141,7 @@ export class InsideTab {
   private unitsEl: HTMLElement;
   private unitsBody: HTMLElement;
   private unitsNote: HTMLElement;
+  private unitsTeam: HTMLElement;
   private unitsButton: HTMLButtonElement;
   private units?: UnitsMsg;
   private unitsAll = false;
@@ -197,12 +198,14 @@ export class InsideTab {
     this.explain = new ExplainView(requestExplain, (marks) => { this.marks = marks; for (const c of this.cards) this.draw(c); }, (code) => this.langName(code));
     this.unitsBody = h('div', { class: 'ucards', 'data-test': 'unit-cards' });
     this.unitsNote = h('p', { class: 'small', 'data-test': 'units-note' }, t('units.wait'));
+    this.unitsTeam = h('p', { class: 'units-team', 'data-test': 'units-team' });
     this.unitsButton = h('button', { class: 'units-toggle', 'data-test': 'units-toggle' });
     this.unitsButton.onclick = () => { this.unitsAll = !this.unitsAll; this.renderUnits(); };
     this.unitsEl = h('section', { class: 'panel units', 'data-test': 'units' },
       h('h2', {}, t('units.title')),
       h('p', { class: 'small' }, h('span', { class: 'units-help' }), ' ', help(t('units.help'))),
       this.unitsNote,
+      this.unitsTeam,
       this.unitsBody,
       this.unitsButton);
     this.heatHead = h('section', { class: 'panel inside-head heat-head' },
@@ -309,7 +312,9 @@ export class InsideTab {
     const clear = sorted.filter((x) => x.theme);
     const all = this.expert || this.unitsAll || clear.length === 0;
     const shown = all ? sorted : clear.slice(0, UNITS_CLEAR);
+    const alone = u.units.filter(matters).length;
     this.unitsNote.textContent = `${t(all ? 'units.countAll' : 'units.count', { k: shown.length, clear: clear.length, n: u.units.length, m: u.moments.toLocaleString(uiLang()) })} ${t('units.step', { step: u.step })}`;
+    this.unitsTeam.textContent = u.units.some((x) => x.off) ? t('units.team', { k: alone, n: u.units.length }) : '';
     this.unitsBody.replaceChildren(...shown.map((x) => unitCard(x, (c) => this.langName(c), { expert: this.expert })));
     this.unitsButton.hidden = this.expert || clear.length === 0;
     this.unitsButton.textContent = this.unitsAll ? t('units.showClear') : t('units.showAll', { n: u.units.length });

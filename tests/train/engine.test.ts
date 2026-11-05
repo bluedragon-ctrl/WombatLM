@@ -313,6 +313,11 @@ describe('Engine', () => {
     ex.guesses.forEach((g, i) => { expect(g.char).toBe(ans.steps[1].top[i].char); expect(g.p).toBeCloseTo(ans.steps[1].top[i].p, 5); });
     const g = ex.guesses[0];
     expect(g.contrib.reduce((a, b) => a + b, g.bias)).toBeCloseTo(g.score, 4);
+    // Switching each thinking unit off for this letter: a unit that is (almost) off changes (almost) nothing.
+    const think = ex.stages.at(-1)!;
+    expect(ex.unitsOff).toHaveLength(think.sources);
+    const quiet = Array.from(think.hidden, Math.abs).indexOf(Math.min(...Array.from(think.hidden, Math.abs)));
+    expect(ex.unitsOff![quiet]).toBeCloseTo(ex.lens.at(-1)!.chosen, 3);
     // "What would it write now": one per stage plus the start; the last one is the real guess.
     expect(ex.lens).toHaveLength(1 + ex.stages.length);
     const last = ex.lens.at(-1)!;
