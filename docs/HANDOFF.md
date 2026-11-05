@@ -1,6 +1,8 @@
-# Handoff — read this first
+# WombatLM handoff — read this first
 
 State of the project at the end of the first working session, and what changed against `docs/DESIGN.md`.
+**Project name: WombatLM** (same as the repository; it replaces the working title "Zvířátka AI" everywhere: page title, package name, docs).
+
 Where this file and DESIGN.md disagree, **this file wins**. Detailed reasoning and numbers: `docs/DECISIONS.md`.
 
 ## The big change: word forms instead of translation

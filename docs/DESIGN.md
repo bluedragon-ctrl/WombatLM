@@ -1,4 +1,4 @@
-# Zvířátka AI — design document
+# WombatLM — design document
 
 > **⚠️ Superseded in part:** the main task changed from cs↔en translation to within-language word forms (animal → male / female / young). Read `docs/HANDOFF.md` first; it lists which sections below are out of date.
 
