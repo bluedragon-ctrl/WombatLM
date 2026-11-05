@@ -15,7 +15,7 @@ const errors = validatePacks(allPacks(), vocab, codes, bundle.forms);
 
 for (const pack of allPacks()) {
   const animals = mergePacks([pack]);
-  const unseen = animals.filter((x) => x.split === 'unseen').length;
+  const unseen = animals.filter((x) => x.unseen).length;
   const parts = codes.map((lang) => {
     const counts = Object.fromEntries(FORM_KINDS.map((k) => [k, 0]));
     let n = 0;
@@ -64,9 +64,9 @@ function reviewDoc(animals: Animal[]): string {
     '',
   ];
   for (const lang of codes) {
-    lines.push(`## ${bundle.languages.find((l) => l.code === lang)!.name.en}`, '', `| name | ${wordForms.join(' | ')} | split |`, `|---|${wordForms.map(() => '---|').join('')}---|`);
+    lines.push(`## ${bundle.languages.find((l) => l.code === lang)!.name.en}`, '', `| name | ${wordForms.join(' | ')} | unseen |`, `|---|${wordForms.map(() => '---|').join('')}---|`);
     for (const a of withForms.filter((x) => x.forms[lang])) {
-      lines.push(`| ${a.names[lang]} | ${wordForms.map((f) => cell(a, lang, f)).join(' | ')} | ${a.split === 'unseen' ? '**unseen**' : ''} |`);
+      lines.push(`| ${a.names[lang]} | ${wordForms.map((f) => cell(a, lang, f)).join(' | ')} | ${a.unseen ? '**unseen**' : ''} |`);
     }
     lines.push('');
   }

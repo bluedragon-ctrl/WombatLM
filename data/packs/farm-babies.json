@@ -3,17 +3,17 @@
   "version": 1,
   "title": {"cs": "Mláďata na statku", "en": "Farm babies"},
   "animals": [
-    {"id": "puppy", "names": {"cs": "štěně", "en": "puppy"}, "split": "train"},
-    {"id": "kitten", "names": {"cs": "kotě", "en": "kitten"}, "split": "train"},
-    {"id": "foal", "names": {"cs": "hříbě", "en": "foal"}, "split": "train"},
-    {"id": "calf", "names": {"cs": "tele", "en": "calf"}, "split": "train"},
-    {"id": "piglet", "names": {"cs": "sele", "en": "piglet"}, "split": "train"},
-    {"id": "lamb", "names": {"cs": "jehně", "en": "lamb"}, "split": "train"},
-    {"id": "kid", "names": {"cs": "kůzle", "en": "kid"}, "split": "train"},
-    {"id": "chick", "names": {"cs": "kuře", "en": "chick"}, "split": "train"},
-    {"id": "duckling", "names": {"cs": "kachně", "en": "duckling"}, "split": "unseen"},
-    {"id": "gosling", "names": {"cs": "house", "en": "gosling"}, "split": "unseen"},
-    {"id": "fawn", "names": {"cs": "kolouch", "en": "fawn"}, "split": "train"},
-    {"id": "poult", "names": {"cs": "krůtě", "en": "poult"}, "split": "train"}
+    {"id": "puppy", "names": {"cs": "štěně", "en": "puppy"}},
+    {"id": "kitten", "names": {"cs": "kotě", "en": "kitten"}},
+    {"id": "foal", "names": {"cs": "hříbě", "en": "foal"}},
+    {"id": "calf", "names": {"cs": "tele", "en": "calf"}},
+    {"id": "piglet", "names": {"cs": "sele", "en": "piglet"}},
+    {"id": "lamb", "names": {"cs": "jehně", "en": "lamb"}},
+    {"id": "kid", "names": {"cs": "kůzle", "en": "kid"}},
+    {"id": "chick", "names": {"cs": "kuře", "en": "chick"}},
+    {"id": "duckling", "names": {"cs": "kachně", "en": "duckling"}, "unseen": true},
+    {"id": "gosling", "names": {"cs": "house", "en": "gosling"}, "unseen": true},
+    {"id": "fawn", "names": {"cs": "kolouch", "en": "fawn"}},
+    {"id": "poult", "names": {"cs": "krůtě", "en": "poult"}}
   ]
 }

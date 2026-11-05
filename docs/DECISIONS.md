@@ -74,7 +74,7 @@ Conclusions:
 
 ## M2 — trainer on word forms
 
-- `TranslatorTrainer` became **`FormTrainer`** (`src/train/trainer.ts`). Batches mix word-form tasks of train-split animals (`formTasks`) with "copy the name" practice (`nameTasks(…, true)`) at 1:1 (`copyWeight`). Defaults in `TRAINER_DEFAULTS`: copy mechanism, target-token start, dropout 0.1, Adam LR 3e-3, batch 16.
+- `TranslatorTrainer` became **`FormTrainer`** (`src/train/trainer.ts`). Batches mix word-form tasks of trained animals (`formTasks`) with "copy the name" practice (`nameTasks(…, true)`) at 1:1 (`copyWeight`). Defaults in `TRAINER_DEFAULTS`: copy mechanism, target-token start, dropout 0.1, Adam LR 3e-3, batch 16.
 - **Scoreboard per language** (`Scores`): known · never-seen pattern / partly / irregular · never-seen exact (`unseen`) · never-seen right-or-close (`close`) · fresh / old (Teach mode).
 - **Inventions:** `Dataset.missingFormTasks()` lists the forms the data lacks; `evaluate({ inventions: true })` asks for them too and marks them `invented` (never scored). `confidence(trace, eos)` = geometric mean of the chosen letters' probabilities (DESIGN §8.7).
 - `unsure` entries are still trained on, as in the experiments; dropping them is a data-review decision. (Later removed altogether, see "One right word per answer".)
@@ -143,7 +143,7 @@ User feedback: "it is not clear when it learns (builds weights) and when it gene
 User: "I do not fully understand tabs shown, so I would like to reorganise them a bit in several steps. 1. One tab with Learning data, so people can see what are actually source data engine is learning from."
 
 - **New tab "Learning data"** (`src/ui/dataTab.ts`), placed after Forms: Forms · Learning data · Practice · Inside the brain. Forms stays the opening tab; further reordering is left for the next steps.
-- **What it shows is exactly what the trainer samples from** (`FormTrainer.defaultMix`): word-form tasks (name → male / female / young, main answer only) and "copy the name" tasks of train-split animals. A unit test (`tests/ui/dataTab.test.ts`) checks the tab's counts against `trainTasks()` / `copyTasks()`, in total and per language. Base pack: 529 examples (249 word forms + 280 copy the name) from 140 animals; 11 never-seen animals kept aside.
+- **What it shows is exactly what the trainer samples from** (`FormTrainer.defaultMix`): word-form tasks (name → male / female / young, main answer only) and "copy the name" tasks of trained animals. A unit test (`tests/ui/dataTab.test.ts`) checks the tab's counts against `trainTasks()` / `copyTasks()`, in total and per language. Base pack: 529 examples (249 word forms + 280 copy the name) from 140 animals; 11 never-seen animals kept aside.
 - **One table per data language** (language picker), animal name first (the copy practice), then the three forms. Learning examples are yellow (the same colour as "right answer (learning data)" on the Practice tab); a dash means no real word, so nothing to learn there. Filter all / learns from / never seen, and a search box.
 - **Never-seen animals are listed, greyed, with their answers hidden** behind "show the never-seen answers" (like the reveal on the Forms tab), so the tab does not give away the test. Searching does not match hidden answers.
 - **Clicking a word asks the brain** that question on the Forms tab, linking "learning data" to "answering".
@@ -213,7 +213,7 @@ The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–
 "Flags for answers not checked by a Czech speaker, and alternatives, are unnecessary complications for such a project. If needed I will modify the data."
 - Removed `unsure` (19 entries), `formsAlt` (16 accepted alternative forms, e.g. koťátko, cub) and `alt` (9 alternative names, e.g. kocour for kočka, rhino) from the data, the code and the Learning data tab. The main words are unchanged.
 - Every question now has exactly one right answer: `judge(output, answer)` is right / one letter off ("close") / wrong. `Task.accepted` and `AnswerMsg.answer.accepted` are gone (`answer.word`). The Ask tab recognises an animal only by its name.
-- The validator rejects any field other than `id`, `names`, `split`, `forms`, `kindOverride`, so old fields in a data file are reported, not silently ignored.
+- The validator rejects any field it does not know, so old fields in a data file are reported, not silently ignored.
 
 ## Copy mechanism removed
 
@@ -221,3 +221,9 @@ The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–
 - **Why:** this is a teaching demo and should be as simple as possible. Real language models have no copy mechanism; plain attention learns to copy. The experiments above showed the mechanism does not help generalisation (never-seen Czech 8/26 without it vs 7–8/26 with it); copy practice is what makes never-seen forms work, and it stays.
 - **Cost:** known-form accuracy drops a little (measured earlier at 5 000 steps: Czech 89/102 vs 96/102, English 124/147 vs 131–141/147). Accepted: accuracy is a guide, not a gate. Re-measured with the app's trainer (`scripts/train-node.ts 5000 1`, seed 1): known Czech 91% (was 98%), English 92% (was 93%); never-seen Czech 19% (was 23%), within the ±2-word noise of the small never-seen set. The cross-attention grid still shows the stem being copied.
 - **Parameters:** 24 727 (was 26 872) with the 55-token vocabulary.
+
+## `unseen: true` instead of `split`; no `kindOverride` (user request)
+"Would other learning data simplification make sense? e.g. one simple flag hidden: true/false." Chose the name `unseen` to match the app's existing "never seen" wording (the records view already uses "hidden" for masked forms).
+- **`"split": "train" | "unseen"` became an optional `"unseen": true`.** 182 entries said `"split": "train"`, which was already the default; they now carry nothing. The 19 never-seen entries (11 in the base pack, 8 in the extension packs) say `"unseen": true`. The validator rejects `split` and any `unseen` value other than `true`. In code, `Animal.unseen`, `AnimalInfo.unseen` and `TaskResult.unseen` are booleans; the `Split` type is gone.
+- **`kindOverride` removed** from the format, the merge and the validator, together with `pairKey` and `animalKind`, which only served it. No animal in any pack used it.
+- A data entry is now just `id`, `names`, `forms` and the optional `unseen`. A script checked that the data is otherwise identical.

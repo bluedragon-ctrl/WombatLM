@@ -6,9 +6,7 @@
  */
 import { LanguageSpec, Vocab, VocabSpec, buildVocab, targetToken } from '../nn/vocab';
 
-export type Split = 'train' | 'unseen';
 export type Kind = 'lookalike' | 'partial' | 'different';
-export const KINDS: readonly Kind[] = ['lookalike', 'partial', 'different'];
 
 /** Word forms per language, e.g. { cs: { male: "tygr", female: "tygřice", young: "tygře" } }. */
 export type LangForms = Record<string, Record<string, string>>;
@@ -16,11 +14,10 @@ export type LangForms = Record<string, Record<string, string>>;
 export interface AnimalEntry {
   id: string;
   names: Record<string, string>;
-  split?: Split;
   /** Male / female / young forms of the name, per language. Missing = no real word. */
   forms?: LangForms;
-  /** Override the computed kind for a language pair, key "cs-en" (sorted codes). */
-  kindOverride?: Record<string, Kind>;
+  /** Never trained on: kept aside to test whether the model learned the patterns. */
+  unseen?: true;
 }
 
 export interface Pack {
@@ -34,9 +31,9 @@ export interface Pack {
 export interface Animal {
   id: string;
   names: Record<string, string>;
-  split: Split;
   forms: LangForms;
-  kindOverride: Record<string, Kind>;
+  /** Never trained on (unseen in any pack means unseen everywhere). */
+  unseen: boolean;
   /** Pack that introduced the animal. */
   pack: string;
 }
@@ -118,17 +115,6 @@ export function formKind(name: string, form: string): FormKind {
   return kept >= FORM_KIND_THRESHOLDS.pattern ? 'pattern' : kept >= FORM_KIND_THRESHOLDS.partly ? 'partly' : 'irregular';
 }
 
-export function pairKey(a: string, b: string): string {
-  return [a, b].sort().join('-');
-}
-
-/** Kind of an animal for a language pair (undefined if it lacks one of the names). */
-export function animalKind(animal: Animal, langA: string, langB: string): Kind | undefined {
-  const a = animal.names[langA], b = animal.names[langB];
-  if (!a || !b) return undefined;
-  return animal.kindOverride[pairKey(langA, langB)] ?? classify(a, b);
-}
-
 // ---------------------------------------------------------------------------
 // Merging packs
 // ---------------------------------------------------------------------------
@@ -140,16 +126,14 @@ export function mergePacks(packs: readonly Pack[]): Animal[] {
     for (const e of pack.animals) {
       let a = byId.get(e.id);
       if (!a) {
-        a = { id: e.id, names: {}, split: e.split ?? 'train', forms: {}, kindOverride: {}, pack: pack.pack };
+        a = { id: e.id, names: {}, forms: {}, unseen: false, pack: pack.pack };
         byId.set(e.id, a);
-      } else if (e.split === 'unseen') {
-        a.split = 'unseen'; // unseen anywhere means unseen everywhere (no leakage)
       }
+      if (e.unseen) a.unseen = true; // unseen anywhere means unseen everywhere (no leakage)
       Object.assign(a.names, normalizeRecord(e.names));
       for (const [lang, forms] of Object.entries(e.forms ?? {})) {
         a.forms[lang] = { ...a.forms[lang], ...normalizeRecord(forms) };
       }
-      Object.assign(a.kindOverride, e.kindOverride ?? {});
     }
   }
   return [...byId.values()];
@@ -310,10 +294,10 @@ animal, from, to, form: 'name', source: animal.names[from], answer });
 export const MAX_WORD_LENGTH = 20;
 
 /** The fields an animal entry may have. One right word per answer: no alternatives. */
-const ENTRY_FIELDS = ['id', 'names', 'split', 'forms', 'kindOverride'];
+const ENTRY_FIELDS = ['id', 'names', 'forms', 'unseen'];
 
 export interface ValidationOptions {
-  /** Packs smaller than this need not have both splits (user packs). */
+  /** Packs smaller than this need not have both trained and unseen animals (user packs). */
   minPackSizeForSplits?: number;
 }
 
@@ -338,12 +322,12 @@ export function validatePacks(
   };
   for (const pack of packs) {
     if (!pack.pack || !Array.isArray(pack.animals)) { errors.push(`pack ${pack.pack}: malformed`); continue; }
-    const splits = new Set<string>();
+    let trained = 0, unseen = 0;
     for (const a of pack.animals) {
       const where = `${pack.pack}/${a.id}`;
       if (!a.id) errors.push(`${pack.pack}: animal without id`);
-      if (a.split !== undefined && a.split !== 'train' && a.split !== 'unseen') errors.push(`${where}: bad split "${a.split}"`);
-      splits.add(a.split ?? 'train');
+      if (a.unseen !== undefined && a.unseen !== true) errors.push(`${where}: "unseen" must be true or left out`);
+      if (a.unseen) unseen++; else trained++;
       const prevPack = ids.get(a.id);
       // The same id in another pack is allowed only to add new languages.
       if (prevPack === pack.pack) errors.push(`${where}: duplicate id`);
@@ -366,12 +350,9 @@ export function validatePacks(
           checkWord(`${where} forms.${lang}.${form}`, lang, word);
         }
       }
-      for (const [k, v] of Object.entries(a.kindOverride ?? {})) {
-        if (!KINDS.includes(v)) errors.push(`${where}: bad kindOverride ${k}=${v}`);
-      }
     }
-    if (pack.animals.length >= minSplit && (!splits.has('train') || !splits.has('unseen'))) {
-      errors.push(`pack ${pack.pack}: needs both "train" and "unseen" animals`);
+    if (pack.animals.length >= minSplit && (!trained || !unseen)) {
+      errors.push(`pack ${pack.pack}: needs both trained and "unseen": true animals`);
     }
   }
   return errors;

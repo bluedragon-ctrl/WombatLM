@@ -9,7 +9,7 @@ const info = {
   forms: ds.forms,
   languages: ds.languages,
   animals: ds.animals.map((a) => ({
-    id: a.id, split: a.split, pack: a.pack, names: a.names, forms: a.forms,
+    id: a.id, unseen: a.unseen, pack: a.pack, names: a.names, forms: a.forms,
   })),
 };
 const key = (q: { id?: string; animal?: { id: string }; lang?: string; to?: string; form: string }) =>
@@ -22,9 +22,9 @@ describe('Learning data tab counts', () => {
     expect(all.forms).toBe(tr.trainTasks().length);
     expect(all.copies).toBe(tr.copyTasks().length);
     expect(all.train + all.unseen).toBe(ds.animals.length);
-    expect(all.unseen).toBe(ds.animals.filter((a) => a.split === 'unseen').length);
+    expect(all.unseen).toBe(ds.animals.filter((a) => a.unseen).length);
     expect(all.tests).toBe(ds.formTasks().length);
-    expect(all.unseenTests).toBe(ds.formTasks((a) => a.split === 'unseen').length);
+    expect(all.unseenTests).toBe(ds.formTasks((a) => a.unseen).length);
     expect(all.inventions).toBe(ds.missingFormTasks().length);
     for (const lang of ds.languageCodes) {
       const c = countData(info, lang);
@@ -60,6 +60,6 @@ describe('Every question (learning data tab)', () => {
   });
 
   it('never learns from never-seen animals', () => {
-    expect(qs.some((q) => q.split === 'unseen' && q.learn)).toBe(false);
+    expect(qs.some((q) => q.unseen && q.learn)).toBe(false);
   });
 });

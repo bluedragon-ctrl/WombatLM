@@ -77,7 +77,8 @@ export type InspectMode = 'weights' | 'delta' | 'grad';
 /** What the UI needs to know about one animal (no training data beyond this). */
 export interface AnimalInfo {
   id: string;
-  split: 'train' | 'unseen';
+  /** Never trained on: kept aside to test the patterns. */
+  unseen: boolean;
   pack: string;
   names: Record<string, string>;
   /**

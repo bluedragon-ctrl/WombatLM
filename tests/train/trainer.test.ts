@@ -11,7 +11,7 @@ describe('FormTrainer', () => {
     const forms = tr.trainTasks();
     const copies = tr.copyTasks();
     expect(forms.length).toBeGreaterThan(200);
-    expect(forms.every((t) => t.animal.split === 'train' && t.form !== 'name' && t.from === t.to)).toBe(true);
+    expect(forms.every((t) => !t.animal.unseen && t.form !== 'name' && t.from === t.to)).toBe(true);
     expect(copies.every((t) => t.form === 'name' && t.source === t.answer)).toBe(true);
     expect(tr.model.config.targetStart).toBe(true);
   });
@@ -117,7 +117,7 @@ describe('scoring', () => {
 
   it('splits never-seen forms by kind and counts close answers', () => {
     const r = (split: 'train' | 'unseen', status: TaskResult['status'], kind?: TaskResult['kind']): TaskResult =>
-      ({ id: 'x', lang: 'xx', form: 'female', source: 's', answer: status === 'invented' ? '' : 'a', output: 'o', status, split, kind });
+      ({ id: 'x', lang: 'xx', form: 'female', source: 's', answer: status === 'invented' ? '' : 'a', output: 'o', status, unseen: split === 'unseen', kind });
     const s = scoreResults([
       r('train', 'correct', 'pattern'), r('train', 'wrong', 'pattern'),
       r('unseen', 'correct', 'pattern'), r('unseen', 'close', 'pattern'), r('unseen', 'wrong', 'irregular'),

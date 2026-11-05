@@ -20,7 +20,7 @@ describe('data files', () => {
     const ds = new Dataset(bundle);
     expect(ds.animals.length).toBeGreaterThan(130);
     const tasks = ds.formTasks();
-    const unseen = tasks.filter((t) => t.animal.split === 'unseen');
+    const unseen = tasks.filter((t) => t.animal.unseen);
     expect(unseen.length / tasks.length).toBeGreaterThan(0.1);
     expect(unseen.length / tasks.length).toBeLessThan(0.25);
     for (const lang of codes) {
@@ -75,15 +75,24 @@ describe('validation catches problems', () => {
     expect(errs).toContain('t/cat: unknown field "alt"');
     expect(errs).toContain('t/cat: unknown field "unsure"');
   });
+
+  it('marks never-seen animals only with "unseen": true (no split, no kindOverride)', () => {
+    const old = { id: 'cat', names: { cs: 'kočka' }, split: 'train', kindOverride: { 'cs-en': 'different' } } as unknown as Pack['animals'][number];
+    const bad = { id: 'dog', names: { cs: 'pes' }, unseen: false } as unknown as Pack['animals'][number];
+    const errs = validatePacks([pack([old, bad])], vocab, codes, bundle.forms);
+    expect(errs).toContain('t/cat: unknown field "split"');
+    expect(errs).toContain('t/cat: unknown field "kindOverride"');
+    expect(errs).toContain('t/dog: "unseen" must be true or left out');
+  });
 });
 
 describe('merging', () => {
   it('merges packs by id and keeps unseen sticky', () => {
-    const a: Pack = { pack: 'a', version: 1, title: {}, animals: [{ id: 'dog', names: { cs: 'pes', en: 'dog' }, split: 'unseen' }] };
-    const b: Pack = { pack: 'b', version: 1, title: {}, animals: [{ id: 'dog', names: { de: 'hund' }, split: 'train' }] };
+    const a: Pack = { pack: 'a', version: 1, title: {}, animals: [{ id: 'dog', names: { cs: 'pes', en: 'dog' }, unseen: true }] };
+    const b: Pack = { pack: 'b', version: 1, title: {}, animals: [{ id: 'dog', names: { de: 'hund' } }] };
     const [dog] = mergePacks([a, b]);
     expect(dog.names).toEqual({ cs: 'pes', en: 'dog', de: 'hund' });
-    expect(dog.split).toBe('unseen');
+    expect(dog.unseen).toBe(true);
   });
 
   it('builds tasks in both directions', () => {

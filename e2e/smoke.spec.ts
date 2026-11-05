@@ -15,7 +15,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-view=questions]');
   await expect(page.locator('[data-test=data-questions] tbody tr').first()).toBeVisible();
   await page.click('[data-view=records]');
-  await expect(page.locator('[data-test=data-records] pre').first()).toContainText('"split"');
+  await expect(page.locator('[data-test=data-records]')).toContainText('"unseen": true');
   await page.click('[data-view=table]');
   // A learning example as tokens: shown so far and guess next, shifted by one, ending with "end".
   await expect(page.locator('[data-test=example-grid]')).toBeVisible();

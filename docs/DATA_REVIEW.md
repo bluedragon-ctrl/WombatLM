@@ -10,7 +10,7 @@ Marks: ◐ = partly follows the name (lev → lvice), ● = irregular (pes → �
 
 ## Czech
 
-| name | male | female | young | split |
+| name | male | female | young | unseen |
 |---|---|---|---|---|
 | tygr | **tygr** | **tygřice** | **tygře** |  |
 | lev | **lev** | **lvice** ◐ | **lvíče** ◐ |  |
@@ -64,7 +64,7 @@ Marks: ◐ = partly follows the name (lev → lvice), ● = irregular (pes → �
 
 ## English
 
-| name | male | female | young | split |
+| name | male | female | young | unseen |
 |---|---|---|---|---|
 | tiger | **tiger** | **tigress** | **cub** ● |  |
 | lion | **lion** | **lioness** | **cub** ● |  |
