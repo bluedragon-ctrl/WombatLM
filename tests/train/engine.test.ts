@@ -29,7 +29,7 @@ function fakeHost() {
 }
 
 describe('Engine', () => {
-  it('init sends ready, an evaluation with inventions and a tick', () => {
+  it('init sends ready and a tick, and no test until asked', () => {
     const h = fakeHost();
     const e = new Engine(h.host, ds);
     e.handle({ type: 'init', seed: 3 });
@@ -37,10 +37,8 @@ describe('Engine', () => {
     expect(ready.params).toBeGreaterThan(20000);
     expect(ready.languages.map((l) => l.code)).toEqual(ds.languageCodes);
     expect(ready.animals.length).toBe(ds.animals.length);
-    const ev = h.of('eval')[0] as EvalMsg;
-    expect(ev.step).toBe(0);
-    expect(ev.inventions).toBe(true);
     expect((h.of('tick')[0] as TickMsg).step).toBe(0);
+    expect(h.of('eval')).toHaveLength(0);
   });
 
   it('step trains while paused and reports losses', () => {
@@ -51,7 +49,26 @@ describe('Engine', () => {
     const tick = h.of('tick').at(-1) as TickMsg;
     expect(tick.step).toBe(3);
     expect(tick.losses.map((l) => l.step)).toEqual([1, 2, 3]);
-    expect(h.of('eval').at(-1)!.step).toBe(3);
+    expect(h.of('eval')).toHaveLength(0);
+  });
+
+  it('tests every animal only while the Test tab is open', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'watchTests', on: true });
+    const first = h.of('eval')[0] as EvalMsg;
+    expect(first.step).toBe(0);
+    expect(first.inventions).toBe(true);
+    e.handle({ type: 'watchTests', on: true }); // already tested at this step: no new test
+    expect(h.of('eval')).toHaveLength(1);
+    e.handle({ type: 'step', n: 2 });
+    expect(h.of('eval').at(-1)!.step).toBe(2);
+    e.handle({ type: 'watchTests', on: false });
+    e.handle({ type: 'step', n: 2 });
+    expect(h.of('eval').at(-1)!.step).toBe(2);
+    e.handle({ type: 'evaluate' }); // on request
+    expect(h.of('eval').at(-1)!.step).toBe(4);
   });
 
   it('play runs slices until pause; stale slices do nothing', () => {
@@ -206,7 +223,7 @@ describe('Engine', () => {
     expect((h.of('tick').at(-1) as TickMsg).practice).toBeUndefined();
   });
 
-  it('answers before each step while paused or slow; at max speed only for the open Practice tab', () => {
+  it('answers before each step while paused or slow; at max speed only for the open Model learning tab', () => {
     const h = fakeHost();
     const e = new Engine(h.host, ds);
     e.handle({ type: 'init', seed: 3, speed: 'max' });
@@ -214,11 +231,11 @@ describe('Engine', () => {
     const stepped = (h.of('tick').at(-1) as TickMsg).practice!;
     expect(stepped.examples.every((x) => typeof x.answer === 'string')).toBe(true);
     expect(stepped.rightCount).toBeDefined();
-    // Max speed, Practice tab closed: no answering (full speed).
+    // Max speed, Model learning tab closed: no answering (full speed).
     e.handle({ type: 'play' });
     h.runDue(2);
     expect(h.of('tick').filter((t) => (t as TickMsg).practice?.step! > 1).every((t) => (t as TickMsg).practice!.rightCount === undefined)).toBe(true);
-    // Practice tab open: only answered batches are sent.
+    // Model learning tab open: only answered batches are sent.
     e.handle({ type: 'watchPractice', on: true });
     const from = h.sent.length;
     h.runDue(6);
@@ -228,7 +245,7 @@ describe('Engine', () => {
     e.handle({ type: 'pause' });
   });
 
-  it('answering and evaluating never change the brain', () => {
+  it('answering and evaluating never change the model', () => {
     const h = fakeHost();
     const e = new Engine(h.host, ds);
     const twin = new Engine(fakeHost().host, ds);

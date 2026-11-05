@@ -16,7 +16,11 @@ header h1 { margin: 0; font-size: 22px; }
 header .sub { color: var(--muted); }
 header .params { margin-left: auto; color: var(--muted); font-size: 13px; }
 h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
-main.forms { display: grid; grid-template-columns: 430px minmax(0, 1fr) 340px; gap: 14px; padding: 14px 20px; align-items: start; }
+main.learn-main { display: grid; grid-template-columns: 430px minmax(0, 1fr) 340px; gap: 14px; padding: 14px 20px; align-items: start; }
+main.ask-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding: 14px 20px; align-items: start; max-width: 1500px; }
+.ask-status { margin: -2px 0 10px; }
+.ask-status .link { padding: 0 2px; }
+header .expert-toggle { white-space: nowrap; }
 main[hidden] { display: none !important; }
 main.inside-main { padding: 14px 20px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
@@ -53,7 +57,6 @@ input.seed { width: 80px; }
 .meter .fill { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
 .bars-wrap { overflow-x: auto; }
 
-.charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
 canvas { display: block; }
 .chart { width: 100%; }
 .score-table table { border-collapse: collapse; font-size: 13px; margin-top: 8px; width: 100%; }
@@ -102,7 +105,7 @@ canvas { display: block; }
 .map-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin-top: 8px; }
 .map-legend span { display: inline-flex; align-items: center; gap: 4px; }
 
-/* Inside the brain */
+/* Inside the model */
 .inside-head .intro { font-size: 18px; margin: 0 0 10px; }
 .legend { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .swatch-box { display: inline-block; width: 14px; height: 14px; border: 1px solid #cbd5e1; margin-left: 8px; }
@@ -160,7 +163,7 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 .cycle .stage.lit .see-change { display: inline; }
 .cycle-note { margin: 4px 0 6px; }
 
-/* Answer: which brain answered */
+/* Answer: which model answered */
 .stamp-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: -4px 0 10px; }
 .stamp { font-size: 13px; padding: 3px 8px; border-radius: 6px; background: #eff6ff; color: #1e3a8a; }
 .stamp[hidden] { display: none; }
@@ -179,13 +182,8 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
   .learning.pulse, .stamp.flash, .word .cursor { animation: none; }
 }
 
-/* Practice tab: the whole latest batch */
-main.practice-main { padding: 14px 20px; max-width: 1240px; }
-.practice-main .learning { margin-top: 0; }
-.practice-main .cycle { max-width: 760px; }
-.open-practice { padding: 0; margin-top: 2px; }
 
-/* Practice tab: learning data and what it answered */
+/* Model learning tab: the latest batch, learning data and what it answered */
 .practice-explain { margin: 0 0 12px; font-size: 14px; color: var(--muted); max-width: 900px; }
 .practice-table table { border-collapse: collapse; width: 100%; max-width: 900px; font-size: 15px; }
 .practice-table th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 4px 10px; border-bottom: 2px solid var(--line); }
@@ -200,3 +198,41 @@ main.practice-main { padding: 14px 20px; max-width: 1240px; }
 .practice-table .word-own.correct { color: var(--correct); }
 .practice-table .word-own.close { color: var(--close); }
 .practice-table .word-own.wrong { color: var(--wrong); }
+
+/* Learning data tab: everything the model learns from */
+main.data-main { padding: 14px 20px; max-width: 1240px; }
+.data-summary { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: baseline; margin-bottom: 10px; }
+.data-summary .stat { font-size: 14px; color: var(--muted); }
+.data-summary .stat b { font-size: 20px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.data-summary .stat.kept b { color: var(--muted); }
+.data-summary p { flex-basis: 100%; margin: 0; }
+.data-controls .picker { margin-bottom: 0; }
+.data-controls .data-search { width: 180px; }
+.data-legend { display: flex; gap: 14px; margin-bottom: 8px; }
+.data-legend span, .data-table td.cell { padding: 2px 8px; border-radius: 4px; }
+.data-legend .learned, .data-table td.learned { background: #fffbeb; box-shadow: inset 0 0 0 1px #fde68a; color: var(--ink); }
+.data-legend .missing, .data-table td.missing { color: #cbd5e1; }
+.data-legend .kept { border: 1px dashed var(--muted); }
+.data-table { max-height: calc(100vh - 330px); min-height: 300px; overflow-y: auto; }
+.data-table table { border-collapse: separate; border-spacing: 4px 3px; font-size: 15px; }
+.data-table th { position: sticky; top: 0; background: var(--panel); text-align: left; color: var(--muted); font-weight: 500; font-size: 13px; padding: 2px 8px; }
+.data-table td.cell { cursor: pointer; white-space: nowrap; min-width: 90px; }
+.data-table td.missing, .data-table td.hidden { cursor: default; }
+.data-table td.name { font-weight: 600; }
+.data-table td.learned:hover { background: #fef3c7; }
+.data-table tr.kept td.cell:not(.missing) { color: var(--muted); }
+.data-table tr.kept td.kept:not(.hidden):hover { background: #f1f5f9; }
+.data-table .never { margin-left: 6px; font-size: 11px; font-weight: 500; padding: 0 5px; border: 1px dashed var(--muted); border-radius: 8px; color: var(--muted); }
+
+/* Test tab (expert): every animal tested, scoreboard */
+main.test-main { padding: 14px 20px; max-width: 1240px; }
+.test-main .test-intro .row { margin-bottom: 0; }
+.test-main .test-intro .picker { margin-bottom: 0; }
+.test-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.test-main .animals td { max-width: 160px; }
+.test-legend { display: flex; gap: 12px; margin-bottom: 8px; }
+/* Five tabs in the header: keep each name on one line; the subtitle and the parameter count give way. */
+.tabs { flex-shrink: 0; }
+.tabs button { white-space: nowrap; }
+header .sub, header .params { min-width: 0; }
+header .params { text-align: right; }

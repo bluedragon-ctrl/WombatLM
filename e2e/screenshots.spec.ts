@@ -2,8 +2,9 @@
  * Screenshots for reviewing the visuals in a pull request (seed 1). Opt-in,
  * because it trains for a while: `npm run screenshots`.
  * - M3: every panel at step 0 and after training (docs/screenshots/m3/).
- * - Learning vs answering: the practice strip, the one-step cycle, the
- *   out-of-date answer while training and "write it slowly"
+ * - Learning vs answering: the Learning data tab, the Model learning tab
+ *   (one-step cycle, the batch), the out-of-date answer on the Ask tab while
+ *   training, "write it slowly" and the Test tab
  *   (docs/screenshots/learn-vs-answer/).
  */
 import { expect, test, Page } from '@playwright/test';
@@ -17,15 +18,17 @@ test.use({ deviceScaleFactor: 2, viewport: { width: 1400, height: 900 } });
 const stepOf = async (page: Page) => Number((await page.textContent('[data-test=status]'))!.match(/[\d,  ]+/)![0].replace(/\D/g, ''));
 
 async function shoot(page: Page, when: string) {
-  await page.click('[data-test=tab-forms]');
+  await page.click('[data-test=tab-ask]');
   await page.fill('[data-test=ask]', 'buvol');
   await page.locator('[data-form=female]').click();
-  await page.waitForTimeout(1200); // letter map glides into place
+  await page.waitForTimeout(300);
   await page.locator('.panel.askbox').screenshot({ path: `${DIR}/${when}-guesses.png` });
   // Link a guess column to the attention rows by hovering it.
   const bars = (await page.locator('[data-test=bars]').boundingBox())!;
   await page.mouse.move(bars.x + 78 * 5 + 30, bars.y + 60);
   await page.locator('.panel.attention').screenshot({ path: `${DIR}/${when}-attention.png` });
+  await page.click('[data-test=tab-learn]');
+  await page.waitForTimeout(1200); // letter map glides into place
   await page.locator('.panel.map').screenshot({ path: `${DIR}/${when}-letter-map.png` });
   await page.click('[data-test=tab-inside]');
   await page.waitForTimeout(800);
@@ -36,13 +39,13 @@ async function shoot(page: Page, when: string) {
   await page.waitForTimeout(600);
   await page.locator('.group.letters').screenshot({ path: `${DIR}/${when}-inside-letters-weights.png` });
   await page.click('[data-mode=delta]');
-  await page.click('[data-test=tab-forms]');
+  await page.click('[data-test=tab-learn]');
 }
 
 test('M3 panels at step 0 and after training', async ({ page }) => {
   test.setTimeout(STEPS * 60 + 120_000);
   await page.goto('/');
-  await expect(page.locator('[data-test=output] .word')).toBeVisible({ timeout: 15_000 });
+  await page.click('[data-test=tab-learn]');
   await page.fill('input.seed', '1');
   await page.click('text=Reset');
   await expect(page.locator('[data-test=status]')).toContainText(/Step 0/);
@@ -52,6 +55,7 @@ test('M3 panels at step 0 and after training', async ({ page }) => {
   await page.click('[data-test=play]');
   await shoot(page, `step${STEPS}`);
   await page.locator('[data-test=expert]').check();
+  await page.click('[data-test=tab-ask]');
   await page.locator('.panel.attention').screenshot({ path: `${DIR}/expert-attention.png` });
   await page.click('[data-test=tab-inside]');
   await page.locator('[data-test=signal]').screenshot({ path: `${DIR}/expert-signal.png` });
@@ -62,41 +66,50 @@ const LDIR = 'docs/screenshots/learn-vs-answer';
 test('learning vs answering', async ({ page }) => {
   test.setTimeout(180_000);
   await page.goto('/');
-  await expect(page.locator('[data-test=output] .word')).toBeVisible({ timeout: 15_000 });
+  // The Learning data tab: everything it learns from (the app opens on it).
+  await expect(page.locator('[data-test=data-summary]')).toContainText(/learning examples/, { timeout: 15_000 });
+  await page.locator('main.data-main').screenshot({ path: `${LDIR}/12-learning-data-tab.png` });
+  await page.click('[data-test=tab-learn]');
   await page.fill('input.seed', '1');
   await page.click('text=Reset');
   await expect(page.locator('[data-test=status]')).toContainText(/Step 0/);
+  await page.click('[data-test=tab-ask]');
   await page.fill('[data-test=ask]', 'tygr');
   await page.locator('[data-form=female]').click();
   await page.waitForTimeout(300);
+  await page.click('[data-test=tab-learn]');
   await page.locator('.panel.controls').screenshot({ path: `${LDIR}/1-build-step0.png` });
   // Train a while at max speed: the answer waits, marked out of date.
   await page.click('[data-test=play]');
   await expect.poll(() => stepOf(page), { timeout: 60_000 }).toBeGreaterThanOrEqual(600);
   await page.screenshot({ path: `${LDIR}/2-training-overview.png` });
+  await page.click('[data-test=tab-ask]');
+  await page.waitForTimeout(300);
   await page.locator('.panel.askbox').screenshot({ path: `${LDIR}/3-answer-out-of-date.png` });
+  await page.click('[data-test=go-learn]');
   await page.click('[data-test=play]');
+  await page.click('[data-test=tab-ask]');
   await expect(page.locator('[data-test=ask-again]')).toBeHidden();
   await page.locator('.panel.askbox').screenshot({ path: `${LDIR}/4-answer-fresh.png` });
-  // One step slowly: the four stages light up one after another.
+  // One step slowly: the four stages light up one after another, with the batch.
+  await page.click('[data-test=tab-learn]');
   await page.click('text=Step ×1');
   await expect(page.locator('[data-test=cycle] .stage.current[data-stage=answer]')).toBeVisible();
   await page.locator('.panel.controls').screenshot({ path: `${LDIR}/5-cycle-answer.png` });
+  await page.locator('main.learn-main').screenshot({ path: `${LDIR}/11-practice-tab-answer.png` });
   await expect(page.locator('[data-test=cycle] .stage.current[data-stage=measure]')).toBeVisible();
   await page.locator('.panel.controls').screenshot({ path: `${LDIR}/6-cycle-measure.png` });
   await expect(page.locator('[data-test=cycle] .stage.current')).toHaveCount(0, { timeout: 5_000 });
   await page.locator('.panel.controls').screenshot({ path: `${LDIR}/7-cycle-done.png` });
+  await page.locator('main.learn-main').screenshot({ path: `${LDIR}/10-practice-tab.png` });
+  await page.click('[data-test=tab-ask]');
   await page.locator('[data-test=stamp]').screenshot({ path: `${LDIR}/8-stamp-after-step.png` });
-  // The Practice tab: the whole batch, watched one step at a time.
-  await page.click('[data-test=tab-practice]');
-  await page.locator('main.practice-main').screenshot({ path: `${LDIR}/10-practice-tab.png` });
-  await page.click('[data-test=step-practice]');
-  await expect(page.locator('[data-test=cycle-practice] .stage.current[data-stage=answer]')).toBeVisible();
-  await page.locator('main.practice-main').screenshot({ path: `${LDIR}/11-practice-tab-answer.png` });
-  await expect(page.locator('[data-test=cycle-practice] .stage.current')).toHaveCount(0, { timeout: 5_000 });
-  await page.click('[data-test=tab-forms]');
   // Write it slowly.
   await page.click('[data-test=slow]');
   await expect(page.locator('[data-test=slow-caption]')).toContainText(/letter 3 of/, { timeout: 5_000 });
-  await page.locator('.centre').screenshot({ path: `${LDIR}/9-write-slowly.png` });
+  await page.locator('main.ask-main').screenshot({ path: `${LDIR}/9-write-slowly.png` });
+  // The Test tab: every animal tested.
+  await page.click('[data-test=tab-test]');
+  await expect(page.locator('[data-test=test-when]')).toContainText(/step \d/, { timeout: 10_000 });
+  await page.locator('main.test-main').screenshot({ path: `${LDIR}/14-test-tab.png` });
 });

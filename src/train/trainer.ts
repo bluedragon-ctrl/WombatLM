@@ -72,7 +72,7 @@ export interface PracticeExample {
   /** The right answer (the learning data). */
   target: string;
   /**
-   * What the brain answered when asked this question just before the step
+   * What the model answered when asked this question just before the step
    * (ordinary answering: no help, nothing changes). Only present when the
    * step was asked to answer first, see `trainStep(answerFirst)`.
    */
@@ -88,7 +88,7 @@ export interface PracticeBatch {
   loss: number;
   /** The first examples of the batch (at most the limit asked for). */
   examples: PracticeExample[];
-  /** If the brain answered them first: how many of the shown examples it got right. */
+  /** If the model answered them first: how many of the shown examples it got right. */
   rightCount?: number;
 }
 
@@ -130,7 +130,7 @@ export class FormTrainer {
   /** Packs whose animals count as "new" on the scoreboard (Teach mode). */
   freshPacks = new Set<string>();
   private mix: MixPart[] = [];
-  /** The latest batch, and what the brain answered before learning from it (if asked to). */
+  /** The latest batch, and what the model answered before learning from it (if asked to). */
   private last: { step: number; tasks: Task[]; answers: string[]; loss: number } | null = null;
 
   constructor(public dataset: Dataset, opts: TrainerOptions) {
@@ -195,7 +195,7 @@ export class FormTrainer {
 
   /**
    * One optimisation step on a random batch. Returns the batch loss.
-   * With `answerFirst` > 0, the brain first answers that many of the batch's
+   * With `answerFirst` > 0, the model first answers that many of the batch's
    * questions the ordinary way (greedy, no dropout, weights only read), so the
    * UI can show "learning data → what it answered → right or wrong" before
    * the mistake is measured and the numbers are nudged.

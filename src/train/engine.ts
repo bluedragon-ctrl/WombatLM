@@ -1,7 +1,7 @@
 /**
  * The training engine behind the worker: handles protocol messages, runs the
  * training loop in short time slices (so messages such as `pause` are handled
- * promptly), evaluates on a schedule and answers questions.
+ * promptly), tests every animal on a schedule while the Test tab is open and answers questions.
  *
  * It does not touch worker globals: `worker.ts` passes in how to post
  * messages and how to schedule the next slice, so tests can drive it in Node.
@@ -37,7 +37,7 @@ const SLICE_MS = 12;
 const TICK_MS = 50;
 /** How many examples of the latest batch a tick carries. */
 export const PRACTICE_SAMPLE = 32;
-/** While the Practice tab is open and training is fast: answers before a step at most this often. */
+/** While the Model learning tab is open and training is fast: answers before a step at most this often. */
 const OWN_EVERY_MS = 500;
 
 export class Engine {
@@ -64,11 +64,16 @@ export class Engine {
   private beforeStep: Float32Array[] | null = null;
   /** Step of the latest practice batch sent in a tick (sent once per new step). */
   private lastPracticeStep = -1;
-  /** The Practice tab is open: practice batches carry the brain's own answers (see `watchPractice`). */
+  /** The Model learning tab is open: practice batches carry the model's own answers (see `watchPractice`). */
   private watchPractice = false;
   private lastOwnAt = -Infinity;
-  /** The latest batch the brain answered before learning from it. */
+  /** The latest batch the model answered before learning from it. */
   private answered: PracticeBatch | undefined;
+  /**
+   * The Test tab is open: test every animal on the EVAL schedule. Off by
+   * default (beginners only learn and ask); `evaluate` still tests on request.
+   */
+  private watchTests = false;
 
   constructor(private host: EngineHost, dataset?: Dataset) {
     this.dataset = dataset ?? new Dataset(baseBundle());
@@ -97,7 +102,7 @@ export class Engine {
           tokens: this.dataset.vocab.tokens.slice(),
           matrices: this.matrices(),
         });
-        this.evaluate(true);
+        if (this.watchTests) this.evaluate(true);
         this.tick(true);
         break;
       case 'play':
@@ -116,7 +121,7 @@ export class Engine {
         break;
       case 'step':
         for (let i = 0; i < msg.n; i++) this.trainOne();
-        this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
+        if (this.watchTests) this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
         this.tick(true);
         break;
       case 'setSpeed':
@@ -131,7 +136,7 @@ export class Engine {
         break;
       case 'reset':
         this.reset(msg.seed);
-        this.evaluate(true);
+        if (this.watchTests) this.evaluate(true);
         this.tick(true);
         break;
       case 'ask':
@@ -139,6 +144,13 @@ export class Engine {
         break;
       case 'evaluate':
         this.evaluate(msg.inventions ?? false);
+        break;
+      case 'watchTests':
+        this.watchTests = msg.on;
+        // Test now if this model has not been tested yet (with the inventions if they are out of date).
+        if (msg.on && this.lastEvalStep !== this.trainer.step) {
+          this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps || this.lastInventionStep < 0);
+        }
         break;
       case 'watchPractice':
         this.watchPractice = msg.on;
@@ -177,8 +189,8 @@ export class Engine {
   }
 
   /**
-   * How many of the next batch's questions the brain should answer before
-   * learning from them (for the Practice tab and the one-step cycle). Always
+   * How many of the next batch's questions the model should answer before
+   * learning from them (for the Model learning tab and the one-step cycle). Always
    * for Step and slow speeds (cheap); at high speeds only while the Practice
    * tab is open, and at most every OWN_EVERY_MS (one greedy pass each).
    */
@@ -223,7 +235,7 @@ export class Engine {
     }
     this.lastSlice = start;
     const sinceEval = this.trainer.step - this.lastEvalStep;
-    if (sinceEval >= EVAL.everySteps || (sinceEval > 0 && start - this.lastEvalTime >= EVAL.everyMs)) {
+    if (this.watchTests && (sinceEval >= EVAL.everySteps || (sinceEval > 0 && start - this.lastEvalTime >= EVAL.everyMs))) {
       this.evaluate(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
     }
     this.tick(false);
@@ -239,7 +251,7 @@ export class Engine {
     // The latest batch it practised on (only when there is a new one).
     let practice: PracticeBatch | undefined;
     if (this.watchPractice && this.fastRun()) {
-      // Practice tab open at high speed: show the latest batch it answered (kept
+      // Model learning tab open at high speed: show the latest batch it answered (kept
       // until sent, since later steps of the same tick would replace it).
       if (this.answered && this.answered.step !== this.lastPracticeStep) practice = this.answered;
     } else if (tr.step !== this.lastPracticeStep) {

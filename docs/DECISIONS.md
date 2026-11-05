@@ -137,3 +137,40 @@ User feedback: "it is not clear when it learns (builds weights) and when it gene
 - **Speed with answering first** (same setup as above, final version): Forms tab 35–37 training steps/s, wall-clock 31.5; Practice tab open 33–37, wall-clock 31.5. No slowdown.
 - **Write it slowly** replays the `answer` already received (no new request); hovering is disabled during the replay, and changing the question stops it.
 - **Frozen brain** test: `ask` ×5, `evaluate` with inventions and `inspect` leave every weight bit-identical, and the next training step equals that of a twin engine that never answered (so optimiser state and random numbers are untouched too).
+
+## Tab reorganisation, step 1: Learning data tab (user request)
+
+User: "I do not fully understand tabs shown, so I would like to reorganise them a bit in several steps. 1. One tab with Learning data, so people can see what are actually source data engine is learning from."
+
+- **New tab "Learning data"** (`src/ui/dataTab.ts`), placed after Forms: Forms · Learning data · Practice · Inside the brain. Forms stays the opening tab; further reordering is left for the next steps.
+- **What it shows is exactly what the trainer samples from** (`FormTrainer.defaultMix`): word-form tasks (name → male / female / young, main answer only) and "copy the name" tasks of train-split animals. A unit test (`tests/ui/dataTab.test.ts`) checks the tab's counts against `trainTasks()` / `copyTasks()`, in total and per language. Base pack: 529 examples (249 word forms + 280 copy the name) from 140 animals; 11 never-seen animals kept aside.
+- **One table per data language** (language picker), animal name first (the copy practice), then the three forms. Learning examples are yellow (the same colour as "right answer (learning data)" on the Practice tab); a dash means no real word, so nothing to learn there. Filter all / learns from / never seen, and a search box.
+- **Never-seen animals are listed, greyed, with their answers hidden** behind "show the never-seen answers" (like the reveal on the Forms tab), so the tab does not give away the test. Searching does not match hidden answers.
+- **Clicking a word asks the brain** that question on the Forms tab, linking "learning data" to "answering".
+- Alternative accepted spellings (`formsAlt`, `alt`) are not shown: they are used only for judging answers, never trained on.
+
+## Tab reorganisation, step 2: the full test becomes an expert extra (user request)
+
+User: "I do not understand table Animals on the Forms tab. Are those learning data, sample data or what?" — it was the brain's own answers for every animal (the scheduled evaluation), marked against the learning data, but it looked like data. User decision: "fully remove the full test for now or have it available on request. The story should be as simple as possible in the beginning: 1. learning data goes in, 2. the model is established, I can ask it questions about single animals. Extra steps for evaluation are advanced data for the beginner."
+
+- **Forms tab** no longer has the Animals table or the Scoreboard. It keeps ① Build (with the loss chart: that is learning) and ② Ask (single animals).
+- **New Test tab, shown only in expert mode** ("Expert (adds settings and the Test tab)"): the Animals table (with a ✓ ≈ ✗ ✨ legend, filters and its own data-language picker), the Scoreboard, "Test again now" and "Its answers at step N". It is introduced as "an extra for later" and the help says plainly that the words are the brain's answers, not learning data. Clicking a word asks it on the Forms tab. Turning expert mode off while on the tab goes back to Forms.
+- **The engine tests only on request** (`watchTests`, like `watchPractice`): on init / reset / Step and in the training loop it evaluates only while the Test tab is open (same EVAL schedule: every 100 steps or 3 s, inventions every 500). Opening the tab tests the current brain right away (~0.7 s in the browser at step ~200, with inventions) unless it was already tested at this step; `evaluate` still works any time. So without the Test tab the training loop no longer spends time on evaluation.
+- The scoreboard history therefore has points only from steps when the tab was open.
+
+## Tab reorganisation, step 3: tabs follow the story (user request)
+
+User: "Maybe there should be one tab Model learning, because this is really part of building the model. Model testing should go to a separate tab, Question mode, where you ask questions and see how the model answers. And the Test tab shows the automatic test evaluation."
+
+- **Tabs, in story order:** Learning data · Model learning · Ask the model · Inside the brain · Test. The Forms and Practice tabs are gone.
+- **Opens on Learning data** (user choice): a beginner sees the data first.
+- **Model learning** = everything that changes the brain: ① Build (Play / Step / speed / seed, expert settings, status, learning badge, the one-step cycle), the mistakes (loss) chart, the latest batch (learning data and what it answered before learning from it), and the **letter map** (user choice: it is something you watch change while it learns). The Practice tab's duplicate Play / Step ×1, badge and cycle, and the "see all the examples" link, are gone. `watchPractice` is on while this tab is open.
+- **Ask the model** = everything that only reads the brain: ② Ask (question, answer, step stamp, "keep answering while it learns", guesses, Write it slowly) and "where it looks" (attention). **No training controls** (user choice): a status line "The model is at step N, paused / learning right now" with a link to Model learning.
+- **Test is always visible, last** (user choice; step 2 had made it expert-only). It still tests only while open.
+- **Expert checkbox moved to the header:** it affects several tabs (settings on Model learning, extra attention grids on Ask, the Inside tab, the log-scale loss chart). Label back to "Expert" / "Pro pokročilé".
+- Clicking a word on Learning data or Test asks it on the Ask tab.
+- Tab names use "model" as the user wrote them; the panels still say "brain" (① Build the brain, ② Ask the brain, Inside the brain). Unifying the wording is a possible later step.
+
+## "Model" instead of "brain" (user request)
+
+User: "use 'model' everywhere instead of 'brain'". All UI text now says model: the subtitle ("A tiny model learns animal word forms"), ① Build the model, ② Ask the model, Inside the model, the step stamp, help texts and tooltips. Czech: mozek → model with the same declension (mozku → modelu, mozkem → modelem); both are masculine inanimate, so the adjectives and verbs around them stay as they were. Code comments and test names were changed too, so the codebase uses one word. Older entries in this file keep "brain" as written at the time.

@@ -1,8 +1,15 @@
 /**
- * The app: two tabs.
- * - Forms: controls, the question box with form and language pickers, guess
- *   bars, attention grids, letter map, loss chart, scoreboard, animal list.
- * - Inside the brain: weight heatmaps (see inside.ts).
+ * The app: five tabs, in the order of the story.
+ * - Learning data: everything the model learns from (see dataTab.ts).
+ * - Model learning: everything that changes the model: Play / Step / speed /
+ *   seed, the learning badge, the one-step cycle, the latest batch (learning
+ *   data and what it answered before learning from it), the loss chart and
+ *   the letter map.
+ * - Ask the model: everything that only reads the model: the question box
+ *   with form and language pickers, the answer, guess bars, attention grids.
+ * - Inside the model: weight heatmaps (see inside.ts).
+ * - Test: every animal tested, scoreboard. The model is tested only while
+ *   this tab is open (or on request).
  *
  * All training happens in the worker; this file only sends messages and
  * draws what comes back.
@@ -18,10 +25,11 @@ import { parentWidth, prepare } from '../viz/canvas';
 import { setUiLang, t, uiLang, UI_LANGUAGES } from './i18n';
 import { h } from './dom';
 import { InsideTab } from './inside';
+import { DataTab } from './dataTab';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
-type Tab = 'forms' | 'practice' | 'inside';
-const TABS: Tab[] = ['forms', 'practice', 'inside'];
+type Tab = 'data' | 'learn' | 'ask' | 'inside' | 'test';
+const TABS: Tab[] = ['data', 'learn', 'ask', 'inside', 'test'];
 /** Look-inside requests: at most one in flight, at most this often. */
 const INSPECT_MS = 250;
 /** "Write it slowly": time per letter, and the "reading the animal" pause before the first one. */
@@ -76,9 +84,11 @@ export class App {
   private revealed = false;
   private expert = false;
   private filter: Filter = 'all';
+  /** Data language shown on the Test tab. */
+  private testLang = '';
   private question = { text: '', lang: '', form: 'female' };
   private dirty = { controls: true, answer: true, loss: true, scores: true, animals: true, practice: true, stamp: true };
-  /** The latest batch the brain practised on (learning), and when the strip last changed. */
+  /** The latest batch the model practised on (learning), and when the strip last changed. */
   private practice?: PracticeBatch;
   private practiceShownAt = -Infinity;
   private practiceTimer = 0;
@@ -86,7 +96,7 @@ export class App {
   private learnedAt = -Infinity;
   /** "Keep answering while it learns": re-ask after every tick even while training. */
   private live = false;
-  /** The answer changed because the brain changed (not the question): flash its step label. */
+  /** The answer changed because the model changed (not the question): flash its step label. */
   private stampFlash = false;
   /** "Write it slowly" replay of one answer: how many letters are shown so far. */
   private slow: { answer: AnswerMsg; shown: number; done: boolean; timer: number } | null = null;
@@ -95,12 +105,13 @@ export class App {
   private cycleWanted = false;
   private frame = 0;
   private els!: ReturnType<App['build']>;
-  private tab: Tab = 'forms';
+  private tab: Tab = 'data';
   /** Output step linked between the guess bars and the attention grids (hover). */
   private hoverStep: number | null = null;
   private attGrids: AttGrid[] = [];
   private attKeys = '';
   private inside: InsideTab;
+  private dataTab: DataTab;
   private letterMap!: LetterMapView;
   private inspectId = 0;
   private inspectPending: number | null = null;
@@ -113,6 +124,7 @@ export class App {
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => this.onMessage(e.data);
     this.worker.onerror = (e) => this.showError(e.message);
     this.inside = new InsideTab(() => this.requestInspect(true));
+    this.dataTab = new DataTab((text, lang, form) => this.askOnAskTab({ text, lang, form }));
     this.els = this.build();
     this.letterMap = new LetterMapView(this.els.mapCanvas, () => Math.min(360, parentWidth(this.els.mapCanvas, 320)));
     window.addEventListener('resize', () => { this.invalidate('loss', 'scores'); this.letterMap.draw(); });
@@ -136,10 +148,12 @@ export class App {
         this.evals = [];
         this.results.clear();
         if (!this.question.lang) this.question.lang = msg.languages[0].code;
+        if (!this.testLang) this.testLang = msg.languages[0].code;
         if (!this.question.text) this.question.text = msg.animals.find((a) => a.forms[this.question.lang]?.female)?.names[this.question.lang] ?? '';
         this.els.seed.value = String(msg.seed);
         this.letterMap.reset();
         this.inside.setReady(msg);
+        this.dataTab.setReady(msg);
         this.renderPickers();
         this.ask();
         this.requestInspect(true);
@@ -160,7 +174,7 @@ export class App {
         if (this.losses.length > 40000) this.losses = this.losses.filter((_, i) => i % 2 === 0);
         if (msg.practice) this.onPractice(msg.practice, msg);
         if (msg.losses.length) this.requestInspect();
-        // Answering is separate from learning: while the brain learns, the answer
+        // Answering is separate from learning: while the model learns, the answer
         // waits (marked as out of date) unless the user asked for live answers.
         if (this.answer && this.answer.step !== msg.step && (!msg.running || this.live)) this.ask();
         this.invalidate('controls', 'loss', 'stamp');
@@ -173,7 +187,7 @@ export class App {
         this.askInFlight = false;
         if (msg.id === this.askId) {
           const prev = this.answer;
-          // Same question, new brain: the answer refreshed because the brain changed.
+          // Same question, new model: the answer refreshed because the model changed.
           if (prev && prev.step !== msg.step && prev.text === msg.text && prev.lang === msg.lang && prev.form === msg.form) this.stampFlash = true;
           this.answer = msg;
           this.invalidate('answer', 'stamp');
@@ -301,8 +315,8 @@ export class App {
   }
 
   /**
-   * Ask the worker for what the visible tab shows inside the brain: the
-   * weight heatmaps (Inside tab) or the letter map (Forms tab). At most one
+   * Ask the worker for what the visible tab shows inside the model: the
+   * weight heatmaps (Inside tab) or the letter map (Model learning tab). At most one
    * request in flight and one every INSPECT_MS; `now` skips the wait.
    */
   private requestInspect(now = false): void {
@@ -315,7 +329,7 @@ export class App {
     }
     this.inspectDirty = false;
     this.lastInspect = performance.now();
-    if (this.tab === 'practice') return; // nothing inside the brain to show there
+    if (this.tab !== 'learn' && this.tab !== 'inside') return; // nothing inside the model to show there
     const inside = this.tab === 'inside';
     const matrixIds = inside ? this.inside.wanted() : [];
     if (inside && !matrixIds.length) return;
@@ -344,12 +358,16 @@ export class App {
       b.classList.toggle('on', b.dataset.tab === tab);
       b.setAttribute('aria-selected', String(b.dataset.tab === tab));
     }
-    this.els.formsMain.hidden = tab !== 'forms';
-    this.els.practiceMain.hidden = tab !== 'practice';
+    this.els.dataMain.hidden = tab !== 'data';
+    this.els.learnMain.hidden = tab !== 'learn';
+    this.els.askMain.hidden = tab !== 'ask';
     this.els.insideMain.hidden = tab !== 'inside';
-    if (tab === 'practice') this.invalidate('practice');
-    this.send({ type: 'watchPractice', on: tab === 'practice' });
-    if (tab === 'forms') { this.invalidate('loss', 'scores', 'answer'); this.letterMap.draw(); }
+    this.els.testMain.hidden = tab !== 'test';
+    this.send({ type: 'watchTests', on: tab === 'test' });
+    this.send({ type: 'watchPractice', on: tab === 'learn' });
+    if (tab === 'test') this.invalidate('scores', 'animals');
+    if (tab === 'learn') { this.invalidate('practice', 'loss'); this.letterMap.draw(); }
+    if (tab === 'ask') this.invalidate('answer', 'stamp');
     this.requestInspect(true);
   }
 
@@ -372,11 +390,6 @@ export class App {
       this.send({ type: 'step', n: 1 });
     };
     step1.onclick = stepOnce;
-    // The Practice tab has its own Play and Step ×1, so a step can be watched there.
-    const play2 = h('button', { class: 'primary', 'data-test': 'play-practice' });
-    play2.onclick = play.onclick;
-    const step1b = h('button', { 'data-test': 'step-practice' }, t('step1'));
-    step1b.onclick = stepOnce;
     const step10 = h('button', {}, t('step10'));
     step10.onclick = () => this.send({ type: 'step', n: 10 });
     const speed = h('select', { 'aria-label': t('speed') });
@@ -401,6 +414,11 @@ export class App {
     const expertPanel = h('div', { class: 'expert', hidden: true },
       h('label', {}, t('lr'), ' ', lr), h('label', {}, t('batch'), ' ', batch));
     const status = h('div', { class: 'status', 'data-test': 'status' });
+    // On the Ask tab: which model answers, and whether it is learning (no training controls there).
+    const askStatusText = h('span');
+    const goLearn = h('button', { class: 'link small', 'data-test': 'go-learn' }, t('askStatus.go'));
+    goLearn.onclick = () => this.setTab('learn');
+    const askStatus = h('div', { class: 'ask-status small', 'data-test': 'ask-status' }, askStatusText, ' ', goLearn);
 
     const input = h('input', { type: 'text', class: 'ask', placeholder: t('askPlaceholder'), spellcheck: 'false', 'data-test': 'ask' });
     input.oninput = () => this.setQuestion({ text: input.value }, true);
@@ -423,9 +441,7 @@ export class App {
     const slowBtn = h('button', { class: 'small-btn', 'data-test': 'slow' }, t('slow.button'));
     slowBtn.onclick = () => this.toggleSlow();
     const slowCaption = h('span', { class: 'slow-caption', 'data-test': 'slow-caption', 'aria-live': 'polite' });
-    // The learning badge and the one-step cycle appear on the Forms tab and on the Practice tab.
     const learning = h('div', { class: 'learning off', 'data-test': 'learning' });
-    const learning2 = h('div', { class: 'learning off', 'data-test': 'learning-practice' });
     const makeCycle = (test: string) => {
       const stages = CYCLE_STAGES.map((k, i) => h('li', { class: 'stage', 'data-stage': k },
         h('span', { class: 'num' }, String(i + 1)),
@@ -437,9 +453,6 @@ export class App {
       return { el: h('ol', { class: 'cycle', 'data-test': test, 'aria-label': t('cycle.title') }, ...stages), stages, note: h('p', { class: 'small cycle-note' }) };
     };
     const cycleA = makeCycle('cycle');
-    const cycleB = makeCycle('cycle-practice');
-    const openPractice = h('button', { class: 'link small open-practice', 'data-test': 'open-practice' }, t('practice.open'));
-    openPractice.onclick = () => this.setTab('practice');
     const practiceList = h('div', { class: 'practice-table', 'data-test': 'practice' });
     const practiceHelp = help(t('practice.help', { shown: PRACTICE_SHOWN, batch: 16 }));
     const attention = h('div', { class: 'att-grids', 'data-test': 'attention' });
@@ -469,6 +482,12 @@ export class App {
       filters.append(b);
     }
     const animals = h('div', { class: 'animals', 'data-test': 'animals' });
+    const testLangPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('language') });
+    const testWhen = h('span', { class: 'small', 'data-test': 'test-when' });
+    const testAgain = h('button', { 'data-test': 'test-again' }, t('test.again'));
+    testAgain.onclick = () => this.send({ type: 'evaluate', inventions: true });
+    const testLegend = h('div', { class: 'test-legend small' },
+      ...(['correct', 'close', 'wrong', 'invented'] as const).map((k) => h('span', { class: `cell ${k}` }, `${STATUS_ICONS[k]} ${t(`status.${k}`)}`)));
     const params = h('div', { class: 'params' });
     const uiSwitch = h('button', { class: 'link' }, t('uiLanguage'));
     uiSwitch.onclick = () => {
@@ -476,78 +495,74 @@ export class App {
       location.reload();
     };
     const error = h('div', { class: 'error', hidden: true });
-    const formsMain = this.buildForms({
-      play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, barsWrap,
-      attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals,
-      stamp, liveLabel, slowBtn, slowCaption, learning, cycle: cycleA.el, cycleNote: cycleA.note, openPractice,
-    });
-    const practiceMain = h('main', { class: 'practice-main', hidden: true },
-      h('section', { class: 'panel phase build' },
-        h('div', { class: 'phase-head' }, h('h2', {}, t('practice.title')), practiceHelp),
-        h('p', { class: 'practice-explain' }, t('practice.explain')),
-        h('div', { class: 'row' }, play2, step1b, learning2),
-        cycleB.el,
-        cycleB.note,
-        practiceList));
-    const insideMain = h('main', { class: 'inside-main', hidden: true }, this.inside.el);
+    const learnMain = h('main', { class: 'learn-main', hidden: this.tab !== 'learn' },
+      h('aside', { class: 'left' },
+        h('section', { class: 'panel controls phase build' },
+          h('div', { class: 'phase-head' }, h('h2', {}, t('build.title')), help(t('build.help'))),
+          h('div', { class: 'row' }, play, step1, step10),
+          h('label', { class: 'row' }, t('speed'), ' ', speed),
+          h('div', { class: 'row' }, h('label', {}, t('seed'), ' ', seed), reset),
+          expertPanel,
+          status,
+          learning,
+          h('div', { class: 'phase-head sub' }, h('h3', {}, t('cycle.title'))),
+          cycleA.el,
+          cycleA.note),
+        h('section', { class: 'panel' }, h('h2', {}, t('loss')), h('div', { class: 'chart' }, lossCanvas))),
+      h('section', { class: 'centre' },
+        h('section', { class: 'panel phase build' },
+          h('div', { class: 'phase-head' }, h('h2', {}, t('practice.title')), practiceHelp),
+          h('p', { class: 'practice-explain' }, t('practice.explain')),
+          practiceList)),
+      h('aside', { class: 'right' },
+        h('section', { class: 'panel map' },
+          h('h2', {}, t('map.title')),
+          h('div', { class: 'map-wrap' }, mapCanvas),
+          mapLegend,
+          mapNote,
+          h('p', { class: 'small' }, t('map.help')))));
+    const askMain = h('main', { class: 'ask-main', hidden: this.tab !== 'ask' },
+      h('section', { class: 'panel askbox phase ask' },
+        h('div', { class: 'phase-head' }, h('h2', {}, t('ask.title')), help(t('ask.help'))),
+        askStatus,
+        h('div', { class: 'row' }, input, langPick),
+        formPick, hint, output,
+        h('div', { class: 'stamp-row' }, stamp, liveLabel),
+        h('div', { class: 'row guess-head' }, h('h2', {}, t('guessBars')), slowBtn, slowCaption),
+        barsWrap),
+      h('section', { class: 'panel attention' },
+        h('h2', {}, t('att.title')),
+        h('p', { class: 'small' }, t('att.help')),
+        attention));
+    const insideMain = h('main', { class: 'inside-main', hidden: this.tab !== 'inside' }, this.inside.el);
+    const dataMain = h('main', { class: 'data-main', hidden: this.tab !== 'data' }, this.dataTab.el);
+    const testMain = h('main', { class: 'test-main', hidden: this.tab !== 'test' },
+      h('section', { class: 'panel test-intro' },
+        h('div', { class: 'phase-head' }, h('h2', {}, t('test.title')), help(t('test.help'))),
+        h('p', { class: 'practice-explain' }, t('test.explain')),
+        h('div', { class: 'row' }, testLangPick, testAgain, testWhen)),
+      h('div', { class: 'test-grid' },
+        h('section', { class: 'panel list' }, h('h2', {}, t('animals')), testLegend, filters, animals),
+        h('section', { class: 'panel' }, h('h2', {}, t('scoreboard')), h('p', { class: 'small' }, t('test.scoreHelp')),
+          h('div', { class: 'chart' }, scoreCanvas), scoreTable)));
 
     this.root.replaceChildren(
-      h('header', {}, h('h1', {}, t('title')), h('span', { class: 'sub' }, t('subtitle')), tabs, params, uiSwitch),
+      h('header', {}, h('h1', {}, t('title')), h('span', { class: 'sub' }, t('subtitle')), tabs, params,
+        h('label', { class: 'small expert-toggle' }, expertBox, ' ', t('expert')), uiSwitch),
       error,
-      formsMain,
-      practiceMain,
+      dataMain,
+      learnMain,
+      askMain,
       insideMain,
+      testMain,
     );
     return {
-      play, speed, seed, status, input, langPick, formPick, hint, output, bars, barsWrap, attention, mapCanvas, mapNote, tabs, formsMain, insideMain,
-      stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp, practiceMain,
-      playButtons: [play, play2], learnings: [learning, learning2], cycles: [cycleA, cycleB],
+      play, speed, seed, status, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, attention, mapCanvas, mapNote, tabs,
+      dataMain, learnMain, askMain, insideMain, testMain, testLangPick, testWhen,
+      stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp,
+      playButtons: [play], learnings: [learning], cycles: [cycleA],
       lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
     };
-  }
-
-  private buildForms(parts: Record<string, HTMLElement>) {
-    const { play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, barsWrap,
-      attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals,
-      stamp, liveLabel, slowBtn, slowCaption, learning, cycle, cycleNote, openPractice } = parts;
-    return h('main', { class: 'forms' },
-        h('aside', { class: 'left' },
-          h('section', { class: 'panel controls phase build' },
-            h('div', { class: 'phase-head' }, h('h2', {}, t('build.title')), help(t('build.help'))),
-            h('div', { class: 'row' }, play, step1, step10),
-            h('label', { class: 'row' }, t('speed'), ' ', speed),
-            h('div', { class: 'row' }, h('label', {}, t('seed'), ' ', seed), reset),
-            h('label', { class: 'row small' }, expertBox, ' ', t('expert')),
-            expertPanel,
-            status,
-            learning,
-            h('div', { class: 'phase-head sub' }, h('h3', {}, t('cycle.title'))),
-            cycle,
-            cycleNote,
-            openPractice),
-          h('section', { class: 'panel list' }, h('h2', {}, t('animals')), filters, animals)),
-        h('section', { class: 'centre' },
-          h('section', { class: 'panel askbox phase ask' },
-            h('div', { class: 'phase-head' }, h('h2', {}, t('ask.title')), help(t('ask.help'))),
-            h('div', { class: 'row' }, input, langPick),
-            formPick, hint, output,
-            h('div', { class: 'stamp-row' }, stamp, liveLabel),
-            h('div', { class: 'row guess-head' }, h('h2', {}, t('guessBars')), slowBtn, slowCaption),
-            barsWrap),
-          h('section', { class: 'panel attention' },
-            h('h2', {}, t('att.title')),
-            h('p', { class: 'small' }, t('att.help')),
-            attention),
-          h('div', { class: 'charts' },
-            h('section', { class: 'panel' }, h('h2', {}, t('loss')), h('div', { class: 'chart' }, lossCanvas)),
-            h('section', { class: 'panel' }, h('h2', {}, t('scoreboard')), h('div', { class: 'chart' }, scoreCanvas), scoreTable))),
-        h('aside', { class: 'right' },
-          h('section', { class: 'panel map' },
-            h('h2', {}, t('map.title')),
-            h('div', { class: 'map-wrap' }, mapCanvas),
-            mapLegend,
-            mapNote,
-            h('p', { class: 'small' }, t('map.help')))));
   }
 
   /** Language and form pickers (built from the data, never hard-coded). */
@@ -566,6 +581,12 @@ export class App {
     }));
     this.els.params.textContent = t('params', { n: this.ready.params.toLocaleString(uiLang()) });
     this.invalidate('answer');
+  }
+
+  /** A word clicked on another tab: ask it on the Ask tab. */
+  private askOnAskTab(q: Partial<App['question']>): void {
+    this.setTab('ask');
+    this.setQuestion(q);
   }
 
   private setQuestion(q: Partial<App['question']>, typed = false): void {
@@ -615,6 +636,7 @@ export class App {
     if (tk.stepsPerSec > 0) parts.push(t('stepsPerSec', { n: tk.stepsPerSec.toFixed(0) }));
     if (tk.lossEma !== null) parts.push(`loss ${tk.lossEma.toFixed(3)}`);
     this.els.status.textContent = parts.join(' · ');
+    this.els.askStatusText.textContent = t(tk.running ? 'askStatus.learning' : 'askStatus.paused', { step: tk.step.toLocaleString(uiLang()) });
   }
 
   private renderAnswer(): void {
@@ -749,8 +771,8 @@ export class App {
   }
 
   /**
-   * Under the answer: which brain (step) answered, and that answering never
-   * changes it. While the brain learns, the answer is marked as out of date.
+   * Under the answer: which model (step) answered, and that answering never
+   * changes it. While the model learns, the answer is marked as out of date.
    */
   private renderStamp(): void {
     const { stamp, stampText, askAgain, output, barsWrap, attention } = this.els;
@@ -815,7 +837,7 @@ export class App {
       });
       note.textContent = fast ? t('cycle.running', { n: Math.round(tk!.stepsPerSec) }) : t('cycle.hint');
     }
-    if (this.tab !== 'practice') return; // the examples are drawn only while their tab is visible
+    if (this.tab !== 'learn') return; // the examples are drawn only while their tab is visible
     practiceHelp.querySelector('p')!.textContent = t('practice.help', { shown: Math.min(PRACTICE_SHOWN, p?.batchSize ?? 16), batch: p?.batchSize ?? 16 });
 
     // The learning data, revealed with the stages: questions and right answers,
@@ -871,12 +893,23 @@ export class App {
   }
 
   private renderScores(): void {
-    if (!this.ready) return;
+    if (!this.ready || this.tab !== 'test') return; // drawn only while the Test tab is visible
+    const { testLangPick, testWhen } = this.els;
+    if (testLangPick.childElementCount !== this.ready.languages.length) {
+      testLangPick.replaceChildren(...this.ready.languages.map((l) => {
+        const b = h('button', { 'data-lang': l.code }, l.name[uiLang()] ?? l.code);
+        b.onclick = () => { this.testLang = l.code; this.invalidate('scores', 'animals'); };
+        return b;
+      }));
+    }
+    for (const b of testLangPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.lang === this.testLang);
+    const tested = this.evals[this.evals.length - 1];
+    testWhen.textContent = tested ? t('test.when', { step: tested.step.toLocaleString(uiLang()) }) : t('test.none');
     const c = this.els.scoreCanvas;
     const width = parentWidth(c);
     const langs = this.ready.languages.map((l) => l.code);
     // Lines for the selected language; the table below has every language.
-    const lang = this.question.lang;
+    const lang = this.testLang;
     const series = SCORE_LINES.map((k) => ({
       points: this.evals.flatMap((e) => (e.scores[lang]?.[k] != null ? [[e.step, e.scores[lang][k]!] as [number, number]] : [])),
       color: SCORE_STYLE[k].color,
@@ -894,8 +927,8 @@ export class App {
   }
 
   private renderAnimals(): void {
-    if (!this.ready) return;
-    const lang = this.question.lang;
+    if (!this.ready || this.tab !== 'test') return; // drawn only while the Test tab is visible
+    const lang = this.testLang;
     const forms = this.ready.forms.filter((f) => f !== 'name');
     for (const b of this.els.filters.querySelectorAll('button')) b.classList.toggle('on', b.dataset.filter === this.filter);
     const rows: HTMLElement[] = [];
@@ -908,12 +941,12 @@ export class App {
         if (!r) return h('td', { class: 'cell none' }, t('noForm'));
         const title = `${t(`form.${f}`)}: ${r.output} — ${t(`status.${r.status}`)}${r.answer && a.split === 'train' ? ` (${r.answer})` : ''}`;
         const cell = h('td', { class: `cell ${r.status}`, title }, `${STATUS_ICONS[r.status]} ${r.output || '∅'}`);
-        cell.onclick = (e) => { e.stopPropagation(); this.setQuestion({ text: a.names[lang], form: f }); };
+        cell.onclick = (e) => { e.stopPropagation(); this.askOnAskTab({ text: a.names[lang], lang, form: f }); };
         return cell;
       });
       const name = h('td', { class: 'name' }, a.names[lang], a.split === 'unseen' ? h('span', { class: 'never' }, t('neverSeen')) : null);
       const row = h('tr', { class: a.names[lang] === this.question.text ? 'sel' : '' }, name, ...cells);
-      row.onclick = () => this.setQuestion({ text: a.names[lang] });
+      row.onclick = () => this.askOnAskTab({ text: a.names[lang], lang });
       rows.push(row);
     }
     this.els.animals.replaceChildren(h('table', {},
