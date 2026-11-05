@@ -184,6 +184,18 @@ export class Translator {
     this.config.vocabSize = newTokens.length;
   }
 
+  /**
+   * State of the dropout random numbers. Setting it back replays exactly the
+   * same "switched off" numbers (used to split one step's push by example).
+   */
+  dropoutState(): number {
+    return this.dropRng.getState();
+  }
+
+  setDropoutState(state: number): void {
+    this.dropRng.setState(state);
+  }
+
   /** Dropout while training, identity otherwise. */
   private readonly drop = (t: Tensor): Tensor =>
     this.training && this.config.dropout ? dropout(t, this.config.dropout, () => this.dropRng.next()) : t;
@@ -362,5 +374,10 @@ function keepMaskRows(mask: Float32Array, keep: readonly number[], Tk: number): 
   return out;
 }
 
-/** Trace entries that "follow the signal" shows (the rest are for `explain`). */
-const SIGNAL = /^(enc|dec)\d*\.(in|out)$/;
+/**
+ * Trace entries that "follow the signal" and "follow the tokens" show (the
+ * rest are for `explain`): what goes in, the output of every layer, the
+ * encoder's result ("memory") and the decoder's numbers after its last volume
+ * knobs ("dec.final", which make the guess).
+ */
+const SIGNAL = /^((enc|dec)\d*\.(in|out)|memory|dec\.final)$/;

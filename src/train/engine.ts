@@ -18,9 +18,10 @@ import { nearestRows, pca2 } from '../nn/pca';
 import { FormTrainer, PracticeBatch, TRAINER_DEFAULTS, confidence, judge } from './trainer';
 import { Translator } from '../nn/translator';
 import type {
-  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, ExplainGuess, ExplainMsg, FromWorker, InspectMode, LossPoint, MatrixChange, MatrixInfo, Speed,
+  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, ExplainGuess, ExplainMsg, FromWorker, InspectMode, LossPoint, MatrixChange, MatrixInfo, NumberRef, Speed,
   StepGuess, ToWorker,
 } from './protocol';
+import { changeStats, explainNumber, topNumbers } from './stepDetail';
 import { rowSoftmax } from '../nn/transformer';
 
 export interface EngineHost {
@@ -53,6 +54,8 @@ const NEAR_LETTERS = 4;
 export const PRACTICE_SAMPLE = 32;
 /** While the Model learning tab is open and training is fast: answers before a step at most this often. */
 const OWN_EVERY_MS = 500;
+/** Numbers listed as "changed the most" / "pushed the hardest" after a detailed step. */
+const TOP_NUMBERS = 10;
 
 export class Engine {
   dataset: Dataset;
@@ -150,11 +153,15 @@ export class Engine {
       case 'pause':
         this.finish();
         break;
-      case 'step':
-        for (let i = 0; i < msg.n; i++) this.trainOne();
+      case 'step': {
+        // A single step while paused is recorded in detail (before / after, every push, the nudge).
+        const detail = msg.n === 1 && !this.running;
+        for (let i = 0; i < msg.n; i++) this.trainOne(detail);
         if (this.watchTests) this.startEval(this.trainer.step - this.lastInventionStep >= EVAL.inventionsEverySteps);
         this.tick(true);
+        if (detail) this.sendStepDetail();
         break;
+      }
       case 'setSpeed':
         this.speed = msg.speed;
         this.budget = 0;
@@ -204,6 +211,9 @@ export class Engine {
         break;
       case 'explain':
         this.explain(msg.id, msg.text, msg.lang, msg.form, msg.position);
+        break;
+      case 'why':
+        this.why(msg.id, msg.name, msg.index);
         break;
     }
   }
@@ -267,7 +277,7 @@ export class Engine {
     return PRACTICE_SAMPLE;
   }
 
-  private trainOne(): void {
+  private trainOne(detail = false): void {
     const params = this.trainer.model.params.list;
     if (!this.beforeStep || this.beforeStep.length !== params.length) this.beforeStep = params.map((p) => new Float32Array(p.size));
     params.forEach((p, i) => {
@@ -276,7 +286,7 @@ export class Engine {
     });
     const t0 = this.host.now();
     const answerFirst = this.answerFirst();
-    const loss = this.trainer.trainStep(answerFirst);
+    const loss = this.trainer.trainStep(answerFirst, detail);
     if (answerFirst > 0) this.answered = this.trainer.practice(PRACTICE_SAMPLE) ?? undefined;
     const dt = this.host.now() - t0;
     if (dt > 0) {
@@ -426,12 +436,72 @@ export class Engine {
     const attention: AttentionMap[] = Object.entries(trace.attention).map(([name, a]) => ({ name, ...a }));
     const activations: Activation[] = Object.entries(trace.activations).map(([name, a]) => ({ name, ...a }));
     const output = vocab.decode(trace.output);
+    // The rows each token looks up: letter table + position (their sums are enc.in / dec.in).
+    const model = this.trainer.model;
+    const d = model.config.dModel;
+    const rows = (table: Float32Array, ids: number[]) => {
+      const out = new Float32Array(ids.length * d);
+      ids.forEach((id, i) => out.set(table.subarray(id * d, (id + 1) * d), i * d));
+      return out;
+    };
+    const decIds = [trace.input[0], ...trace.output].slice(0, steps.length);
+    const positions = (n: number) => Array.from({ length: n }, (_, i) => i);
+    const lookup = {
+      encTok: rows(model.tokEmb.data, trace.input), encPos: rows(model.encPos.data, positions(trace.input.length)),
+      decTok: rows(model.tokEmb.data, decIds), decPos: rows(model.decPos.data, positions(decIds.length)),
+    };
     const msg: AnswerMsg = {
       type: 'answer', id, step: this.trainer.step, text: word, lang, form, output, finished: trace.finished,
-      input: trace.input.map((i) => tokens[i]), steps, confidence: confidence(trace, vocab.eos), attention, activations,
+      input: trace.input.map((i) => tokens[i]), inputIds: trace.input, steps, confidence: confidence(trace, vocab.eos), attention, activations,
+      lookup, vocabSize: vocab.size,
       ...this.badge(word, lang, form, output),
     };
-    this.host.post(msg, [...attention, ...activations].map((a) => a.data.buffer as ArrayBuffer));
+    this.host.post(msg, [...attention, ...activations, ...Object.values(lookup)].map((a) => ('data' in a ? a.data : a).buffer as ArrayBuffer));
+  }
+
+  /** A number of the model as the UI names it, with its change in the recorded step. */
+  private numberRef(param: number, index: number): NumberRef {
+    const rec = this.trainer.record!;
+    const p = this.trainer.model.params.list[param];
+    const cols = p.shape.length === 2 ? p.shape[1] : p.shape[0];
+    return { name: p.name, index, row: Math.floor(index / cols), col: index % cols, before: rec.before[param][index], after: p.data[index], grad: rec.grad[param][index] };
+  }
+
+  /** What the step just recorded in detail changed in the model. */
+  private sendStepDetail(): void {
+    const rec = this.trainer.record;
+    if (!rec) return;
+    const list = this.trainer.model.params.list;
+    const after = list.map((p) => p.data);
+    const change = topNumbers(rec.before, (p, i) => after[p][i] - rec.before[p][i], TOP_NUMBERS).map((n) => this.numberRef(n.param, n.index));
+    const push = topNumbers(rec.grad, (p, i) => rec.grad[p][i], TOP_NUMBERS).map((n) => this.numberRef(n.param, n.index));
+    this.host.post({
+      type: 'stepDetail', step: rec.step, lr: rec.lr, baseLr: rec.baseLr, t: rec.t, warmupSteps: rec.warmupSteps,
+      gradNorm: rec.gradNorm, clipNorm: rec.clipNorm, clip: rec.clip,
+      numbers: changeStats(rec.before, after), top: { change, push }, split: rec.perExample !== null,
+    });
+  }
+
+  /** The whole calculation of one number's change in the step recorded in detail. */
+  private why(id: number, name: string, index: number): void {
+    const rec = this.trainer.record;
+    const ps = this.trainer.model.params;
+    const param = ps.list.findIndex((p) => p.name === name);
+    if (!rec || rec.step !== this.trainer.step || param < 0 || index < 0 || index >= ps.list[param].size) {
+      this.host.post({ type: 'why', id, step: this.trainer.step, missing: true });
+      return;
+    }
+    const p = ps.list[param];
+    const w = explainNumber(rec, param, index, p.shape.length > 1);
+    this.host.post({
+      type: 'why', id, step: rec.step, ref: this.numberRef(param, index), now: p.data[index],
+      calc: {
+        grad: w.grad, clip: w.clip, gradUsed: w.gradUsed, mPrev: w.mPrev, vPrev: w.vPrev, m: w.m, v: w.v,
+        beta1: rec.beta1, beta2: rec.beta2, eps: rec.eps, t: rec.t, bc1: w.bc1, bc2: w.bc2, mHat: w.mHat, vHat: w.vHat,
+        lr: w.lr, baseLr: rec.baseLr, warmupSteps: rec.warmupSteps, decay: w.decay, move: w.move, after: w.after,
+      },
+      ...(w.shares ? { shares: w.shares.map((share, i) => ({ source: rec.tasks[i].source, lang: rec.tasks[i].to, form: rec.tasks[i].form, target: rec.tasks[i].answer, share })) } : {}),
+    });
   }
 
   /** Every parameter as a matrix (vectors are one row). */

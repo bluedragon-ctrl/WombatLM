@@ -90,6 +90,16 @@ export class Adam {
     return { lr, gradNorm };
   }
 
+  /**
+   * Adam's memory of one parameter: running average of its gradient (`m`)
+   * and of the gradient squared (`v`), as used by the next step. Undefined
+   * before its first step.
+   */
+  moments(p: Tensor): { m: Float32Array; v: Float32Array } | undefined {
+    const m = this.m.get(p), v = this.v.get(p);
+    return m && v && m.length === p.size ? { m, v } : undefined;
+  }
+
   /** Forget momentum (e.g. after loading different weights). */
   reset(): void {
     this.t = 0;

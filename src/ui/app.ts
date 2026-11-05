@@ -15,7 +15,9 @@
  * draws what comes back.
  */
 import type { AnimalInfo, AnswerMsg, EvalMsg, FromWorker, LetterMapMsg, LossPoint, ReadyMsg, Speed, TickMsg, ToWorker } from '../train/protocol';
-import type { PracticeBatch, Scores, TaskResult } from '../train/trainer';
+import { StepView } from './stepView';
+import { JourneyView } from './journey';
+import type { PracticeBatch, PracticeExample, Scores, TaskResult } from '../train/trainer';
 import { LETTER_KINDS, LetterKind, STATUS_COLORS, STATUS_ICONS, SCORE_STYLE } from '../viz/colors';
 import { attentionCellAt, drawAttentionGrid, GridSpec } from '../viz/attentionGrid';
 import { drawGuessBars, guessColumnAt } from '../viz/guessBars';
@@ -43,7 +45,9 @@ const CYCLE_MS = 700;
 const PRACTICE_FAST_MS = 500;
 /** After a step while paused, the learning badge says "learning" for this long. */
 const LEARN_GLOW_MS = 1500;
-const CYCLE_STAGES = ['pick', 'answer', 'measure', 'nudge'] as const;
+const CYCLE_STAGES = ['pick', 'answer', 'measure', 'nudge', 'check'] as const;
+/** The cycle stage in which the numbers change (the learning badge lights up then). */
+const NUDGE_PHASE = 4;
 
 /** A "?" that opens a short explanation (keyboard accessible). */
 const help = (text: string) => h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), h('p', {}, text));
@@ -111,6 +115,29 @@ function lossBar(loss: number): HTMLElement {
     h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${w}%` })));
 }
 
+/**
+ * After a step recorded in detail: the same example measured again after the
+ * nudge (letters tinted by their new mistake, before → after on hover), its
+ * mistake before → after, and its answer now if it changed.
+ */
+function checkCell(ex: PracticeExample): HTMLElement {
+  const c = ex.check!;
+  const letters = ex.letters.map((l, i) => {
+    const span = letterSpan({ char: l.char, p: c.after[i] });
+    const ch = l.char === '' ? t('practice.end') : l.char;
+    span.title = t('practice.checkLetterTip', { char: ch, before: (c.before[i] * 100).toFixed(1), after: (c.after[i] * 100).toFixed(1) });
+    span.classList.add(c.after[i] > c.before[i] ? 'up' : c.after[i] < c.before[i] ? 'down' : 'same');
+    return span;
+  });
+  const better = c.lossAfter < c.lossBefore;
+  return h('span', { class: 'check-cell' },
+    h('span', { class: 'check-letters' }, ...letters),
+    h('span', { class: `check-loss ${better ? 'better' : 'worse'}`, title: t('practice.checkLossTip') },
+      `${c.lossBefore.toFixed(2)} → ${c.lossAfter.toFixed(2)} ${better ? '▼' : '▲'}`),
+    ex.answer !== undefined && c.answer !== ex.answer
+      ? h('span', { class: `word-own ${c.status}`, title: t('practice.checkAnswerTip') }, `${t('practice.nowAnswers')} ${STATUS_ICONS[c.status]} ${c.answer || '∅'}`) : '');
+}
+
 const resultKey = (id: string, lang: string, form: string) => `${id}|${lang}|${form}`;
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '–' : `${Math.round(v * 100)} %`);
 
@@ -171,6 +198,11 @@ export class App {
   private explainId = 0;
   /** What the word hint shows now (it is rebuilt only when this changes). */
   private hintKey = '';
+  /** "What this step changed" (Model learning tab) and its latest "why" request. */
+  private stepView: StepView;
+  private whyId = 0;
+  /** "Follow the tokens through the model" (Ask tab). */
+  private journey: JourneyView;
 
   constructor(private root: HTMLElement) {
     this.worker = new Worker(new URL('../train/worker.ts', import.meta.url), { type: 'module' });
@@ -180,6 +212,19 @@ export class App {
       this.send({ type: 'explain', id: ++this.explainId, ...q, position });
     });
     this.dataTab = new DataTab((text, lang, form) => this.askOnAskTab({ text, lang, form }));
+    this.stepView = new StepView((name, index) => this.send({ type: 'why', id: ++this.whyId, name, index }), (c) => this.langName(c));
+    this.journey = new JourneyView((c) => this.langName(c), (position) => {
+      this.inside.explainAt(position);
+      this.setTab('inside');
+      this.inside.scrollToExplain();
+    });
+    // A click on a number in the heatmaps (after Step ×1): why did it change?
+    this.inside.onPickNumber = (name, index) => {
+      if (!this.stepView.current()) return;
+      this.stepView.pick(name, index);
+      this.setTab('learn');
+      this.stepView.el.scrollIntoView?.({ block: 'start' });
+    };
     this.els = this.build();
     this.letterMap = new LetterMapView(this.els.mapCanvas, () => Math.min(360, parentWidth(this.els.mapCanvas, 320)));
     this.letterMap.onSelect = (sel) => this.renderMapPick(sel);
@@ -214,6 +259,8 @@ export class App {
         this.letterMap.reset();
         this.inside.setReady(msg);
         this.dataTab.setReady(msg);
+        this.stepView.setReady(msg);
+        this.journey.setTokens(msg.tokens);
         this.renderPickers();
         this.ask();
         this.requestInspect(true);
@@ -234,6 +281,8 @@ export class App {
         this.losses.push(...msg.losses);
         if (this.losses.length > 40000) this.losses = this.losses.filter((_, i) => i % 2 === 0);
         if (msg.practice) this.onPractice(msg.practice, msg);
+        this.stepView.setStep(msg.step, msg.running, this.practice);
+        this.inside.canWhy = this.stepView.current();
         {
           // Quiet learning: no pictures while it learns; catch up when it pauses.
           const quietNow = msg.quiet && msg.running;
@@ -262,6 +311,7 @@ export class App {
           if (this.slowWanted) { this.slowWanted = false; this.startSlow(msg); }
           this.invalidate('answer', 'stamp');
           this.inside.setAnswer(msg);
+          this.journey.setAnswer(msg);
           if (this.tab === 'inside') this.inside.shown();
         }
         if (this.askDirty) this.ask();
@@ -276,6 +326,13 @@ export class App {
       case 'letterMap':
         this.inspectDone(msg.id);
         this.onLetterMap(msg);
+        break;
+      case 'stepDetail':
+        this.stepView.onDetail(msg);
+        this.inside.canWhy = this.stepView.current();
+        break;
+      case 'why':
+        if (msg.id === this.whyId) this.stepView.onWhy(msg);
         break;
       case 'error':
         this.showError(msg.message);
@@ -319,7 +376,7 @@ export class App {
       if (c.phase < CYCLE_STAGES.length) {
         c.phase++;
         c.timer = window.setTimeout(next, CYCLE_MS);
-        if (c.phase === CYCLE_STAGES.length) {
+        if (c.phase === NUDGE_PHASE) {
           // "Nudge the numbers": the learning badge lights up now.
           this.learnedAt = performance.now();
           this.practiceNew = true;
@@ -520,6 +577,7 @@ export class App {
       expertPanel.hidden = !this.expert;
       this.inside.setExpert(this.expert);
       this.dataTab.setExpert(this.expert);
+      this.journey.setExpert(this.expert);
       this.invalidate('loss', 'answer');
       this.requestInspect(true);
     };
@@ -676,7 +734,8 @@ export class App {
           h('div', { class: 'phase-head' }, h('h2', {}, t('practice.title')), practiceHelp),
           h('p', { class: 'practice-explain' }, t('practice.explain')),
           quietNote,
-          practiceList)),
+          practiceList),
+        this.stepView.el),
       h('aside', { class: 'right' },
         h('section', { class: 'panel map' },
           h('div', { class: 'phase-head' }, h('h2', {}, t('map.title')), help(t('map.how'))),
@@ -699,7 +758,8 @@ export class App {
         h('h2', {}, t('att.title')),
         h('p', { class: 'small' }, t('att.help')),
         attPrompt,
-        attention));
+        attention),
+      this.journey.el);
     const insideMain = h('main', { class: 'inside-main', hidden: this.tab !== 'inside' }, this.inside.el);
     const dataMain = h('main', { class: 'data-main', hidden: this.tab !== 'data' }, this.dataTab.el);
     const testMain = h('main', { class: 'test-main', hidden: this.tab !== 'test' },
@@ -773,6 +833,7 @@ export class App {
       // The answer on screen was for another question: take it away (on the Inside tab too).
       this.answer = undefined;
       this.inside.setAnswer(undefined);
+      this.journey.setAnswer(undefined);
     }
     this.invalidate('answer', 'stamp', 'animals');
   }
@@ -891,6 +952,7 @@ export class App {
     output.replaceChildren(h('div', { class: 'answer-line' }, ...parts), badge, meter);
     if (this.hoverStep !== null && this.hoverStep >= a.steps.length) this.hoverStep = null;
     drawGuessBars(bars, a.steps, this.hoverStep, writing, shortLabel);
+    this.journey.follow(this.slow && a === this.slow.answer ? (writing ?? null) : null);
     this.renderTokens(a, writing);
     this.renderSlowCaption(a);
     this.renderAttention();
@@ -1093,7 +1155,7 @@ export class App {
     const fast = this.fast();
 
     // Badge: is it learning right now?
-    const glowing = !tk?.running && !!p && performance.now() - this.learnedAt < LEARN_GLOW_MS && phase >= CYCLE_STAGES.length;
+    const glowing = !tk?.running && !!p && performance.now() - this.learnedAt < LEARN_GLOW_MS && phase >= NUDGE_PHASE;
     const on = !!tk?.running || glowing || !!this.cycle;
     for (const learning of learnings) {
       learning.textContent = !on ? t('learning.off')
@@ -1101,7 +1163,7 @@ export class App {
       learning.classList.toggle('on', on);
       learning.classList.toggle('off', !on);
       learning.classList.toggle('busy', on && fast);
-      if (this.practiceNew && on && !fast && phase >= CYCLE_STAGES.length) retrigger(learning, 'pulse');
+      if (this.practiceNew && on && !fast && phase >= NUDGE_PHASE) retrigger(learning, 'pulse');
       if (fast) learning.classList.remove('pulse');
     }
     this.practiceNew = false;
@@ -1112,15 +1174,18 @@ export class App {
       p.rightCount === undefined ? '' : t('cycle.answerVal', { right: p.rightCount, n: p.examples.length }),
       t('cycle.measureVal', { loss: p.loss.toFixed(2) }),
       t('cycle.nudgeVal', { n }),
-    ] : ['', '', '', ''];
+      p.check ? t('cycle.checkVal', { before: p.check.lossBefore.toFixed(2), after: p.check.lossAfter.toFixed(2) }) : t('cycle.checkOff'),
+    ] : ['', '', '', '', ''];
     for (const { stages, note } of cycles) {
       stages.forEach((el, i) => {
-        const lit = !!p && phase > i;
+        // "Check" happens only for a step recorded in detail (Step ×1 while paused).
+        const lit = !!p && phase > i && (CYCLE_STAGES[i] !== 'check' || !!p.check);
+        el.classList.toggle('off', CYCLE_STAGES[i] === 'check' && !!p && !p.check);
         el.classList.toggle('lit', lit);
         el.classList.toggle('current', !!this.cycle && phase === i + 1);
         (el.querySelector('.what') as HTMLElement).textContent = t(`cycle.${CYCLE_STAGES[i]}`, { n: p?.batchSize ?? tk?.batchSize ?? 16 });
         (el.querySelector('.num') as HTMLElement).textContent = this.cycle && phase === i + 1 ? '▶' : String(i + 1);
-        (el.querySelector('.val') as HTMLElement).textContent = lit ? values[i] : '';
+        (el.querySelector('.val') as HTMLElement).textContent = lit || (CYCLE_STAGES[i] === 'check' && p && !p.check && phase >= NUDGE_PHASE) ? values[i] : '';
       });
       note.textContent = fast ? t('cycle.running', { n: Math.round(tk!.stepsPerSec) }) : t('cycle.hint');
     }
@@ -1134,6 +1199,8 @@ export class App {
       return;
     }
     const answered = p.rightCount !== undefined;
+    const checked = !!p.check;
+    practiceList.classList.toggle('checked', checked);
     const summary = [t('practice.step', { step: p.step.toLocaleString(uiLang()) })];
     if (answered && phase >= 3) summary.push(t('practice.sumRight', { right: p.rightCount!, n: p.examples.length }));
     if (phase >= 3) summary.push(t('cycle.measureVal', { loss: p.loss.toFixed(2) }));
@@ -1149,11 +1216,13 @@ export class App {
       const measured = phase >= 3;
       const tgtCell = h('td', { class: 'tgt' }, ...(measured ? ex.letters.map((l) => letterSpan(l)) : [ex.target]));
       const lossCell = h('td', { class: 'loss' }, measured ? lossBar(ex.loss) : '');
-      return h('tr', { class: 'ex' },
+      const cells = [
         h('td', { class: 'example' }, h('span', { class: 'src' }, ex.source), h('span', { class: 'task' }, task)),
         tgtCell,
         answerCell,
-        lossCell);
+        lossCell];
+      if (checked) cells.push(h('td', { class: 'check' }, phase >= 5 && ex.check ? checkCell(ex) : ''));
+      return h('tr', { class: 'ex' }, ...cells);
     });
     practiceList.replaceChildren(
       h('p', { class: 'small step-of' }, summary.join(' · ')),
@@ -1163,10 +1232,13 @@ export class App {
           h('th', {}, t('practice.col.example')),
           h('th', { class: 'data' }, t('practice.col.right')),
           h('th', { class: 'answer' }, t('practice.col.answer')),
-          h('th', { class: 'loss' }, t('practice.col.loss')))),
+          h('th', { class: 'loss' }, t('practice.col.loss')),
+          checked ? h('th', { class: 'check', title: t('practice.checkTip') }, t('practice.col.check')) : '')),
         h('tbody', {}, ...rows)),
       phase >= 3 ? h('p', { class: 'small loss-explain', 'data-test': 'loss-explain' },
-        t('practice.lossExplain', { loss: p.loss.toFixed(2), n: p.letterCount.toLocaleString(uiLang()), b: p.batchSize })) : '');
+        t('practice.lossExplain', { loss: p.loss.toFixed(2), n: p.letterCount.toLocaleString(uiLang()), b: p.batchSize })) : '',
+      checked && phase >= 5 ? h('p', { class: 'small loss-explain', 'data-test': 'check-explain' },
+        t('practice.checkExplain', { b: p.batchSize, before: p.check!.lossBefore.toFixed(3), after: p.check!.lossAfter.toFixed(3), up: p.check!.lettersUp, down: p.check!.lettersDown, step: p.loss.toFixed(2) })) : '');
   }
 
   private renderLoss(): void {

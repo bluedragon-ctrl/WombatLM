@@ -155,10 +155,61 @@ describe('Engine', () => {
     e.handle({ type: 'init', seed: 3 });
     e.handle({ type: 'ask', id: 1, text: 'tygr', lang: ds.languageCodes[0], form: 'female' });
     const a = h.of('answer')[0] as AnswerMsg;
-    expect(a.activations.map((x) => x.name)).toEqual(['enc.in', 'enc0.out', 'dec.in', 'dec0.out']);
+    expect(a.activations.map((x) => x.name)).toEqual(['enc.in', 'enc0.out', 'memory', 'dec.in', 'dec0.out', 'dec.final']);
     const encIn = a.activations[0];
     expect(encIn.T).toBe(a.input.length);
     expect(encIn.data.length).toBe(encIn.T * encIn.d);
+  });
+
+  it('answers carry the rows each token looks up: letter table + position = what goes in', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'step', n: 20 });
+    e.handle({ type: 'ask', id: 1, text: 'tygr', lang: ds.languageCodes[0], form: 'female' });
+    const a = h.of('answer')[0] as AnswerMsg;
+    expect(a.inputIds.map((id) => ds.vocab.tokens[id])).toEqual(a.input);
+    expect(a.vocabSize).toBe(ds.vocab.size);
+    const check = (tok: Float32Array, pos: Float32Array, name: string, T: number) => {
+      const act = a.activations.find((x) => x.name === name)!;
+      expect(tok.length).toBe(T * act.d);
+      for (let i = 0; i < T * act.d; i++) expect(tok[i] + pos[i]).toBeCloseTo(act.data[i], 5);
+    };
+    check(a.lookup.encTok, a.lookup.encPos, 'enc.in', a.input.length);
+    // The writer gets one row per pass: the task token, then every written token but the last.
+    check(a.lookup.decTok, a.lookup.decPos, 'dec.in', a.steps.length);
+  });
+
+  it('a single step while paused is recorded in detail; why explains any number of it', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'step', n: 10 });
+    expect(h.of('stepDetail')).toHaveLength(0); // only for single steps
+    e.handle({ type: 'step', n: 1 });
+    const d = h.of('stepDetail')[0];
+    expect(d.step).toBe(11);
+    expect(d.numbers.total).toBe((h.of('ready')[0] as ReadyMsg).params);
+    expect(d.top.change).toHaveLength(10);
+    expect(Math.abs(d.top.change[0].after - d.top.change[0].before)).toBeCloseTo(d.numbers.max, 6);
+    expect(d.split).toBe(true);
+    const tick = h.of('tick').at(-1) as TickMsg;
+    expect(tick.practice?.check).toBeDefined();
+    expect(tick.practice!.examples.every((x) => x.check !== undefined)).toBe(true);
+
+    const ref = d.top.push[0];
+    e.handle({ type: 'why', id: 5, name: ref.name, index: ref.index });
+    const w = h.of('why')[0];
+    expect(w.id).toBe(5);
+    expect(w.missing).toBeUndefined();
+    expect(w.calc!.after).toBeCloseTo(w.now!, 6);
+    expect(w.shares!.reduce((s, x) => s + x.share, 0)).toBeCloseTo(w.calc!.grad, 6);
+
+    // After another step it is no longer the latest: nothing to explain.
+    e.handle({ type: 'step', n: 10 });
+    e.handle({ type: 'why', id: 6, name: ref.name, index: ref.index });
+    expect(h.of('why')[1].missing).toBe(true);
+    expect((h.of('tick').at(-1) as TickMsg).practice?.check).toBeUndefined();
   });
 
   it('ready lists every matrix with its shape and axis kinds', () => {
