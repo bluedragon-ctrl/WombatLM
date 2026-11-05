@@ -36,7 +36,7 @@ export const EVAL = {
 const SLICE_MS = 12;
 const TICK_MS = 50;
 /** How many examples of the latest batch a tick carries. */
-export const PRACTICE_SAMPLE = 8;
+export const PRACTICE_SAMPLE = 32;
 
 export class Engine {
   dataset: Dataset;

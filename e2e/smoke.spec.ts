@@ -11,8 +11,12 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=learning]')).toContainText(/not learning/);
   await expect(page.locator('[data-test=stamp]')).toContainText(/step 0/);
   await page.click('text=Step ×1');
-  await expect(page.locator('[data-test=practice] li.ex')).toHaveCount(8);
   await expect(page.locator('[data-test=cycle] .stage.lit')).toHaveCount(4, { timeout: 5_000 });
+  // The Practice tab shows the whole batch.
+  await page.click('[data-test=open-practice]');
+  await expect(page.locator('[data-test=practice] li.ex')).toHaveCount(16);
+  await expect(page.locator('[data-test=cycle-practice] .stage.lit')).toHaveCount(4);
+  await page.click('[data-test=tab-forms]');
   await expect(page.locator('[data-test=stamp]')).toContainText(/step 1\b/);
 
   await page.click('[data-test=play]');

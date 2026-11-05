@@ -191,3 +191,12 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 @media (prefers-reduced-motion: reduce) {
   .learning.pulse, .stamp.flash, .word .cursor { animation: none; }
 }
+
+/* Practice tab: the whole latest batch */
+main.practice-main { padding: 14px 20px; max-width: 1240px; }
+.practice-main .learning { margin-top: 0; }
+.practice-main .cycle { max-width: 760px; }
+.practice-main .practice-list { columns: 2; column-gap: 32px; font-size: 14px; }
+.practice-main .practice-list li { break-inside: avoid; }
+.practice-main .practice-list li.step-of { column-span: all; }
+.open-practice { padding: 0; margin-top: 2px; }

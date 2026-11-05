@@ -200,7 +200,7 @@ describe('Engine', () => {
     e.handle({ type: 'step', n: 2 });
     const p = (h.of('tick').at(-1) as TickMsg).practice!;
     expect(p.step).toBe(2);
-    expect(p.examples.length).toBe(8);
+    expect(p.examples.length).toBe(16); // the whole batch (default batch size 16)
     expect(p.examples[0].target.length).toBeGreaterThan(0);
     e.handle({ type: 'pause' });
     expect((h.of('tick').at(-1) as TickMsg).practice).toBeUndefined();

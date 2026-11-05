@@ -20,8 +20,8 @@ import { h } from './dom';
 import { InsideTab } from './inside';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
-type Tab = 'forms' | 'inside';
-const TABS: Tab[] = ['forms', 'inside'];
+type Tab = 'forms' | 'practice' | 'inside';
+const TABS: Tab[] = ['forms', 'practice', 'inside'];
 /** Look-inside requests: at most one in flight, at most this often. */
 const INSPECT_MS = 250;
 /** "Write it slowly": time per letter, and the "reading the animal" pause before the first one. */
@@ -56,8 +56,8 @@ interface AttGrid {
 const tokenLabel = (tok: string, i: number) => (i === 0 ? '✱' : tok === ' ' ? '␣' : tok);
 const SPEEDS: Speed[] = [1, 5, 20, 'max'];
 const SCORE_LINES = ['known', 'pattern', 'partly', 'irregular'] as const;
-/** Examples of the latest batch a tick carries (engine PRACTICE_SAMPLE). */
-const PRACTICE_SHOWN = 8;
+/** Examples of the latest batch a tick carries at most (engine PRACTICE_SAMPLE). */
+const PRACTICE_SHOWN = 32;
 
 const resultKey = (id: string, lang: string, form: string) => `${id}|${lang}|${form}`;
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '–' : `${Math.round(v * 100)} %`);
@@ -315,6 +315,7 @@ export class App {
     }
     this.inspectDirty = false;
     this.lastInspect = performance.now();
+    if (this.tab === 'practice') return; // nothing inside the brain to show there
     const inside = this.tab === 'inside';
     const matrixIds = inside ? this.inside.wanted() : [];
     if (inside && !matrixIds.length) return;
@@ -344,7 +345,9 @@ export class App {
       b.setAttribute('aria-selected', String(b.dataset.tab === tab));
     }
     this.els.formsMain.hidden = tab !== 'forms';
+    this.els.practiceMain.hidden = tab !== 'practice';
     this.els.insideMain.hidden = tab !== 'inside';
+    if (tab === 'practice') this.invalidate('practice');
     if (tab === 'forms') { this.invalidate('loss', 'scores', 'answer'); this.letterMap.draw(); }
     this.requestInspect(true);
   }
@@ -362,11 +365,17 @@ export class App {
     const play = h('button', { class: 'primary', 'data-test': 'play' });
     play.onclick = () => this.send({ type: this.tick?.running ? 'pause' : 'play' });
     const step1 = h('button', {}, t('step1'));
-    step1.onclick = () => {
+    const stepOnce = () => {
       // Paused: show this one step slowly (the four-stage cycle).
       if (!this.tick?.running) this.cycleWanted = true;
       this.send({ type: 'step', n: 1 });
     };
+    step1.onclick = stepOnce;
+    // The Practice tab has its own Play and Step ×1, so a step can be watched there.
+    const play2 = h('button', { class: 'primary', 'data-test': 'play-practice' });
+    play2.onclick = play.onclick;
+    const step1b = h('button', { 'data-test': 'step-practice' }, t('step1'));
+    step1b.onclick = stepOnce;
     const step10 = h('button', {}, t('step10'));
     step10.onclick = () => this.send({ type: 'step', n: 10 });
     const speed = h('select', { 'aria-label': t('speed') });
@@ -413,16 +422,23 @@ export class App {
     const slowBtn = h('button', { class: 'small-btn', 'data-test': 'slow' }, t('slow.button'));
     slowBtn.onclick = () => this.toggleSlow();
     const slowCaption = h('span', { class: 'slow-caption', 'data-test': 'slow-caption', 'aria-live': 'polite' });
+    // The learning badge and the one-step cycle appear on the Forms tab and on the Practice tab.
     const learning = h('div', { class: 'learning off', 'data-test': 'learning' });
-    const cycleStages = CYCLE_STAGES.map((k, i) => h('li', { class: 'stage', 'data-stage': k },
-      h('span', { class: 'num' }, String(i + 1)),
-      h('span', { class: 'what' }),
-      h('span', { class: 'val' })));
-    const seeChange = h('button', { class: 'link see-change' }, t('cycle.seeChange'));
-    seeChange.onclick = () => { this.inside.setMode('delta'); this.setTab('inside'); };
-    cycleStages[3].append(seeChange);
-    const cycle = h('ol', { class: 'cycle', 'data-test': 'cycle', 'aria-label': t('cycle.title') }, ...cycleStages);
-    const cycleNote = h('p', { class: 'small cycle-note' });
+    const learning2 = h('div', { class: 'learning off', 'data-test': 'learning-practice' });
+    const makeCycle = (test: string) => {
+      const stages = CYCLE_STAGES.map((k, i) => h('li', { class: 'stage', 'data-stage': k },
+        h('span', { class: 'num' }, String(i + 1)),
+        h('span', { class: 'what' }),
+        h('span', { class: 'val' })));
+      const seeChange = h('button', { class: 'link see-change' }, t('cycle.seeChange'));
+      seeChange.onclick = () => { this.inside.setMode('delta'); this.setTab('inside'); };
+      stages[3].append(seeChange);
+      return { el: h('ol', { class: 'cycle', 'data-test': test, 'aria-label': t('cycle.title') }, ...stages), stages, note: h('p', { class: 'small cycle-note' }) };
+    };
+    const cycleA = makeCycle('cycle');
+    const cycleB = makeCycle('cycle-practice');
+    const openPractice = h('button', { class: 'link small open-practice', 'data-test': 'open-practice' }, t('practice.open'));
+    openPractice.onclick = () => this.setTab('practice');
     const practiceList = h('ul', { class: 'practice-list', 'data-test': 'practice' });
     const practiceHelp = help(t('practice.help', { shown: PRACTICE_SHOWN, batch: 16 }));
     const attention = h('div', { class: 'att-grids', 'data-test': 'attention' });
@@ -462,19 +478,29 @@ export class App {
     const formsMain = this.buildForms({
       play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, barsWrap,
       attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals,
-      stamp, liveLabel, slowBtn, slowCaption, learning, cycle, cycleNote, practiceList, practiceHelp,
+      stamp, liveLabel, slowBtn, slowCaption, learning, cycle: cycleA.el, cycleNote: cycleA.note, openPractice,
     });
+    const practiceMain = h('main', { class: 'practice-main', hidden: true },
+      h('section', { class: 'panel phase build' },
+        h('div', { class: 'phase-head' }, h('h2', {}, t('practice.title')), practiceHelp),
+        h('p', { class: 'small' }, t('build.help')),
+        h('div', { class: 'row' }, play2, step1b, learning2),
+        cycleB.el,
+        cycleB.note,
+        practiceList));
     const insideMain = h('main', { class: 'inside-main', hidden: true }, this.inside.el);
 
     this.root.replaceChildren(
       h('header', {}, h('h1', {}, t('title')), h('span', { class: 'sub' }, t('subtitle')), tabs, params, uiSwitch),
       error,
       formsMain,
+      practiceMain,
       insideMain,
     );
     return {
       play, speed, seed, status, input, langPick, formPick, hint, output, bars, barsWrap, attention, mapCanvas, mapNote, tabs, formsMain, insideMain,
-      stamp, stampText, askAgain, slowBtn, slowCaption, learning, cycleStages, cycleNote, practiceList, practiceHelp,
+      stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp, practiceMain,
+      playButtons: [play, play2], learnings: [learning, learning2], cycles: [cycleA, cycleB],
       lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
     };
   }
@@ -482,7 +508,7 @@ export class App {
   private buildForms(parts: Record<string, HTMLElement>) {
     const { play, step1, step10, speed, seed, reset, expertBox, expertPanel, status, input, langPick, formPick, hint, output, barsWrap,
       attention, mapCanvas, mapNote, mapLegend, lossCanvas, scoreCanvas, scoreTable, filters, animals,
-      stamp, liveLabel, slowBtn, slowCaption, learning, cycle, cycleNote, practiceList, practiceHelp } = parts;
+      stamp, liveLabel, slowBtn, slowCaption, learning, cycle, cycleNote, openPractice } = parts;
     return h('main', { class: 'forms' },
         h('aside', { class: 'left' },
           h('section', { class: 'panel controls phase build' },
@@ -494,10 +520,10 @@ export class App {
             expertPanel,
             status,
             learning,
-            h('div', { class: 'phase-head sub' }, h('h3', {}, t('practice.title')), practiceHelp),
+            h('div', { class: 'phase-head sub' }, h('h3', {}, t('cycle.title'))),
             cycle,
             cycleNote,
-            practiceList),
+            openPractice),
           h('section', { class: 'panel list' }, h('h2', {}, t('animals')), filters, animals)),
         h('section', { class: 'centre' },
           h('section', { class: 'panel askbox phase ask' },
@@ -582,7 +608,7 @@ export class App {
 
   private renderControls(): void {
     const tk = this.tick;
-    this.els.play.textContent = tk?.running ? t('pause') : t('play');
+    for (const b of this.els.playButtons) b.textContent = tk?.running ? t('pause') : t('play');
     if (!tk) return;
     const parts = [t('stepLabel', { step: tk.step.toLocaleString(uiLang()) })];
     if (tk.stepsPerSec > 0) parts.push(t('stepsPerSec', { n: tk.stepsPerSec.toFixed(0) }));
@@ -749,7 +775,7 @@ export class App {
   private renderPractice(): void {
     if (!this.ready) return;
     this.practiceShownAt = performance.now();
-    const { learning, cycleStages, cycleNote, practiceList, practiceHelp } = this.els;
+    const { learnings, cycles, practiceList, practiceHelp } = this.els;
     const p = this.practice;
     const tk = this.tick;
     const n = this.ready.params.toLocaleString(uiLang());
@@ -759,13 +785,15 @@ export class App {
     // Badge: is it learning right now?
     const glowing = !tk?.running && !!p && performance.now() - this.learnedAt < LEARN_GLOW_MS && phase >= CYCLE_STAGES.length;
     const on = !!tk?.running || glowing || !!this.cycle;
-    learning.textContent = !on ? t('learning.off')
-      : fast ? t('learning.fast', { n, sps: Math.round(tk!.stepsPerSec) }) : t('learning.on', { n });
-    learning.classList.toggle('on', on);
-    learning.classList.toggle('off', !on);
-    learning.classList.toggle('busy', on && fast);
-    if (this.practiceNew && on && !fast && phase >= CYCLE_STAGES.length) retrigger(learning, 'pulse');
-    if (fast) learning.classList.remove('pulse');
+    for (const learning of learnings) {
+      learning.textContent = !on ? t('learning.off')
+        : fast ? t('learning.fast', { n, sps: Math.round(tk!.stepsPerSec) }) : t('learning.on', { n });
+      learning.classList.toggle('on', on);
+      learning.classList.toggle('off', !on);
+      learning.classList.toggle('busy', on && fast);
+      if (this.practiceNew && on && !fast && phase >= CYCLE_STAGES.length) retrigger(learning, 'pulse');
+      if (fast) learning.classList.remove('pulse');
+    }
     this.practiceNew = false;
 
     // The four stages of one step.
@@ -775,15 +803,18 @@ export class App {
       t('cycle.measureVal', { loss: p.loss.toFixed(2) }),
       t('cycle.nudgeVal', { n }),
     ] : ['', '', '', ''];
-    cycleStages.forEach((el, i) => {
-      const lit = !!p && phase > i;
-      el.classList.toggle('lit', lit);
-      el.classList.toggle('current', !!this.cycle && phase === i + 1);
-      (el.querySelector('.what') as HTMLElement).textContent = t(`cycle.${CYCLE_STAGES[i]}`, { n: p?.batchSize ?? tk?.batchSize ?? 16 });
-      (el.querySelector('.num') as HTMLElement).textContent = this.cycle && phase === i + 1 ? '▶' : String(i + 1);
-      (el.querySelector('.val') as HTMLElement).textContent = lit ? values[i] : '';
-    });
-    cycleNote.textContent = fast ? t('cycle.running', { n: Math.round(tk!.stepsPerSec) }) : t('cycle.hint');
+    for (const { stages, note } of cycles) {
+      stages.forEach((el, i) => {
+        const lit = !!p && phase > i;
+        el.classList.toggle('lit', lit);
+        el.classList.toggle('current', !!this.cycle && phase === i + 1);
+        (el.querySelector('.what') as HTMLElement).textContent = t(`cycle.${CYCLE_STAGES[i]}`, { n: p?.batchSize ?? tk?.batchSize ?? 16 });
+        (el.querySelector('.num') as HTMLElement).textContent = this.cycle && phase === i + 1 ? '▶' : String(i + 1);
+        (el.querySelector('.val') as HTMLElement).textContent = lit ? values[i] : '';
+      });
+      note.textContent = fast ? t('cycle.running', { n: Math.round(tk!.stepsPerSec) }) : t('cycle.hint');
+    }
+    if (this.tab !== 'practice') return; // the examples are drawn only while their tab is visible
     practiceHelp.querySelector('p')!.textContent = t('practice.help', { shown: Math.min(PRACTICE_SHOWN, p?.batchSize ?? 16), batch: p?.batchSize ?? 16 });
 
     // The examples (revealed with the stages: answers, then guesses, then right/wrong).

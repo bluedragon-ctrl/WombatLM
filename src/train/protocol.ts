@@ -110,7 +110,7 @@ export interface TickMsg {
   /** Raw batch losses of every step since the previous tick. */
   losses: LossPoint[];
   /**
-   * What the latest training step practised on (up to 8 examples with the
+   * What the latest training step practised on (up to 32 examples with the
    * model's guesses). Only present when there was a new step since the
    * previous tick.
    */

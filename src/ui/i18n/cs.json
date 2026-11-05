@@ -164,5 +164,7 @@
   "slow.reading": "čte zvíře „{word}“…",
   "slow.writing": "čte zvíře → píše písmeno {k} z {n}",
   "slow.ending": "čte zvíře → rozhoduje, že slovo končí ⏎",
-  "slow.done": "hotovo: „{word}“"
+  "slow.done": "hotovo: „{word}“",
+  "tab.practice": "Procvičování",
+  "practice.open": "ukaž všechny příklady, které procvičuje →"
 }

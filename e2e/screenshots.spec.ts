@@ -87,6 +87,14 @@ test('learning vs answering', async ({ page }) => {
   await expect(page.locator('[data-test=cycle] .stage.current')).toHaveCount(0, { timeout: 5_000 });
   await page.locator('.panel.controls').screenshot({ path: `${LDIR}/7-cycle-done.png` });
   await page.locator('[data-test=stamp]').screenshot({ path: `${LDIR}/8-stamp-after-step.png` });
+  // The Practice tab: the whole batch, watched one step at a time.
+  await page.click('[data-test=tab-practice]');
+  await page.locator('main.practice-main').screenshot({ path: `${LDIR}/10-practice-tab.png` });
+  await page.click('[data-test=step-practice]');
+  await expect(page.locator('[data-test=cycle-practice] .stage.current[data-stage=guess]')).toBeVisible();
+  await page.locator('main.practice-main').screenshot({ path: `${LDIR}/11-practice-tab-guess.png` });
+  await expect(page.locator('[data-test=cycle-practice] .stage.current')).toHaveCount(0, { timeout: 5_000 });
+  await page.click('[data-test=tab-forms]');
   // Write it slowly.
   await page.click('[data-test=slow]');
   await expect(page.locator('[data-test=slow-caption]')).toContainText(/letter 3 of/, { timeout: 5_000 });
