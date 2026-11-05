@@ -174,3 +174,14 @@ User: "Maybe there should be one tab Model learning, because this is really part
 ## "Model" instead of "brain" (user request)
 
 User: "use 'model' everywhere instead of 'brain'". All UI text now says model: the subtitle ("A tiny model learns animal word forms"), ① Build the model, ② Ask the model, Inside the model, the step stamp, help texts and tooltips. Czech: mozek → model with the same declension (mozku → modelu, mozkem → modelem); both are masculine inanimate, so the adjectives and verbs around them stay as they were. Code comments and test names were changed too, so the codebase uses one word. Older entries in this file keep "brain" as written at the time.
+
+## Tokens on screen (user request)
+
+The user asked to show how tokenization works: how words become tokens, what tokens look like, and what they look like in an answer. Steps 1 and 2 of the proposal; step 3 (vocabulary list, a toy subword tokenizer for comparison with big models) is left for later.
+
+- **Ask tab, token strip** (`renderTokens` in `app.ts`): "The model reads" (task token + letters) and "It writes" (letters + end), each chip with its token number. Built only from the answer message and `ready.tokens`, no new worker messages. Answer tokens are linked to the guess-bar columns by hover; copied letters are tinted like the "copied" label. "Show only the numbers" turns chips into plain ids. Letters without a token show a red `?` chip and a warning (they become `<unk>`).
+- **Learning data tab, one learning example** (`renderExample` in `dataTab.ts`): clicking a word now shows it as tokens instead of jumping to the Ask tab (a button still asks it). Three rows: what it reads, what it is shown of the answer so far, what it must guess next: the same answer shifted by one ("predict the next token", teacher forcing). The note ties the number of guesses to the loss. Never-seen animals show only what it would read, with a note that it never learns from them. The panel starts with a word-form example, so it is never empty.
+- **Plain names for special tokens** (defaults the user accepted): "end", "?", "Czech, female"; the raw token (`<eos>`, `<cs:female>`) is in the tooltip and on the chip in Expert mode. Numbers are shown small on every chip by default.
+- The note says plainly that big chat models use pieces of words (~100,000 tokens) while this one uses single letters (55 tokens).
+- Shared helpers in `src/ui/tokens.ts`; `tokenizeWord` is tested to give the same ids as `Vocab.encodeWord`.
+

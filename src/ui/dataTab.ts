@@ -5,12 +5,18 @@
  * too, greyed out: they are kept aside to test it, and their answers stay
  * hidden until revealed (like on the Ask tab).
  *
+ * Clicking a word shows that learning example as tokens, the way the model
+ * trains on it: what it reads, what it is shown of the answer so far, and
+ * the next token it must guess at each step.
+ *
  * This mirrors the trainer (`FormTrainer.defaultMix`): word-form tasks and
  * "copy the name" tasks of train-split animals, main answers only.
  */
 import type { AnimalInfo, ReadyMsg } from '../train/protocol';
 import { h } from './dom';
 import { t, uiLang } from './i18n';
+import { learningExample, Tok, tokenChip, tokenIndex, tokenizeWord, tokenName, toTok } from './tokens';
+import { targetToken } from '../nn/vocab';
 
 type DataFilter = 'all' | 'train' | 'unseen';
 const FILTERS: DataFilter[] = ['all', 'train', 'unseen'];
@@ -53,8 +59,12 @@ export class DataTab {
   private langPick: HTMLElement;
   private filterPick: HTMLElement;
   private table: HTMLElement;
+  private example: HTMLElement;
+  private expert = false;
+  /** The learning example shown as tokens. */
+  private sel?: { id: string; lang: string; form: string };
 
-  /** `onAsk`: a word was clicked; ask the model that question on the Ask tab. */
+  /** `onAsk`: "ask the model this question" was pressed; ask it on the Ask tab. */
   constructor(private onAsk: (text: string, lang: string, form: string) => void) {
     this.summary = h('div', { class: 'data-summary', 'data-test': 'data-summary' });
     this.langPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('language') });
@@ -69,7 +79,8 @@ export class DataTab {
     const revealBox = h('input', { type: 'checkbox', 'data-test': 'data-reveal' });
     revealBox.onchange = () => { this.reveal = revealBox.checked; this.render(); };
     this.table = h('div', { class: 'data-table', 'data-test': 'data-table' });
-    this.el = h('section', { class: 'panel' },
+    this.example = h('section', { class: 'panel example compact-tokens', 'data-test': 'example' });
+    const tablePanel = h('section', { class: 'panel' },
       h('div', { class: 'phase-head' }, h('h2', {}, t('data.title')),
         h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), h('p', {}, t('data.help')))),
       h('p', { class: 'practice-explain' }, t('data.explain')),
@@ -81,11 +92,18 @@ export class DataTab {
         h('span', { class: 'missing' }, `— ${t('data.legend.missing')}`),
         h('span', { class: 'kept' }, t('data.legend.kept'))),
       this.table);
+    this.el = h('div', { class: 'data-layout' }, tablePanel, this.example);
+  }
+
+  setExpert(on: boolean): void {
+    this.expert = on;
+    this.render();
   }
 
   setReady(ready: ReadyMsg): void {
     this.ready = ready;
     if (!ready.languages.some((l) => l.code === this.lang)) this.lang = ready.languages[0].code;
+    if (!this.sel || !ready.animals.some((a) => a.id === this.sel!.id)) this.sel = this.firstExample(ready);
     this.langPick.replaceChildren(...ready.languages.map((l) => {
       const b = h('button', { 'data-lang': l.code }, l.name[uiLang()] ?? l.code);
       b.onclick = () => { this.lang = l.code; this.render(); };
@@ -122,8 +140,9 @@ export class DataTab {
     const rows = list.map((a) => {
       const kept = a.split === 'unseen';
       const word = (text: string, form: string, cls: string, title: string) => {
-        const cell = h('td', { class: `cell ${cls}`, title }, text);
-        cell.onclick = () => this.onAsk(a.names[lang], lang, form);
+        const sel = this.sel?.id === a.id && this.sel.lang === lang && this.sel.form === form;
+        const cell = h('td', { class: `cell ${cls}${sel ? ' sel' : ''}`, title }, text);
+        cell.onclick = () => { this.sel = { id: a.id, lang, form }; this.render(); };
         return cell;
       };
       const cells = forms.map((f) => {
@@ -144,6 +163,77 @@ export class DataTab {
           h('th', {}, t('data.col.name')),
           ...forms.map((f) => h('th', {}, t(`form.${f}`))))),
         h('tbody', {}, ...rows)));
+    this.renderExample(ready);
+  }
+
+  /** Start with a word-form example of the first animal it learns from, so the panel is never empty. */
+  private firstExample(ready: ReadyMsg): DataTab['sel'] {
+    const lang = this.lang;
+    const train = ready.animals.filter((a) => a.split === 'train' && a.names[lang])
+      .sort((a, b) => a.names[lang].localeCompare(b.names[lang], lang));
+    for (const form of ['female', ...ready.forms.filter((f) => f !== 'name')]) {
+      const a = train.find((x) => x.forms[lang]?.[form]);
+      if (a) return { id: a.id, lang, form };
+    }
+    return train[0] && { id: train[0].id, lang, form: 'name' };
+  }
+
+  /** The selected learning example as tokens: reads, shown so far, must guess next. */
+  private renderExample(ready: ReadyMsg): void {
+    const sel = this.sel;
+    const a = sel && ready.animals.find((x) => x.id === sel.id);
+    if (!sel || !a?.names[sel.lang]) {
+      this.example.replaceChildren(h('h2', {}, t('example.title')), h('p', { class: 'small' }, t('example.pick')));
+      return;
+    }
+    const { lang, form } = sel;
+    const index = tokenIndex(ready.tokens);
+    const langName = (code: string) => ready.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
+    const opts = { expert: this.expert, langName };
+    const source = a.names[lang];
+    const answer = form === 'name' ? source : a.forms[lang]?.[form] ?? '';
+    const kept = a.split === 'unseen';
+    const chips = (toks: Tok[]) => h('span', { class: 'chips' }, ...toks.map((tok) => tokenChip(tok, opts)));
+    const row = (label: string, el: HTMLElement) => h('div', { class: 'token-row stacked' }, h('span', { class: 'token-label small' }, label), el);
+    const ask = h('button', { 'data-test': 'example-ask' }, t('example.ask'));
+    ask.onclick = () => this.onAsk(source, lang, form);
+    const shownAnswer = kept && !this.reveal && form !== 'name' ? '?' : answer;
+    const parts: (Node | string)[] = [
+      h('div', { class: 'phase-head' }, h('h2', {}, t('example.title'))),
+      h('p', { class: 'example-question' }, t('example.question', { lang: langName(lang), form: t(`form.${form}`), from: source, to: shownAnswer })),
+    ];
+    if (kept || !answer) {
+      parts.push(row(t('example.reads'), chips([toTok(targetToken(lang, form), index), ...tokenizeWord(source, index)])),
+        h('p', { class: 'small kept-note' }, t('example.kept')));
+    } else {
+      const ex = learningExample(index, lang, form, source, answer);
+      const name = (tok: Tok) => tokenName(tok.token, opts);
+      const caption = h('p', { class: 'small example-caption', 'data-test': 'example-caption' });
+      const cells: HTMLElement[][] = [];
+      const highlight = (i: number | null) => {
+        cells.forEach((col, j) => col.forEach((c) => c.classList.toggle('hl', j === i)));
+        caption.textContent = i === null ? '' : t('example.guessTip', { sofar: ex.shown.slice(0, i + 1).map(name).join(' '), next: name(ex.guess[i]) });
+      };
+      const col = (i: number, content: Node | string, cls: string) => {
+        const td = h('td', { class: cls }, content);
+        td.onmouseenter = () => highlight(i);
+        td.onmouseleave = () => highlight(null);
+        (cells[i] ??= []).push(td);
+        return td;
+      };
+      const n = ex.shown.length;
+      const label = (text: string) => h('tr', {}, h('th', { class: 'small', colspan: n }, text));
+      const grid = h('div', { class: 'example-scroll' }, h('table', { class: 'example-grid', 'data-test': 'example-grid' },
+        label(t('example.shown')),
+        h('tr', {}, ...ex.shown.map((tok, i) => col(i, tokenChip(tok, opts), 'shown'))),
+        h('tr', {}, ...ex.shown.map((_, i) => col(i, '↓', 'arrow'))),
+        h('tr', {}, ...ex.guess.map((tok, i) => col(i, tokenChip(tok, opts), 'guess'))),
+        label(t('example.guess'))));
+      parts.push(row(t('example.reads'), chips(ex.reads)), grid, caption,
+        h('p', { class: 'small' }, t('example.explain', { n: ex.guess.length })));
+    }
+    parts.push(h('div', { class: 'row' }, ask));
+    this.example.replaceChildren(...parts);
   }
 
   private matches(a: AnimalInfo, lang: string): boolean {

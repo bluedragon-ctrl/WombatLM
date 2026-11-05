@@ -23,6 +23,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 | M3 seeing inside | **Done** (merged into `main`). Tabs (Forms · Inside the model), attention grids linked to the guess bars, letter map (PCA + Procrustes + glide), weight / change / gradient heatmaps, "follow the signal" (expert). |
 | Learning vs answering | **Done in a PR** (user feedback after M3): ① Build / ② Ask phases, Practice tab (now part of Model learning) with the latest batch: learning data vs what it answered before the step (`tick.practice`, `watchPractice`), frozen-brain step label, answer waits while training (+ "keep answering" toggle), Write it slowly, one-step cycle. See DECISIONS. |
 | Tab reorganisation (user, in steps) | **Steps 1–3 done in a PR.** Tabs now follow the story: Learning data (opens first, `src/ui/dataTab.ts`) · Model learning (build controls, cycle, batch, loss, letter map) · Ask the model (question, answer, guesses, attention; status line, no training controls) · Inside the model · Test (every animal, tested only while open: `watchTests`). Expert checkbox in the header. All UI text says "model" (not "brain"). Further steps to come from the user. See DECISIONS. |
+| Tokens on screen (user) | **Steps 1–2 done** (branch `claude/sweet-einstein-p7md6p`). Ask tab: token strip (reads / writes, numbers, `<unk>` warning, hover linked to the guess bars). Learning data tab: clicking a word shows that learning example as tokens (reads / shown so far / guess next). Helpers in `src/ui/tokens.ts`. Step 3 (vocabulary list, toy subword tokenizer comparison) proposed, not started. See DECISIONS. |
 | M4 time travel | **Next.** |
 | M5–M7 | Not started. |
 
@@ -55,7 +56,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 ## Useful commands
 
 ```
-npm test                                   # vitest (84 tests)
+npm test                                   # vitest (88 tests)
 npm run build                              # typecheck + vite build
 npm run e2e                                # Playwright smoke test (builds + previews on :4173)
 npm run screenshots                        # PR screenshots (docs/screenshots/m3, docs/screenshots/learn-vs-answer)
