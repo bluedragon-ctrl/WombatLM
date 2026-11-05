@@ -21,6 +21,8 @@ async function shoot(page: Page, when: string) {
   await page.click('[data-test=tab-ask]');
   await page.fill('[data-test=ask]', 'buvol');
   await page.locator('[data-form=female]').click();
+  await page.click('[data-test=answer-now]');
+  await expect(page.locator('[data-test=output] .from')).toContainText('buvol');
   await page.waitForTimeout(300);
   await page.locator('.panel.askbox').screenshot({ path: `${DIR}/${when}-guesses.png` });
   // Link a guess column to the attention rows by hovering it.
@@ -81,6 +83,8 @@ test('learning vs answering', async ({ page }) => {
   await page.click('[data-test=tab-ask]');
   await page.fill('[data-test=ask]', 'tygr');
   await page.locator('[data-form=female]').click();
+  await page.click('[data-test=answer-now]');
+  await expect(page.locator('[data-test=output] .from')).toContainText('tygr');
   await page.waitForTimeout(300);
   await page.click('[data-test=tab-learn]');
   await page.locator('.panel.controls').screenshot({ path: `${LDIR}/1-build-step0.png` });
@@ -115,9 +119,9 @@ test('learning vs answering', async ({ page }) => {
   await page.locator('main.learn-main').screenshot({ path: `${LDIR}/10-practice-tab.png` });
   await page.click('[data-test=tab-ask]');
   await page.locator('[data-test=stamp]').screenshot({ path: `${LDIR}/8-stamp-after-step.png` });
-  // Write it slowly.
-  await page.click('[data-test=slow]');
-  await expect(page.locator('[data-test=slow-caption]')).toContainText(/letter 3 of/, { timeout: 5_000 });
+  // Answer slowly.
+  await page.click('[data-test=answer-slow]');
+  await expect(page.locator('[data-test=slow-caption]')).toContainText(/letter 3 of/, { timeout: 8_000 });
   await page.locator('main.ask-main').screenshot({ path: `${LDIR}/9-write-slowly.png` });
   // The Test tab: every animal tested.
   await page.click('[data-test=tab-test]');

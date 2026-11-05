@@ -35,8 +35,8 @@ const TABS: Tab[] = ['data', 'learn', 'ask', 'inside', 'test'];
 /** Look-inside requests: at most one in flight, at most this often. */
 const INSPECT_MS = 250;
 /** "Write it slowly": time per letter, and the "reading the animal" pause before the first one. */
-const SLOW_MS = 400;
-const SLOW_READ_MS = 700;
+const SLOW_MS = 1100;
+const SLOW_READ_MS = 1400;
 /** One-step learning cycle: time each stage stays lit before the next one. */
 const CYCLE_MS = 700;
 /** At high speeds the practice strip changes at most this often (so it can be read at all). */
@@ -145,6 +145,8 @@ export class App {
   private stampFlash = false;
   /** "Write it slowly" replay of one answer: how many letters are shown so far. */
   private slow: { answer: AnswerMsg; shown: number; done: boolean; timer: number } | null = null;
+  /** "Answer slowly" was pressed: write the next answer letter by letter. */
+  private slowWanted = false;
   /** One-step learning cycle animation (stage 1..4), started by Step ×1 while paused. */
   private cycle: { phase: number; timer: number } | null = null;
   private cycleWanted = false;
@@ -251,6 +253,7 @@ export class App {
           // Same question, new model: the answer refreshed because the model changed.
           if (prev && prev.step !== msg.step && prev.text === msg.text && prev.lang === msg.lang && prev.form === msg.form) this.stampFlash = true;
           this.answer = msg;
+          if (this.slowWanted) { this.slowWanted = false; this.startSlow(msg); }
           this.invalidate('answer', 'stamp');
           this.inside.setAnswer(msg);
           if (this.tab === 'inside') this.inside.shown();
@@ -327,11 +330,20 @@ export class App {
     this.cycle = null;
   }
 
-  /** "Write it slowly": reveal the current answer one letter at a time. */
-  private toggleSlow(): void {
-    if (this.slow) { this.stopSlow(); return; }
-    const a = this.answer;
-    if (!a) return;
+  /** The two answer buttons: the whole answer at once, or written letter by letter. */
+  private answerNow(slowly: boolean): void {
+    if (slowly && this.slow) { this.stopSlow(); return; }
+    if (!this.question.text.trim()) { this.els.input.focus(); return; }
+    this.stopSlow();
+    this.slowWanted = slowly;
+    this.revealed = false;
+    this.ask();
+    this.invalidate('answer');
+  }
+
+  /** "Answer slowly": reveal an answer one letter at a time. */
+  private startSlow(a: AnswerMsg): void {
+    this.stopSlow();
     const s = { answer: a, shown: 0, done: false, timer: 0 };
     this.slow = s;
     const next = () => {
@@ -353,6 +365,7 @@ export class App {
   }
 
   private stopSlow(): void {
+    this.slowWanted = false;
     if (!this.slow) return;
     window.clearTimeout(this.slow.timer);
     this.slow = null;
@@ -514,11 +527,25 @@ export class App {
     goLearn.onclick = () => this.setTab('learn');
     const askStatus = h('div', { class: 'ask-status small', 'data-test': 'ask-status' }, askStatusText, ' ', goLearn);
 
-    const input = h('input', { type: 'text', class: 'ask', placeholder: t('askPlaceholder'), spellcheck: 'false', 'data-test': 'ask' });
+    const input = h('input', { type: 'text', id: 'ask-word', class: 'ask', placeholder: t('askPlaceholder'), spellcheck: 'false', autocomplete: 'off', 'data-test': 'ask' });
     input.oninput = () => this.setQuestion({ text: input.value }, true);
+    input.onkeydown = (e) => { if (e.key === 'Enter') this.answerNow(false); };
     const langPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('language') });
     const formPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('form') });
-    const hint = h('div', { class: 'hint' });
+    // Under the word: is it an animal from the data, in this language? (before answering)
+    const hint = h('div', { class: 'hint word-hint', 'data-test': 'word-hint', 'aria-live': 'polite' });
+    const answerNowBtn = h('button', { class: 'primary big', 'data-test': 'answer-now', title: t('ask.nowTip') }, t('ask.now'));
+    answerNowBtn.onclick = () => this.answerNow(false);
+    const slowBtn = h('button', { class: 'big', 'data-test': 'answer-slow', title: t('ask.slowTip') }, t('ask.slow'));
+    slowBtn.onclick = () => this.answerNow(true);
+    const field = (label: string, control: HTMLElement, ...rest: HTMLElement[]) =>
+      h('div', { class: 'ask-field' }, h('span', { class: 'ask-label' }, label), h('div', { class: 'ask-control' }, control, ...rest));
+    const askForm = h('div', { class: 'ask-form' },
+      field(t('ask.step.lang'), langPick),
+      field(t('ask.step.word'), input, hint),
+      field(t('ask.step.form'), formPick),
+      h('div', { class: 'ask-buttons' }, answerNowBtn, slowBtn));
+    const prompt = h('p', { class: 'ask-prompt', 'data-test': 'ask-prompt' }, t('ask.prompt'));
     const output = h('div', { class: 'output', 'data-test': 'output' });
     // Built once: it updates on every tick, and a rebuilt button would swallow clicks.
     const stampText = h('span');
@@ -554,9 +581,13 @@ export class App {
       this.inside.scrollToExplain();
     };
     const barsWrap = h('div', { class: 'bars-wrap' }, bars);
-    const slowBtn = h('button', { class: 'small-btn', 'data-test': 'slow' }, t('slow.button'));
-    slowBtn.onclick = () => this.toggleSlow();
-    const slowCaption = h('span', { class: 'slow-caption', 'data-test': 'slow-caption', 'aria-live': 'polite' });
+    // Everything about one answer: hidden until there is an answer to the question on screen.
+    const results = h('div', { class: 'ask-results' },
+      tokensPanel,
+      h('div', { class: 'row guess-head' }, h('h2', {}, t('guessBars'))),
+      barsWrap,
+      h('p', { class: 'small', 'data-test': 'bars-hint' }, t('ask.lookInside')));
+    const slowCaption = h('div', { class: 'slow-caption', 'data-test': 'slow-caption', 'aria-live': 'polite' });
     const learning = h('div', { class: 'learning off', 'data-test': 'learning' });
     const makeCycle = (test: string) => {
       const stages = CYCLE_STAGES.map((k, i) => h('li', { class: 'stage', 'data-stage': k },
@@ -572,6 +603,7 @@ export class App {
     const practiceList = h('div', { class: 'practice-table', 'data-test': 'practice' });
     const practiceHelp = help(t('practice.help', { shown: PRACTICE_SHOWN, batch: 16 }));
     const attention = h('div', { class: 'att-grids', 'data-test': 'attention' });
+    const attPrompt = h('p', { class: 'ask-prompt small', hidden: true }, t('att.prompt'));
     const mapCanvas = h('canvas', { class: 'letter-map', 'data-test': 'letter-map' });
     const mapNote = h('p', { class: 'small map-note' });
     const mapPick = h('div', { class: 'map-pick', 'data-test': 'map-pick', 'aria-live': 'polite' });
@@ -648,16 +680,16 @@ export class App {
       h('section', { class: 'panel askbox phase ask' },
         h('div', { class: 'phase-head' }, h('h2', {}, t('ask.title')), help(t('ask.help'))),
         askStatus,
-        h('div', { class: 'row' }, input, langPick),
-        formPick, hint, output,
+        askForm,
+        slowCaption,
+        prompt,
+        output,
         h('div', { class: 'stamp-row' }, stamp),
-        tokensPanel,
-        h('div', { class: 'row guess-head' }, h('h2', {}, t('guessBars')), slowBtn, slowCaption),
-        barsWrap,
-        h('p', { class: 'small', 'data-test': 'bars-hint' }, t('ask.lookInside'))),
+        results),
       h('section', { class: 'panel attention' },
         h('h2', {}, t('att.title')),
         h('p', { class: 'small' }, t('att.help')),
+        attPrompt,
         attention));
     const insideMain = h('main', { class: 'inside-main', hidden: this.tab !== 'inside' }, this.inside.el);
     const dataMain = h('main', { class: 'data-main', hidden: this.tab !== 'data' }, this.dataTab.el);
@@ -684,7 +716,7 @@ export class App {
     return {
       play, speed, seed, status, goalBar, goalNote, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, tokenRows, tokenNote, attention, mapCanvas, mapNote, mapPick, tabs,
       dataMain, learnMain, askMain, insideMain, testMain, testLangPick, testWhen,
-      stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp,
+      stamp, stampText, askAgain, slowBtn, answerNowBtn, slowCaption, prompt, results, attPrompt, practiceList, practiceHelp,
       playButtons: [play], learnings: [learning], cycles: [cycleA],
       lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
     };
@@ -711,24 +743,36 @@ export class App {
   /** A word clicked on another tab: ask it on the Ask tab. */
   private askOnAskTab(q: Partial<App['question']>): void {
     this.setTab('ask');
-    this.setQuestion(q);
+    this.setQuestion(q, false, true);
   }
 
-  private setQuestion(q: Partial<App['question']>, typed = false): void {
+  /**
+   * A new question (language, word or form). It is answered only when asked:
+   * by the Answer buttons, or right away for a word clicked on another tab.
+   */
+  private setQuestion(q: Partial<App['question']>, typed = false, answer = false): void {
     Object.assign(this.question, q);
-    // Forms stay within one language: if the typed word is an animal of
-    // another language, switch to it.
-    if (typed && this.ready) {
-      const w = this.question.text.trim().toLowerCase().normalize('NFC');
-      const here = this.ready.animals.some((a) => a.names[this.question.lang] === w);
-      const other = here ? undefined : this.ready.languages.find((l) => this.ready!.animals.some((a) => a.names[l.code] === w));
-      if (other) this.question.lang = other.code;
-    }
     if (!typed) this.els.input.value = this.question.text;
     this.revealed = false;
     this.stopSlow();
-    this.ask();
-    this.invalidate('answer', 'animals');
+    if (answer) this.ask();
+    else if (this.answer) {
+      // The answer on screen was for another question: take it away, and drop any reply on its way.
+      this.answer = undefined;
+      this.askId++;
+      this.askDirty = false;
+    }
+    this.invalidate('answer', 'stamp', 'animals');
+  }
+
+  /** The typed word: an animal of the chosen language, of another language, or not from the data. */
+  private wordKind(): { kind: 'empty' | 'known' | 'free' | 'other'; lang?: string } {
+    const w = this.question.text.trim().toLowerCase().normalize('NFC');
+    if (!w || !this.ready) return { kind: 'empty' };
+    const animals = this.ready.animals;
+    if (animals.some((a) => a.names[this.question.lang] === w)) return { kind: 'known' };
+    const other = this.ready.languages.find((l) => animals.some((a) => a.names[l.code] === w));
+    return other ? { kind: 'other', lang: other.code } : { kind: 'free' };
   }
 
   // -------------------------------------------------------------------------
@@ -786,11 +830,27 @@ export class App {
     if (document.activeElement !== input) input.value = this.question.text;
     for (const b of langPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.lang === this.question.lang);
     for (const b of formPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.form === this.question.form);
+    const langName = (code: string) => this.ready?.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
+    this.renderWordHint(hint, langName);
+    const hasText = !!this.question.text.trim();
+    this.els.answerNowBtn.disabled = !hasText;
+    this.els.slowBtn.disabled = !hasText && !this.slow;
+    this.els.slowBtn.textContent = this.slow ? t('slow.stop') : t('ask.slow');
+    this.els.slowBtn.classList.toggle('on', !!this.slow);
     const a = this.shown();
-    if (!a || !this.ready) { output.replaceChildren(); return; }
+    const waiting = !a && (this.askInFlight || this.askDirty);
+    this.els.prompt.hidden = !!a;
+    this.els.prompt.textContent = waiting ? t('ask.thinking') : t('ask.prompt');
+    this.els.results.hidden = !a;
+    this.els.attPrompt.hidden = !!a;
+    this.els.attention.hidden = !a;
+    if (!a || !this.ready) {
+      output.replaceChildren();
+      this.els.slowCaption.replaceChildren();
+      this.els.slowCaption.classList.remove('active');
+      return;
+    }
     const writing = this.shownSteps();
-    const langName = (code: string) => this.ready!.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
-    hint.textContent = a.badge === 'free' ? t('unknownWord') : t('looksLike', { lang: langName(a.lang) });
 
     // A hidden answer is not judged on screen until revealed: the colour would give it away.
     const wordClass = (a.badge === 'hidden' && !this.revealed) || writing !== undefined ? 'unrevealed' : a.answer ? a.answer.status : 'invented';
@@ -939,20 +999,46 @@ export class App {
     }
   }
 
-  /** "Write it slowly": the button and the caption ("reading the animal → writing letter 3 of 7"). */
+  /** Under the word box: what kind of word it is, before the model answers. */
+  private renderWordHint(hint: HTMLElement, langName: (code: string) => string): void {
+    const w = this.wordKind();
+    hint.className = `hint word-hint ${w.kind}`;
+    if (w.kind === 'empty') { hint.replaceChildren(); return; }
+    if (w.kind === 'known') { hint.replaceChildren(t('ask.word.known', { lang: langName(this.question.lang) })); return; }
+    if (w.kind === 'free') { hint.replaceChildren(t('ask.word.free')); return; }
+    const lang = w.lang!;
+    const sw = h('button', { class: 'link small', 'data-test': 'switch-lang' }, t('ask.word.switch', { lang: langName(lang) }));
+    sw.onclick = () => this.setQuestion({ lang });
+    hint.replaceChildren(t('ask.word.other', { lang: langName(lang) }), ' ', sw);
+  }
+
+  /**
+   * "Answer slowly": what the model is doing right now, in words
+   * (reading the animal → weighing letters for letter 3 of 7 → picks one).
+   */
   private renderSlowCaption(a: AnswerMsg): void {
     const s = this.slow;
-    this.els.slowBtn.textContent = s ? t('slow.stop') : t('slow.button');
-    this.els.slowBtn.classList.toggle('on', !!s);
-    let caption = '';
-    if (s) {
-      if (s.done) caption = t('slow.done', { word: a.output || '∅' });
-      else if (s.shown === 0) caption = t('slow.reading', { word: a.text });
-      else if (s.shown > a.output.length) caption = t('slow.ending');
-      else caption = t('slow.writing', { k: s.shown, n: a.output.length });
+    const el = this.els.slowCaption;
+    el.classList.toggle('active', !!s);
+    if (!s) { el.replaceChildren(); return; }
+    const pctOf = (p: number) => `${Math.round(p * 100)} %`;
+    let head: string;
+    let detail = '';
+    if (s.done) {
+      head = t('slow.done', { word: a.output || '∅' });
+      detail = t('slow.doneDetail', { n: a.steps.length });
+    } else if (s.shown === 0) {
+      head = t('slow.reading', { word: a.text });
+      detail = t('slow.readingDetail', { n: a.input.length });
+    } else {
+      const st = a.steps[s.shown - 1];
+      // The last guess of a finished word is "end" (⏎); every other guess is one letter.
+      const letters = a.steps.length - (a.finished ? 1 : 0);
+      head = s.shown > letters ? t('slow.ending') : t('slow.writing', { k: s.shown, n: letters });
+      const guesses = st.top.slice(0, 3).map((g) => `${shortLabel(g.char)} ${pctOf(g.p)}`).join(' · ');
+      detail = t('slow.picks', { guesses, chosen: shortLabel(st.chosen) });
     }
-    this.els.slowCaption.textContent = caption;
-    this.els.slowCaption.classList.toggle('active', !!s);
+    el.replaceChildren(h('strong', {}, head), h('span', { class: 'detail' }, detail));
   }
 
   /**
