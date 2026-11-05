@@ -157,3 +157,16 @@ User: "I do not understand table Animals on the Forms tab. Are those learning da
 - **New Test tab, shown only in expert mode** ("Expert (adds settings and the Test tab)"): the Animals table (with a ✓ ≈ ✗ ✨ legend, filters and its own data-language picker), the Scoreboard, "Test again now" and "Its answers at step N". It is introduced as "an extra for later" and the help says plainly that the words are the brain's answers, not learning data. Clicking a word asks it on the Forms tab. Turning expert mode off while on the tab goes back to Forms.
 - **The engine tests only on request** (`watchTests`, like `watchPractice`): on init / reset / Step and in the training loop it evaluates only while the Test tab is open (same EVAL schedule: every 100 steps or 3 s, inventions every 500). Opening the tab tests the current brain right away (~0.7 s in the browser at step ~200, with inventions) unless it was already tested at this step; `evaluate` still works any time. So without the Test tab the training loop no longer spends time on evaluation.
 - The scoreboard history therefore has points only from steps when the tab was open.
+
+## Tab reorganisation, step 3: tabs follow the story (user request)
+
+User: "Maybe there should be one tab Model learning, because this is really part of building the model. Model testing should go to a separate tab, Question mode, where you ask questions and see how the model answers. And the Test tab shows the automatic test evaluation."
+
+- **Tabs, in story order:** Learning data · Model learning · Ask the model · Inside the brain · Test. The Forms and Practice tabs are gone.
+- **Opens on Learning data** (user choice): a beginner sees the data first.
+- **Model learning** = everything that changes the brain: ① Build (Play / Step / speed / seed, expert settings, status, learning badge, the one-step cycle), the mistakes (loss) chart, the latest batch (learning data and what it answered before learning from it), and the **letter map** (user choice: it is something you watch change while it learns). The Practice tab's duplicate Play / Step ×1, badge and cycle, and the "see all the examples" link, are gone. `watchPractice` is on while this tab is open.
+- **Ask the model** = everything that only reads the brain: ② Ask (question, answer, step stamp, "keep answering while it learns", guesses, Write it slowly) and "where it looks" (attention). **No training controls** (user choice): a status line "The model is at step N, paused / learning right now" with a link to Model learning.
+- **Test is always visible, last** (user choice; step 2 had made it expert-only). It still tests only while open.
+- **Expert checkbox moved to the header:** it affects several tabs (settings on Model learning, extra attention grids on Ask, the Inside tab, the log-scale loss chart). Label back to "Expert" / "Pro pokročilé".
+- Clicking a word on Learning data or Test asks it on the Ask tab.
+- Tab names use "model" as the user wrote them; the panels still say "brain" (① Build the brain, ② Ask the brain, Inside the brain). Unifying the wording is a possible later step.

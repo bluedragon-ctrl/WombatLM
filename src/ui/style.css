@@ -16,7 +16,11 @@ header h1 { margin: 0; font-size: 22px; }
 header .sub { color: var(--muted); }
 header .params { margin-left: auto; color: var(--muted); font-size: 13px; }
 h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
-main.forms { display: grid; grid-template-columns: 430px minmax(0, 1fr) 340px; gap: 14px; padding: 14px 20px; align-items: start; }
+main.learn-main { display: grid; grid-template-columns: 430px minmax(0, 1fr) 340px; gap: 14px; padding: 14px 20px; align-items: start; }
+main.ask-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding: 14px 20px; align-items: start; max-width: 1500px; }
+.ask-status { margin: -2px 0 10px; }
+.ask-status .link { padding: 0 2px; }
+header .expert-toggle { white-space: nowrap; }
 main[hidden] { display: none !important; }
 main.inside-main { padding: 14px 20px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
@@ -53,7 +57,6 @@ input.seed { width: 80px; }
 .meter .fill { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
 .bars-wrap { overflow-x: auto; }
 
-.charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
 canvas { display: block; }
 .chart { width: 100%; }
 .score-table table { border-collapse: collapse; font-size: 13px; margin-top: 8px; width: 100%; }
@@ -179,13 +182,8 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
   .learning.pulse, .stamp.flash, .word .cursor { animation: none; }
 }
 
-/* Practice tab: the whole latest batch */
-main.practice-main { padding: 14px 20px; max-width: 1240px; }
-.practice-main .learning { margin-top: 0; }
-.practice-main .cycle { max-width: 760px; }
-.open-practice { padding: 0; margin-top: 2px; }
 
-/* Practice tab: learning data and what it answered */
+/* Model learning tab: the latest batch, learning data and what it answered */
 .practice-explain { margin: 0 0 12px; font-size: 14px; color: var(--muted); max-width: 900px; }
 .practice-table table { border-collapse: collapse; width: 100%; max-width: 900px; font-size: 15px; }
 .practice-table th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 4px 10px; border-bottom: 2px solid var(--line); }
@@ -233,3 +231,8 @@ main.test-main { padding: 14px 20px; max-width: 1240px; }
 .test-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 .test-main .animals td { max-width: 160px; }
 .test-legend { display: flex; gap: 12px; margin-bottom: 8px; }
+/* Five tabs in the header: keep each name on one line; the subtitle and the parameter count give way. */
+.tabs { flex-shrink: 0; }
+.tabs button { white-space: nowrap; }
+header .sub, header .params { min-width: 0; }
+header .params { text-align: right; }

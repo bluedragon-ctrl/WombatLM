@@ -74,7 +74,7 @@ export class InsideTab {
     this.renderModeButtons();
   }
 
-  /** Switch what the heatmaps show (e.g. "Change" from the learning-cycle link on the Forms tab). */
+  /** Switch what the heatmaps show (e.g. "Change" from the learning-cycle link on the Model learning tab). */
   setMode(mode: InspectMode): void {
     this.mode = mode;
     this.renderModeButtons();
