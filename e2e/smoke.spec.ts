@@ -133,7 +133,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   // Inside the model: heatmaps.
   await page.click('[data-test=tab-inside]');
   await expect(page.locator('[data-test=heatmaps] canvas[data-matrix=tokEmb]')).toBeVisible();
-  await expect(page.locator('[data-test=mode-note]')).toContainText(/changed/);
+  await expect(page.locator('[data-test=mode-note]')).toContainText(/moved/);
   await page.click('[data-mode=grad]');
   await expect(page.locator('[data-test=mode-note]')).toContainText(/batch/);
   // Where is it learning: one box per part of the model, with a change per step.
@@ -145,7 +145,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   const bars = (await page.locator('[data-test=bars]').boundingBox())!;
   await page.mouse.click(bars.x + 78 + 30, bars.y + 60);
   await expect(page.locator('[data-test=tab-inside]')).toHaveClass(/on/);
-  await expect(page.locator('[data-test=explain-caption]')).toContainText(/letter 2 of/);
+  await expect(page.locator('[data-test=explain-caption]')).toContainText(/Letter 2 of/);
   await expect(page.locator('.xletter[data-pos="1"]')).toHaveClass(/on/);
   await expect(page.locator('[data-test=explain-guesses] button')).toHaveCount(5);
   await page.locator('canvas[data-strip="dec0.cross:add"]').click({ position: { x: 7, y: 7 } });

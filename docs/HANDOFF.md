@@ -52,6 +52,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 
 ## Waiting for the user
 
+- **Plain-language pass on Inside the model** (branch `claude/youthful-heisenberg-ieybd3`): rewrote `inside.*`, `flow.*`, `explain.*`, `tip.*`, `signal.*` in en and cs (keys unchanged). "Step" now only means a learning step; the 5 parts of "How the model picks one letter" are "stages". Heads, thinking units, volume knobs and softmax are explained where they first appear. Heatmap modes: Values / Recent change / Push (gradient). Czech wording needs a check.
 - **Czech UI copy:** step-in-full / tokens PR: `sd.*`, `jr.*`, `cycle.check*`, `practice.check*`, `practice.nowAnswers`, `inside.whyClick`, `signal.memory`, `signal.dec.final`.
 - **Transparency review:** `docs/REVIEW_TRANSPARENCY.md` lists what a user cannot yet see in one learning step and in answering, with a suggested order (before → after the nudge, sampling/temperature, the optimiser, the generation loop). Pick what to build.
 
