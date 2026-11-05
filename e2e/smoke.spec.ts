@@ -11,6 +11,16 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=data-table] tr.kept td.hidden').first()).toBeVisible();
   await page.click('[data-test=data-reveal]');
   await expect(page.locator('[data-test=data-table] tr.kept td.hidden')).toHaveCount(0);
+  // A learning example as tokens: shown so far and guess next, shifted by one, ending with "end".
+  await expect(page.locator('[data-test=example-grid]')).toBeVisible();
+  await page.locator('[data-test=data-table] td.learned:not(.name)').first().click();
+  await expect(page.locator('[data-test=data-table] td.sel')).toHaveCount(1);
+  const shown = page.locator('[data-test=example-grid] td.shown');
+  const guess = page.locator('[data-test=example-grid] td.guess');
+  await expect(guess.last()).toContainText('end');
+  expect(await guess.count()).toBe(await shown.count());
+  await guess.nth(1).hover();
+  await expect(page.locator('[data-test=example-caption]')).toContainText(/must guess/);
 
   // Model learning: nothing is practised before a step.
   await page.click('[data-test=tab-learn]');
@@ -45,6 +55,14 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-test=tab-ask]');
   await expect(page.locator('[data-test=ask-again]')).toBeHidden();
 
+  // Tokens: what it reads (task token first) and what it writes (ending with "end" if finished).
+  await expect(page.locator('[data-test=tokens-in] .tok').first()).toHaveClass(/tok-task/);
+  await page.locator('[data-test=token-numbers]').check();
+  await expect(page.locator('[data-test=tokens-in] .tok.num').first()).toHaveText(/^\d+$/);
+  await page.locator('[data-test=token-numbers]').uncheck();
+  await page.fill('[data-test=ask]', 'zä');
+  await expect(page.locator('[data-test=tokens-unk]')).toContainText('ä');
+  await expect(page.locator('[data-test=tokens-in] .tok-unk')).toHaveCount(1);
   await page.fill('[data-test=ask]', 'kočka');
   await page.locator('[data-form=young]').click();
   await expect(page.locator('[data-test=output] .from')).toContainText('kočka');
@@ -62,9 +80,10 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-mode=grad]');
   await expect(page.locator('[data-test=mode-note]')).toContainText(/batch/);
 
-  // A word clicked on the Learning data tab is asked on the Ask tab.
+  // A learning example can be asked on the Ask tab.
   await page.click('[data-test=tab-data]');
   await page.locator('[data-test=data-table] td.learned:not(.name)').first().click();
+  await page.click('[data-test=example-ask]');
   await expect(page.locator('[data-test=tab-ask]')).toHaveClass(/on/);
   await expect(page.locator('[data-test=bars]')).toBeVisible();
 

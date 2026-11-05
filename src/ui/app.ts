@@ -26,6 +26,8 @@ import { setUiLang, t, uiLang, UI_LANGUAGES } from './i18n';
 import { h } from './dom';
 import { InsideTab } from './inside';
 import { DataTab } from './dataTab';
+import { tokenChip, tokenIndex, toTok } from './tokens';
+import { EOS } from '../nn/vocab';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
 type Tab = 'data' | 'learn' | 'ask' | 'inside' | 'test';
@@ -96,6 +98,9 @@ export class App {
   private learnedAt = -Infinity;
   /** "Keep answering while it learns": re-ask after every tick even while training. */
   private live = false;
+  /** Token strip on the Ask tab: only the numbers, as the model sees them. */
+  private tokenNumbers = false;
+  private tokenIdx = new Map<string, number>();
   /** The answer changed because the model changed (not the question): flash its step label. */
   private stampFlash = false;
   /** "Write it slowly" replay of one answer: how many letters are shown so far. */
@@ -144,6 +149,7 @@ export class App {
     switch (msg.type) {
       case 'ready':
         this.ready = msg;
+        this.tokenIdx = tokenIndex(msg.tokens);
         this.losses = [];
         this.evals = [];
         this.results.clear();
@@ -404,6 +410,7 @@ export class App {
       this.expert = expertBox.checked;
       expertPanel.hidden = !this.expert;
       this.inside.setExpert(this.expert);
+      this.dataTab.setExpert(this.expert);
       this.invalidate('loss', 'answer');
       this.requestInspect(true);
     };
@@ -434,6 +441,15 @@ export class App {
     const liveBox = h('input', { type: 'checkbox', 'data-test': 'live' });
     liveBox.onchange = () => { this.live = liveBox.checked; if (this.live) this.ask(); this.invalidate('stamp'); };
     const liveLabel = h('label', { class: 'small live' }, liveBox, ' ', t('stamp.live'));
+    const tokenRows = h('div', { class: 'token-rows', 'data-test': 'tokens' });
+    const tokenNumbers = h('input', { type: 'checkbox', 'data-test': 'token-numbers' });
+    tokenNumbers.onchange = () => { this.tokenNumbers = tokenNumbers.checked; this.invalidate('answer'); };
+    const tokenNote = h('p', { class: 'small' });
+    const tokensPanel = h('div', { class: 'tokens-panel' },
+      h('div', { class: 'row guess-head' }, h('h2', {}, t('tokens.title')), help(t('tokens.help'))),
+      tokenRows,
+      h('div', { class: 'row small' }, h('label', {}, tokenNumbers, ' ', t('tokens.numbers')), h('span', { class: 'tok-legend' }, h('span', { class: 'tok copied' }, h('b', {}, 'a')), ' ', t('tokens.copiedLegend'))),
+      tokenNote);
     const bars = h('canvas', { class: 'bars', 'data-test': 'bars' });
     bars.onmousemove = (e) => { if (!this.slow) this.setHover(guessColumnAt(e.offsetX, this.shown()?.steps.length ?? 0)); };
     bars.onmouseleave = () => { if (!this.slow) this.setHover(null); };
@@ -528,6 +544,7 @@ export class App {
         h('div', { class: 'row' }, input, langPick),
         formPick, hint, output,
         h('div', { class: 'stamp-row' }, stamp, liveLabel),
+        tokensPanel,
         h('div', { class: 'row guess-head' }, h('h2', {}, t('guessBars')), slowBtn, slowCaption),
         barsWrap),
       h('section', { class: 'panel attention' },
@@ -557,7 +574,7 @@ export class App {
       testMain,
     );
     return {
-      play, speed, seed, status, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, attention, mapCanvas, mapNote, tabs,
+      play, speed, seed, status, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, tokenRows, tokenNote, attention, mapCanvas, mapNote, tabs,
       dataMain, learnMain, askMain, insideMain, testMain, testLangPick, testWhen,
       stamp, stampText, askAgain, slowBtn, slowCaption, practiceList, practiceHelp,
       playButtons: [play], learnings: [learning], cycles: [cycleA],
@@ -677,14 +694,44 @@ export class App {
     output.replaceChildren(h('div', { class: 'answer-line' }, ...parts), badge, meter);
     if (this.hoverStep !== null && this.hoverStep >= a.steps.length) this.hoverStep = null;
     drawGuessBars(bars, a.steps, { copied: t('copied'), wrote: t('wrote') }, this.hoverStep, writing);
+    this.renderTokens(a, writing, langName);
     this.renderSlowCaption(a);
     this.renderAttention();
   }
 
-  /** Link a guess-bar column and the matching attention rows (null = none). */
+  /**
+   * Token strip: the question as the model reads it (task token + letters)
+   * and the answer as it writes it (letters + end), each with its number.
+   * Answer tokens line up with the guess-bar columns (hover links them).
+   */
+  private renderTokens(a: AnswerMsg, writing: number | undefined, langName: (code: string) => string): void {
+    const idx = this.tokenIdx;
+    const opts = { expert: this.expert, numbers: this.tokenNumbers, langName };
+    const reads = a.input.map((tok) => tokenChip(toTok(tok, idx), opts));
+    const steps = writing !== undefined ? a.steps.slice(0, writing) : a.steps;
+    const writes = steps.map((s, i) => {
+      const copied = s.chosen !== '' && s.write !== undefined && s.write < 0.5;
+      const chip = tokenChip(toTok(s.chosen || EOS, idx), opts, `${copied ? 'copied' : ''}${i === this.hoverStep ? ' hover' : ''}`);
+      chip.dataset.step = String(i);
+      chip.onmouseenter = () => { if (!this.slow) this.setHover(i); };
+      chip.onmouseleave = () => { if (!this.slow) this.setHover(null); };
+      return chip;
+    });
+    const row = (label: string, chips: HTMLElement[], test: string) =>
+      h('div', { class: 'token-row', 'data-test': test }, h('span', { class: 'token-label small' }, label), h('span', { class: 'chips' }, ...chips));
+    const unknown = [...new Set([...a.text].filter((c) => !idx.has(c)))];
+    this.els.tokenRows.replaceChildren(
+      row(t('tokens.reads'), reads, 'tokens-in'),
+      row(t('tokens.writes'), writes, 'tokens-out'),
+      ...(unknown.length ? [h('p', { class: 'tok-warn', 'data-test': 'tokens-unk' }, t('tokens.unk', { chars: unknown.map((c) => `“${c}”`).join(', ') }))] : []));
+    this.els.tokenNote.textContent = t('tokens.note', { n: idx.size });
+  }
+
+  /** Link a guess-bar column, the answer token and the matching attention rows (null = none). */
   private setHover(step: number | null): void {
     if (step === this.hoverStep) return;
     this.hoverStep = step;
+    for (const c of this.els.tokenRows.querySelectorAll<HTMLElement>('[data-step]')) c.classList.toggle('hover', c.dataset.step === String(step));
     const a = this.shown();
     if (a) drawGuessBars(this.els.bars, a.steps, { copied: t('copied'), wrote: t('wrote') }, step, this.shownSteps());
     this.drawAttention();

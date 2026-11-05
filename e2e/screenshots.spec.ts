@@ -69,6 +69,9 @@ test('learning vs answering', async ({ page }) => {
   // The Learning data tab: everything it learns from (the app opens on it).
   await expect(page.locator('[data-test=data-summary]')).toContainText(/learning examples/, { timeout: 15_000 });
   await page.locator('main.data-main').screenshot({ path: `${LDIR}/12-learning-data-tab.png` });
+  // One learning example as tokens, a guess pointed at.
+  await page.locator('[data-test=example-grid] td.guess').nth(2).hover();
+  await page.locator('[data-test=example]').screenshot({ path: `${LDIR}/17-learning-example.png` });
   await page.click('[data-test=tab-learn]');
   await page.fill('input.seed', '1');
   await page.click('text=Reset');
@@ -91,6 +94,12 @@ test('learning vs answering', async ({ page }) => {
   await page.click('[data-test=tab-ask]');
   await expect(page.locator('[data-test=ask-again]')).toBeHidden();
   await page.locator('.panel.askbox').screenshot({ path: `${LDIR}/4-answer-fresh.png` });
+  // Tokens: what it reads and writes, as letters with numbers and as numbers only.
+  await page.locator('[data-test=tokens-out] .tok').nth(2).hover();
+  await page.locator('.tokens-panel').screenshot({ path: `${LDIR}/15-tokens-ask.png` });
+  await page.locator('[data-test=token-numbers]').check();
+  await page.locator('.tokens-panel').screenshot({ path: `${LDIR}/16-tokens-numbers.png` });
+  await page.locator('[data-test=token-numbers]').uncheck();
   // One step slowly: the four stages light up one after another, with the batch.
   await page.click('[data-test=tab-learn]');
   await page.click('text=Step ×1');

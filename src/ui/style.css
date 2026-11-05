@@ -200,7 +200,7 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 .practice-table .word-own.wrong { color: var(--wrong); }
 
 /* Learning data tab: everything the model learns from */
-main.data-main { padding: 14px 20px; max-width: 1240px; }
+main.data-main { padding: 14px 20px; max-width: 1600px; }
 .data-summary { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: baseline; margin-bottom: 10px; }
 .data-summary .stat { font-size: 14px; color: var(--muted); }
 .data-summary .stat b { font-size: 20px; color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -236,3 +236,48 @@ main.test-main { padding: 14px 20px; max-width: 1240px; }
 .tabs button { white-space: nowrap; }
 header .sub, header .params { min-width: 0; }
 header .params { text-align: right; }
+
+/* Tokens: chips with the letter (or a plain name) and its number. */
+.tok { display: inline-flex; flex-direction: column; align-items: center; min-width: 26px; padding: 2px 5px 1px; border: 1px solid #cbd5e1; border-radius: 5px; background: #f8fafc; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.tok b { font-size: 16px; font-weight: 600; white-space: nowrap; }
+.tok small { font-size: 10px; color: var(--muted); }
+.tok.num b { font-size: 14px; font-weight: 500; font-family: ui-monospace, monospace; }
+.tok-task { border-color: #0d9488; background: #f0fdfa; color: #0f766e; }
+.tok-task b { font-size: 13px; }
+.tok-special { border-color: #6b7280; background: #f3f4f6; }
+.tok-special b { font-size: 13px; }
+.tok-unk { border-color: var(--wrong, #dc2626); background: #fef2f2; color: var(--wrong, #dc2626); }
+.tok.copied { background: #ede9fe; border-color: #a78bfa; }
+.tok.hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tokens-panel { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
+.token-rows { display: flex; flex-direction: column; gap: 6px; }
+.token-row { display: flex; align-items: center; gap: 10px; }
+.token-label { width: 110px; flex-shrink: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.token-row .chips .tok { cursor: default; }
+.tok-warn { color: var(--wrong, #dc2626); font-size: 13px; margin: 2px 0 0; }
+.tok-legend { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.tok-legend .tok { min-width: 18px; padding: 0 4px; }
+.tok-legend .tok b { font-size: 12px; }
+
+/* Learning data: the table and one learning example as tokens. */
+.data-layout { display: grid; grid-template-columns: minmax(0, 1fr) 460px; gap: 14px; align-items: start; }
+.data-layout > .panel { margin-bottom: 0; }
+.example { position: sticky; top: 14px; }
+.example-question { font-size: 17px; margin: 0 0 10px; }
+.example-grid { border-collapse: separate; border-spacing: 4px 2px; margin: 10px 0 4px; }
+.example-grid th { text-align: left; font-weight: 500; padding: 4px 0 2px; }
+.example-scroll { overflow-x: auto; }
+.token-row.stacked { flex-direction: column; align-items: flex-start; gap: 3px; }
+.token-row.stacked .token-label { width: auto; }
+.compact-tokens .tok { min-width: 22px; padding: 1px 3px 0; }
+.compact-tokens .tok b { font-size: 15px; }
+.compact-tokens .tok-task b, .compact-tokens .tok-special b { font-size: 12px; }
+.compact-tokens .chips { gap: 3px; }
+.example-grid td { text-align: center; padding: 0; border-radius: 6px; }
+.example-grid td.arrow { color: var(--muted); font-size: 13px; line-height: 1; }
+.example-grid td.hl .tok { outline: 2px solid var(--accent); outline-offset: 1px; }
+.example-grid td.arrow.hl { color: var(--accent); font-weight: 700; }
+.example-caption { min-height: 18px; margin: 0 0 6px; }
+.kept-note { border-left: 3px dashed var(--muted); padding-left: 8px; }
+.data-table td.cell.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
