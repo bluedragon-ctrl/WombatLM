@@ -33,12 +33,12 @@ export type ToWorker =
   | { type: 'evaluate'; inventions?: boolean }
   /**
    * The Test tab is open (on) or closed (off). While on, every animal is
-   * tested on a schedule (and right away if this brain was not tested yet);
+   * tested on a schedule (and right away if this model was not tested yet);
    * while off, only on `evaluate`.
    */
   | { type: 'watchTests'; on: boolean }
   /**
-   * The Practice tab is open (on) or closed (off). While on, the brain also
+   * The Model learning tab is open (on) or closed (off). While on, the model also
    * answers the shown examples before learning from them at high speeds (at
    * most every 500 ms; at slow speeds and on Step it always does).
    */

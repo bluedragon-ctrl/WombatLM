@@ -20,9 +20,9 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 |---|---|
 | M1 brain library | **Done.** `src/nn`: tensors, tape autograd, ops (all gradient-checked), Adam/AdamW, dropout, translator with KV-cached greedy decoding, copy mechanism, target-token start, serialisation f32/f16/int8, vocabulary growth. |
 | M2 training in the browser | **Done** (pending the user's data review). Dataset v2 + validator + review doc, `FormTrainer` with copy practice, engine + worker + protocol, minimal UI, Playwright smoke test. ~38 steps/s in the browser; known cs 98% / en 93% at 5k steps (accepted by the user). |
-| M3 seeing inside | **Done** (merged into `main`). Tabs (Forms · Inside the brain), attention grids linked to the guess bars, letter map (PCA + Procrustes + glide), weight / change / gradient heatmaps, "follow the signal" (expert). |
+| M3 seeing inside | **Done** (merged into `main`). Tabs (Forms · Inside the model), attention grids linked to the guess bars, letter map (PCA + Procrustes + glide), weight / change / gradient heatmaps, "follow the signal" (expert). |
 | Learning vs answering | **Done in a PR** (user feedback after M3): ① Build / ② Ask phases, Practice tab (now part of Model learning) with the latest batch: learning data vs what it answered before the step (`tick.practice`, `watchPractice`), frozen-brain step label, answer waits while training (+ "keep answering" toggle), Write it slowly, one-step cycle. See DECISIONS. |
-| Tab reorganisation (user, in steps) | **Steps 1–3 done in a PR.** Tabs now follow the story: Learning data (opens first, `src/ui/dataTab.ts`) · Model learning (build controls, cycle, batch, loss, letter map) · Ask the model (question, answer, guesses, attention; status line, no training controls) · Inside the brain · Test (every animal, tested only while open: `watchTests`). Expert checkbox in the header. Further steps to come from the user. See DECISIONS. |
+| Tab reorganisation (user, in steps) | **Steps 1–3 done in a PR.** Tabs now follow the story: Learning data (opens first, `src/ui/dataTab.ts`) · Model learning (build controls, cycle, batch, loss, letter map) · Ask the model (question, answer, guesses, attention; status line, no training controls) · Inside the model · Test (every animal, tested only while open: `watchTests`). Expert checkbox in the header. All UI text says "model" (not "brain"). Further steps to come from the user. See DECISIONS. |
 | M4 time travel | **Next.** |
 | M5–M7 | Not started. |
 
@@ -45,7 +45,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 ## Waiting for the user
 
 - **Data review:** 19 `unsure` entries; regenerate the table with `npm run validate-data -- --review` → `docs/DATA_REVIEW.md` (deferred by the user: "data tuning later").
-- **Czech UI copy:** `src/ui/i18n/cs.json` (M3 added ~70 strings: tabs, attention, letter map, Inside the brain; the learning-vs-answering PR added 42: `tab.practice`, `build.*`, `learning.*`, `practice.*`, `cycle.*`, `ask.*`, `stamp.*`, `slow.*`; the Learning data tab added 26: `tab.data`, `data.*`; the tab reorganisation added `tab.test`, `tab.learn`, `tab.ask`, `test.*`, `askStatus.*` and reworded `data.explain`, `data.help`).
+- **Czech UI copy:** `src/ui/i18n/cs.json` (M3 added ~70 strings: tabs, attention, letter map, Inside the model; the learning-vs-answering PR added 42: `tab.practice`, `build.*`, `learning.*`, `practice.*`, `cycle.*`, `ask.*`, `stamp.*`, `slow.*`; the Learning data tab added 26: `tab.data`, `data.*`; the tab reorganisation added `tab.test`, `tab.learn`, `tab.ask`, `test.*`, `askStatus.*` and reworded `data.explain`, `data.help`).
 - **M3 review:** the PR's screenshots and questions.
 
 ## Hosting

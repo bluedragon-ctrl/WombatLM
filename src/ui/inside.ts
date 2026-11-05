@@ -1,5 +1,5 @@
 /**
- * "Inside the brain" tab: a heatmap per weight matrix (weights, their
+ * "Inside the model" tab: a heatmap per weight matrix (weights, their
  * change in the last steps, or the gradient), and in expert mode
  * "follow the signal" for the current word.
  */
@@ -12,7 +12,7 @@ import { t, uiLang } from './i18n';
 
 const MODES: InspectMode[] = ['weights', 'delta', 'grad'];
 
-/** Which part of the brain a matrix belongs to, for grouping. */
+/** Which part of the model a matrix belongs to, for grouping. */
 function group(name: string): string {
   if (/^enc(\d|Norm)/.test(name)) return 'encoder';
   if (/^dec(\d|Norm)/.test(name)) return 'decoder';

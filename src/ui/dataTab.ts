@@ -1,5 +1,5 @@
 /**
- * "Learning data" tab: everything the brain learns from, as one table per
+ * "Learning data" tab: everything the model learns from, as one table per
  * language. For each animal: its name (copy practice) and the right male /
  * female / young word where the data has one. Never-seen animals are listed
  * too, greyed out: they are kept aside to test it, and their answers stay
@@ -15,7 +15,7 @@ import { t, uiLang } from './i18n';
 type DataFilter = 'all' | 'train' | 'unseen';
 const FILTERS: DataFilter[] = ['all', 'train', 'unseen'];
 
-/** Counts of what the brain learns from, per language and in total. */
+/** Counts of what the model learns from, per language and in total. */
 export interface DataCounts {
   animals: number;
   train: number;
@@ -54,7 +54,7 @@ export class DataTab {
   private filterPick: HTMLElement;
   private table: HTMLElement;
 
-  /** `onAsk`: a word was clicked; ask the brain that question on the Ask tab. */
+  /** `onAsk`: a word was clicked; ask the model that question on the Ask tab. */
   constructor(private onAsk: (text: string, lang: string, form: string) => void) {
     this.summary = h('div', { class: 'data-summary', 'data-test': 'data-summary' });
     this.langPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('language') });

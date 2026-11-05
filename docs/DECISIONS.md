@@ -170,3 +170,7 @@ User: "Maybe there should be one tab Model learning, because this is really part
 - **Expert checkbox moved to the header:** it affects several tabs (settings on Model learning, extra attention grids on Ask, the Inside tab, the log-scale loss chart). Label back to "Expert" / "Pro pokročilé".
 - Clicking a word on Learning data or Test asks it on the Ask tab.
 - Tab names use "model" as the user wrote them; the panels still say "brain" (① Build the brain, ② Ask the brain, Inside the brain). Unifying the wording is a possible later step.
+
+## "Model" instead of "brain" (user request)
+
+User: "use 'model' everywhere instead of 'brain'". All UI text now says model: the subtitle ("A tiny model learns animal word forms"), ① Build the model, ② Ask the model, Inside the model, the step stamp, help texts and tooltips. Czech: mozek → model with the same declension (mozku → modelu, mozkem → modelem); both are masculine inanimate, so the adjectives and verbs around them stay as they were. Code comments and test names were changed too, so the codebase uses one word. Older entries in this file keep "brain" as written at the time.

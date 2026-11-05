@@ -34,7 +34,7 @@ describe('FormTrainer', () => {
     expect(plain.rightCount).toBeUndefined();
     expect(plain.examples[0].answer).toBeUndefined();
 
-    // Answering first: the answers are those of the brain before the step.
+    // Answering first: the answers are those of the model before the step.
     const before = new FormTrainer(ds, { seed: 7 });
     before.trainStep();
     const snapshot = before.model.params.snapshot();

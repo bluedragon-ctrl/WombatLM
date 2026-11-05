@@ -1,14 +1,14 @@
 /**
  * The app: five tabs, in the order of the story.
- * - Learning data: everything the brain learns from (see dataTab.ts).
- * - Model learning: everything that changes the brain: Play / Step / speed /
+ * - Learning data: everything the model learns from (see dataTab.ts).
+ * - Model learning: everything that changes the model: Play / Step / speed /
  *   seed, the learning badge, the one-step cycle, the latest batch (learning
  *   data and what it answered before learning from it), the loss chart and
  *   the letter map.
- * - Ask the model: everything that only reads the brain: the question box
+ * - Ask the model: everything that only reads the model: the question box
  *   with form and language pickers, the answer, guess bars, attention grids.
- * - Inside the brain: weight heatmaps (see inside.ts).
- * - Test: every animal tested, scoreboard. The brain is tested only while
+ * - Inside the model: weight heatmaps (see inside.ts).
+ * - Test: every animal tested, scoreboard. The model is tested only while
  *   this tab is open (or on request).
  *
  * All training happens in the worker; this file only sends messages and
@@ -88,7 +88,7 @@ export class App {
   private testLang = '';
   private question = { text: '', lang: '', form: 'female' };
   private dirty = { controls: true, answer: true, loss: true, scores: true, animals: true, practice: true, stamp: true };
-  /** The latest batch the brain practised on (learning), and when the strip last changed. */
+  /** The latest batch the model practised on (learning), and when the strip last changed. */
   private practice?: PracticeBatch;
   private practiceShownAt = -Infinity;
   private practiceTimer = 0;
@@ -96,7 +96,7 @@ export class App {
   private learnedAt = -Infinity;
   /** "Keep answering while it learns": re-ask after every tick even while training. */
   private live = false;
-  /** The answer changed because the brain changed (not the question): flash its step label. */
+  /** The answer changed because the model changed (not the question): flash its step label. */
   private stampFlash = false;
   /** "Write it slowly" replay of one answer: how many letters are shown so far. */
   private slow: { answer: AnswerMsg; shown: number; done: boolean; timer: number } | null = null;
@@ -174,7 +174,7 @@ export class App {
         if (this.losses.length > 40000) this.losses = this.losses.filter((_, i) => i % 2 === 0);
         if (msg.practice) this.onPractice(msg.practice, msg);
         if (msg.losses.length) this.requestInspect();
-        // Answering is separate from learning: while the brain learns, the answer
+        // Answering is separate from learning: while the model learns, the answer
         // waits (marked as out of date) unless the user asked for live answers.
         if (this.answer && this.answer.step !== msg.step && (!msg.running || this.live)) this.ask();
         this.invalidate('controls', 'loss', 'stamp');
@@ -187,7 +187,7 @@ export class App {
         this.askInFlight = false;
         if (msg.id === this.askId) {
           const prev = this.answer;
-          // Same question, new brain: the answer refreshed because the brain changed.
+          // Same question, new model: the answer refreshed because the model changed.
           if (prev && prev.step !== msg.step && prev.text === msg.text && prev.lang === msg.lang && prev.form === msg.form) this.stampFlash = true;
           this.answer = msg;
           this.invalidate('answer', 'stamp');
@@ -315,8 +315,8 @@ export class App {
   }
 
   /**
-   * Ask the worker for what the visible tab shows inside the brain: the
-   * weight heatmaps (Inside tab) or the letter map (Forms tab). At most one
+   * Ask the worker for what the visible tab shows inside the model: the
+   * weight heatmaps (Inside tab) or the letter map (Model learning tab). At most one
    * request in flight and one every INSPECT_MS; `now` skips the wait.
    */
   private requestInspect(now = false): void {
@@ -329,7 +329,7 @@ export class App {
     }
     this.inspectDirty = false;
     this.lastInspect = performance.now();
-    if (this.tab !== 'learn' && this.tab !== 'inside') return; // nothing inside the brain to show there
+    if (this.tab !== 'learn' && this.tab !== 'inside') return; // nothing inside the model to show there
     const inside = this.tab === 'inside';
     const matrixIds = inside ? this.inside.wanted() : [];
     if (inside && !matrixIds.length) return;
@@ -414,7 +414,7 @@ export class App {
     const expertPanel = h('div', { class: 'expert', hidden: true },
       h('label', {}, t('lr'), ' ', lr), h('label', {}, t('batch'), ' ', batch));
     const status = h('div', { class: 'status', 'data-test': 'status' });
-    // On the Ask tab: which brain answers, and whether it is learning (no training controls there).
+    // On the Ask tab: which model answers, and whether it is learning (no training controls there).
     const askStatusText = h('span');
     const goLearn = h('button', { class: 'link small', 'data-test': 'go-learn' }, t('askStatus.go'));
     goLearn.onclick = () => this.setTab('learn');
@@ -771,8 +771,8 @@ export class App {
   }
 
   /**
-   * Under the answer: which brain (step) answered, and that answering never
-   * changes it. While the brain learns, the answer is marked as out of date.
+   * Under the answer: which model (step) answered, and that answering never
+   * changes it. While the model learns, the answer is marked as out of date.
    */
   private renderStamp(): void {
     const { stamp, stampText, askAgain, output, barsWrap, attention } = this.els;

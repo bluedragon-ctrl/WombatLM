@@ -22,7 +22,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=practice] td.answer .word-own')).toHaveCount(16);
   await expect(page.locator('[data-test=letter-map]')).toBeVisible();
 
-  // Ask the model: the answer comes from the brain at step 1; no training controls here.
+  // Ask the model: the answer comes from the model at step 1; no training controls here.
   await page.click('[data-test=tab-ask]');
   await expect(page.locator('[data-test=output] .word')).toBeVisible();
   await expect(page.locator('[data-test=stamp]')).toContainText(/step 1\b/);
@@ -55,7 +55,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=slow-caption]')).toHaveText('');
   await expect(page.locator('[data-test=attention] canvas')).toHaveCount(3);
 
-  // Inside the brain: heatmaps.
+  // Inside the model: heatmaps.
   await page.click('[data-test=tab-inside]');
   await expect(page.locator('[data-test=heatmaps] canvas[data-matrix=tokEmb]')).toBeVisible();
   await expect(page.locator('[data-test=mode-note]')).toContainText(/changed/);
