@@ -269,3 +269,20 @@ User: translation should come back for its **teaching value**, not its accuracy 
 - **Attention: the expected lesson was wrong.** The guess was that unrelated pairs would show spread-out attention. The shape depends on the *training*, not on the word: the plain model barely reads left to right for any word (diag 0.25–0.5), the copy-practice model reads letter by letter for every word, unrelated ones too (owl → *vel*, wasp → *vak*; diag 0.8–0.95). Peak and task-token share do not differ. The usable lesson is comparing the grids of the two models, not of two words.
 - **Mixing translation into the forms model hurts both:** forms known 69% at 8 000 steps (forms-only training: ~91% at 5 000), translation known 32%. Not a clean comparison (forms got 1/3 of the batches instead of 1/2), but enough to keep translation as its own model.
 - **Decision:** translation becomes a separate **task mode** with its own model and a held-out set of its own. **No copy practice** in that mode (user: "I would prefer no copy practice at all"), so it trains like `plain` (no dropout either): the clearest picture of memorising, and even identical words fail. Without copy practice every similarity kind scores 0% on never-seen animals, so the kind becomes a tag on names ("same word", "looks alike", "different") instead of scoreboard lines. The attention comparison of two models is dropped; the help text compares with the forms model instead. Steps in `docs/TRANSLATION_PLAN.md`.
+
+## Translation: one shared model for forms and translation? (experiment, then postponed)
+Question (user): how much would sharing one model between word forms and translation hurt? `translate-check.ts` setups `forms`, `plain` and `shared` (translation 2 : forms 1 : copy practice 1). `shared` runs 16 000 steps, so each task sees exactly as many examples as alone at 8 000 steps.
+
+| Setup | translation known | translation held-out | forms known | forms never-seen |
+|---|---|---|---|---|
+| forms alone (dropout 0.1), 8 000, seeds 1–2 | – | – | 93–94% | 11% |
+| translation alone, dropout 0, 8 000, seeds 1–2 | 90–94% | 0% | – | – |
+| translation alone, dropout 0.1, 8 000, seeds 1–2 | 93% | 0% | – | – |
+| shared, dropout 0.1, 16 000 (same examples), seeds 1–2 | 66–67% | 0–2% | 59–67% | 13–15% |
+| shared, dropout 0.1, at 8 000 (same time) | 51–53% | 0% | 47–51% | 11% |
+| shared, dropout 0, 16 000 (same examples), seed 1 | 88% | 0% | 94% | 9% |
+| shared, dropout 0, at 8 000 (same time) | 85% | 0% | 84% | 8% |
+
+- **With dropout 0.1, sharing hurts a lot:** about 27 points on translation and 30 on forms with the same examples. **Without dropout, it costs little:** 88% vs 90–94% and 94% vs 93–94%, but only one seed, and the forms-alone baseline has dropout 0.1. Either way, sharing needs about twice the steps (training time) for the same result.
+- **The tasks hardly leak into each other:** no known word form was answered with the other language's name; 1–3 translations were answered with a word form, mostly by copying the input (holub → *holub*, kid → *kid*).
+- **Not decided.** The user postponed translation to tune the current setup and user experience first. The plan in `docs/TRANSLATION_PLAN.md` (separate model) stays as written; a shared model without dropout is an option to revisit then.

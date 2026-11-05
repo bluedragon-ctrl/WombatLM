@@ -1,5 +1,7 @@
 # Translation mode — implementation plan
 
+> **Postponed** (user): the current setup and user experience come first. A shared forms + translation model was also measured (DECISIONS, "one shared model"); revisit that choice when this resumes.
+
 Translation (cs ↔ en animal names) comes back as a **second task mode**, for its teaching value. It fails on never-seen animals, and that failure is the lesson: the same model that partly generalises word forms can only memorise translations, because the data has no rule for most pairs. Accuracy is not a goal (DESIGN §1).
 
 Evidence: `docs/DECISIONS.md` → "Translation as a teaching mode", script `scripts/experiments/translate-check.ts`. The mode trains like the experiment's **`plain`** setup: translation only, **no copy practice** (user decision), no dropout.
