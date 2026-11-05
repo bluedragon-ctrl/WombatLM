@@ -82,6 +82,30 @@ const quietRun = (tk: TickMsg | undefined) => !!tk?.quiet && !!tk.running;
 /** A rough duration for "about … left": seconds below 90 s, else minutes. */
 const duration = (sec: number) => (sec < 90 ? t('goal.sec', { n: Math.max(1, Math.round(sec)) }) : t('goal.min', { n: Math.round(sec / 60) }));
 
+/** Mistake (loss) of one letter: −ln of the chance the model gave the right one. */
+const letterLoss = (p: number) => -Math.log(p + 1e-9);
+/** Mistakes above this count as "very surprised" (full colour); −ln 5 % ≈ 3. */
+const LOSS_FULL = 3;
+
+/** One letter of the right answer, tinted by its mistake, with the numbers on hover. */
+function letterSpan(l: { char: string; p: number }): HTMLElement {
+  const m = letterLoss(l.p);
+  const k = Math.min(1, m / LOSS_FULL);
+  return h('span', {
+    class: `let${l.char === '' ? ' end' : ''}`,
+    style: `background: rgba(220, 38, 38, ${(0.06 + 0.6 * k).toFixed(2)})`,
+    title: t('practice.letterTip', { char: l.char === '' ? t('practice.end') : l.char, p: Math.round(l.p * 100), m: m.toFixed(2) }),
+  }, l.char === '' ? '⏎' : l.char === ' ' ? '␣' : l.char);
+}
+
+/** A line's mistake: the number and a short bar. */
+function lossBar(loss: number): HTMLElement {
+  const w = Math.round(Math.min(1, loss / LOSS_FULL) * 100);
+  return h('span', { class: 'loss-val', title: t('practice.lossTip') },
+    h('span', { class: 'num' }, loss.toFixed(2)),
+    h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${w}%` })));
+}
+
 const resultKey = (id: string, lang: string, form: string) => `${id}|${lang}|${form}`;
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '–' : `${Math.round(v * 100)} %`);
 
@@ -960,10 +984,15 @@ export class App {
         answerCell.append(h('span', { class: `word-own ${judged ? ex.status : ''}`, title: judged ? t(`status.${ex.status}`) : '' },
           `${judged ? STATUS_ICONS[ex.status!] + ' ' : ''}${ex.answer || '∅'}`));
       }
+      // Once the mistake is measured: each letter of the right answer tinted by how surprised the model was.
+      const measured = phase >= 3;
+      const tgtCell = h('td', { class: 'tgt' }, ...(measured ? ex.letters.map((l) => letterSpan(l)) : [ex.target]));
+      const lossCell = h('td', { class: 'loss' }, measured ? lossBar(ex.loss) : '');
       return h('tr', { class: 'ex' },
         h('td', { class: 'example' }, h('span', { class: 'src' }, ex.source), h('span', { class: 'task' }, task)),
-        h('td', { class: 'tgt' }, ex.target),
-        answerCell);
+        tgtCell,
+        answerCell,
+        lossCell);
     });
     practiceList.replaceChildren(
       h('p', { class: 'small step-of' }, summary.join(' · ')),
@@ -972,8 +1001,11 @@ export class App {
         h('thead', {}, h('tr', {},
           h('th', {}, t('practice.col.example')),
           h('th', { class: 'data' }, t('practice.col.right')),
-          h('th', { class: 'answer' }, t('practice.col.answer')))),
-        h('tbody', {}, ...rows)));
+          h('th', { class: 'answer' }, t('practice.col.answer')),
+          h('th', { class: 'loss' }, t('practice.col.loss')))),
+        h('tbody', {}, ...rows)),
+      phase >= 3 ? h('p', { class: 'small loss-explain', 'data-test': 'loss-explain' },
+        t('practice.lossExplain', { loss: p.loss.toFixed(2), n: p.letterCount.toLocaleString(uiLang()), b: p.batchSize })) : '');
   }
 
   private renderLoss(): void {

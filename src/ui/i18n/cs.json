@@ -248,5 +248,10 @@
   "goal.left": "zbývá asi {t}",
   "goal.sec": "{n} s",
   "goal.min": "{n} min",
-  "goal.reached": "Hotovo: učil se do kroku {n}. Pro další učení vyber vyšší cíl."
+  "goal.reached": "Hotovo: učil se do kroku {n}. Pro další učení vyber vyšší cíl.",
+  "practice.col.loss": "Chyba (loss)",
+  "practice.end": "konec slova",
+  "practice.letterTip": "{char}: správnému písmenu dal {p} % → chyba {m}",
+  "practice.lossTip": "Průměrná chyba přes písmena této odpovědi (najeď na písmeno a uvidíš jeho vlastní).",
+  "practice.lossExplain": "Jak se chyba měří: model vidí správnou odpověď písmeno po písmenu a hádá vždy další písmeno. Chyba písmene říká, jak moc ho to správné písmeno překvapilo: když mu dal 100 %, chyba je 0; 50 % → 0,69; 10 % → 2,3; 1 % → 4,6 (je to −ln té šance). Červenější písmena ho překvapila víc. Chyba řádku je průměr přes jeho písmena a chyba kroku {loss} je průměr přes všech {n} písmen všech {b} příkladů. Učení posouvá čísla tak, aby se tyhle chyby zmenšovaly. I správná odpověď může mít chybu: trefil se, ale nebyl si jistý."
 }

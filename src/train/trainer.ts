@@ -78,14 +78,24 @@ export interface PracticeExample {
    */
   answer?: string;
   status?: 'correct' | 'close' | 'wrong';
+  /**
+   * How it did on each letter of the right answer during the step (plus the
+   * end of the word, char ''), with the answer so far shown to it: the
+   * probability it gave the right letter. The mistake of a letter is −ln(p).
+   */
+  letters: { char: string; p: number }[];
+  /** The mistake (loss) of this example: the average over its letters. */
+  loss: number;
 }
 
 /** The latest training batch, as the UI shows it. */
 export interface PracticeBatch {
   step: number;
   batchSize: number;
-  /** The batch loss (the mistake that was measured). */
+  /** The batch loss (the mistake that was measured): the average over all letters of all examples. */
   loss: number;
+  /** How many letters (incl. word ends) the batch loss averages over. */
+  letterCount: number;
   /** The first examples of the batch (at most the limit asked for). */
   examples: PracticeExample[];
   /** If the model answered them first: how many of the shown examples it got right. */
@@ -131,7 +141,7 @@ export class FormTrainer {
   freshPacks = new Set<string>();
   private mix: MixPart[] = [];
   /** The latest batch, and what the model answered before learning from it (if asked to). */
-  private last: { step: number; tasks: Task[]; answers: string[]; loss: number } | null = null;
+  private last: { step: number; tasks: Task[]; answers: string[]; loss: number; tokenP: Float32Array; Tt: number } | null = null;
 
   constructor(public dataset: Dataset, opts: TrainerOptions) {
     this.rng = new Rng(opts.seed ^ 0x5eed);
@@ -207,7 +217,8 @@ export class FormTrainer {
     const batch = makeBatch(tasks.map((t) => this.toExample(t)), this.ids);
     this.opt.zeroGrad();
     const tape = new Tape();
-    const loss = tape.run(() => this.model.loss(batch, this.vocab.pad));
+    const tokenP = new Float32Array(batch.B * batch.Tt);
+    const loss = tape.run(() => this.model.loss(batch, this.vocab.pad, tokenP));
     tape.backward(loss);
     const info = this.opt.step();
     this.step++;
@@ -215,7 +226,7 @@ export class FormTrainer {
     this.lastLr = info.lr;
     this.lastGradNorm = info.gradNorm;
     this.lossEma = this.lossEma === null ? this.lastLoss : 0.95 * this.lossEma + 0.05 * this.lastLoss;
-    this.last = { step: this.step, tasks, answers, loss: this.lastLoss };
+    this.last = { step: this.step, tasks, answers, loss: this.lastLoss, tokenP, Tt: batch.Tt };
     return this.lastLoss;
   }
 
@@ -225,7 +236,11 @@ export class FormTrainer {
     if (!last) return null;
     let right = 0;
     const examples = last.tasks.slice(0, limit).map((task, i): PracticeExample => {
-      const ex: PracticeExample = { source: task.source, lang: task.to, form: task.form, target: task.answer };
+      // Its letters (as tokens) plus the end of the word, with the probability given to each.
+      const chars = [...this.vocab.encodeWord(task.answer).map((id) => this.vocab.tokens[id]), ''];
+      const letters = chars.map((char, t) => ({ char, p: last.tokenP[i * last.Tt + t] }));
+      const loss = letters.reduce((s, l) => s - Math.log(l.p + 1e-9), 0) / letters.length;
+      const ex: PracticeExample = { source: task.source, lang: task.to, form: task.form, target: task.answer, letters, loss };
       if (i < last.answers.length) {
         ex.answer = last.answers[i];
         ex.status = judge(ex.answer, task.accepted) as 'correct' | 'close' | 'wrong';
@@ -234,7 +249,9 @@ export class FormTrainer {
       return ex;
     });
     const answered = last.answers.length >= examples.length && examples.length > 0;
-    return { step: last.step, batchSize: last.tasks.length, loss: last.loss, examples, ...(answered ? { rightCount: right } : {}) };
+    let letterCount = 0;
+    for (const p of last.tokenP) if (!Number.isNaN(p)) letterCount++;
+    return { step: last.step, batchSize: last.tasks.length, loss: last.loss, letterCount, examples, ...(answered ? { rightCount: right } : {}) };
   }
 
   setLearningRate(lr: number): void {
