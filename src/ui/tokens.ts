@@ -83,6 +83,22 @@ export function tokenName(token: string, opts: Pick<ChipOptions, 'expert' | 'lan
   return t('tok.task', { lang: opts.langName(m[1]), form: t(`tok.form.${m[2] ?? 'name'}`) });
 }
 
+/**
+ * A one-character label for narrow canvas spots (guess-bar headers, attention
+ * row/column labels): letters as they are, the space as ␣, the end ('' or
+ * <eos>) as ⏎, task tokens as ✱, <unk> as ?, other special tokens as ·.
+ */
+export function shortLabel(token: string): string {
+  if (token === '' || token === EOS) return '⏎';
+  if (token === ' ') return '␣';
+  switch (tokenKind(token)) {
+    case 'letter': return token;
+    case 'task': return '✱';
+    case 'unk': return '?';
+    default: return '·';
+  }
+}
+
 /** Tooltip: what the token is, its raw text and its number. */
 export function tokenTitle(tok: Tok, opts: Pick<ChipOptions, 'langName'>): string {
   const kind = tokenKind(tok.token);

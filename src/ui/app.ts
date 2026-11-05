@@ -26,7 +26,7 @@ import { setUiLang, t, uiLang, UI_LANGUAGES } from './i18n';
 import { h } from './dom';
 import { InsideTab } from './inside';
 import { DataTab } from './dataTab';
-import { tokenChip, tokenIndex, toTok } from './tokens';
+import { shortLabel, tokenChip, tokenIndex, tokenName, toTok } from './tokens';
 import { EOS } from '../nn/vocab';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
@@ -59,11 +59,13 @@ interface AttGrid {
   key: string;
   title: string;
   spec: GridSpec;
+  /** Full token names for the tooltip (the grid itself shows short labels). */
+  rowNames: string[];
+  colNames: string[];
   linked: boolean;
   canvas?: HTMLCanvasElement;
 }
 
-const tokenLabel = (tok: string, i: number) => (i === 0 ? '✱' : tok === ' ' ? '␣' : tok);
 const SPEEDS: Speed[] = [1, 5, 20, 'max'];
 /**
  * "Learn until" choices (steps, null = no limit). Measured with seed 1 at
@@ -524,7 +526,14 @@ export class App {
       h('div', { class: 'row small' }, h('label', {}, tokenNumbers, ' ', t('tokens.numbers'))),
       tokenNote);
     const bars = h('canvas', { class: 'bars', 'data-test': 'bars' });
-    bars.onmousemove = (e) => { if (!this.slow) this.setHover(guessColumnAt(e.offsetX, this.shown()?.steps.length ?? 0)); };
+    bars.onmousemove = (e) => {
+      const steps = this.shown()?.steps ?? [];
+      const col = guessColumnAt(e.offsetX, steps.length);
+      if (!this.slow) this.setHover(col);
+      // Short labels (✱, ⏎, ?) get their full name in the tooltip.
+      const specials = col === null ? [] : [...new Set([steps[col].chosen, ...steps[col].top.map((g) => g.char)])].filter((c) => shortLabel(c) !== c);
+      bars.title = specials.map((c) => `${shortLabel(c)} = ${this.fullName(c)}`).join('\n');
+    };
     bars.onmouseleave = () => { if (!this.slow) this.setHover(null); };
     const barsWrap = h('div', { class: 'bars-wrap' }, bars);
     const slowBtn = h('button', { class: 'small-btn', 'data-test': 'slow' }, t('slow.button'));
@@ -790,7 +799,7 @@ export class App {
       h('span', {}, `${Math.round(a.confidence * 100)}`));
     output.replaceChildren(h('div', { class: 'answer-line' }, ...parts), badge, meter);
     if (this.hoverStep !== null && this.hoverStep >= a.steps.length) this.hoverStep = null;
-    drawGuessBars(bars, a.steps, this.hoverStep, writing);
+    drawGuessBars(bars, a.steps, this.hoverStep, writing, shortLabel);
     this.renderTokens(a, writing, langName);
     this.renderSlowCaption(a);
     this.renderAttention();
@@ -829,33 +838,48 @@ export class App {
     this.hoverStep = step;
     for (const c of this.els.tokenRows.querySelectorAll<HTMLElement>('[data-step]')) c.classList.toggle('hover', c.dataset.step === String(step));
     const a = this.shown();
-    if (a) drawGuessBars(this.els.bars, a.steps, step, this.shownSteps());
+    if (a) drawGuessBars(this.els.bars, a.steps, step, this.shownSteps(), shortLabel);
     this.drawAttention();
+  }
+
+  /** Language code -> its name in the UI language. */
+  private langName(code: string): string {
+    return this.ready?.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
+  }
+
+  /** A token's full name for tooltips: the letter, or e.g. "Czech, female" ('' = end). */
+  private fullName(token: string): string {
+    return tokenName(token || EOS, { expert: this.expert, langName: (c) => this.langName(c) });
   }
 
   /** Which attention grids to show for this answer (expert mode adds the self-attention). */
   private attentionGrids(a: AnswerMsg): AttGrid[] {
-    const input = a.input.map(tokenLabel);
-    const out = a.steps.map((s) => (s.chosen === ' ' ? '␣' : s.chosen || '⏎'));
+    // Short labels fit the cells; the full names go in the tooltip.
+    const input = a.input.map(shortLabel);
+    const out = a.steps.map((s) => shortLabel(s.chosen));
     const decIn = ['✱', ...out];
+    const inputNames = a.input.map((tok) => this.fullName(tok));
+    const outNames = a.steps.map((s) => this.fullName(s.chosen));
+    const decInNames = [this.fullName(a.input[0] ?? ''), ...outNames];
     const grids: AttGrid[] = [];
-    const add = (name: string, title: (head: number) => string, rows: string[], cols: string[], linked: boolean) => {
+    const add = (name: string, title: (head: number) => string, rows: string[], cols: string[], linked: boolean, rowNames: string[], colNames: string[]) => {
       const m = a.attention.find((x) => x.name === name);
       if (!m) return;
       for (let head = 0; head < m.heads; head++) {
         grids.push({
           key: `${name}#${head}`, title: title(head), linked,
+          rowNames: rowNames.slice(0, m.Tq), colNames: colNames.slice(0, m.Tk),
           spec: { rows: rows.slice(0, m.Tq), cols: cols.slice(0, m.Tk), data: m.data, offset: head * m.Tq * m.Tk, stride: m.Tk },
         });
       }
     };
     const layers = [...new Set(a.attention.map((x) => x.name.match(/^dec(\d+)\./)?.[1]).filter((x): x is string => x !== undefined))];
     const layerNote = (l: string) => (layers.length > 1 ? ` · ${t('att.layer', { n: Number(l) + 1 })}` : '');
-    for (const l of layers) add(`dec${l}.cross`, (hd) => t('att.cross', { n: hd + 1 }) + layerNote(l), out, input, true);
+    for (const l of layers) add(`dec${l}.cross`, (hd) => t('att.cross', { n: hd + 1 }) + layerNote(l), out, input, true, outNames, inputNames);
     if (this.expert) {
-      for (const l of layers) add(`dec${l}.self`, (hd) => t('att.decSelf', { n: hd + 1 }) + layerNote(l), out, decIn, true);
+      for (const l of layers) add(`dec${l}.self`, (hd) => t('att.decSelf', { n: hd + 1 }) + layerNote(l), out, decIn, true, outNames, decInNames);
       for (const name of a.attention.map((x) => x.name).filter((n) => /^enc\d+\.self$/.test(n))) {
-        add(name, (hd) => t('att.encSelf', { n: hd + 1 }), input, input, false);
+        add(name, (hd) => t('att.encSelf', { n: hd + 1 }), input, input, false, inputNames, inputNames);
       }
     }
     return grids;
@@ -875,9 +899,9 @@ export class App {
           const grid = this.attGrids[i];
           const cell = attentionCellAt(grid.spec, e.offsetX, e.offsetY);
           if (grid.linked && !this.slow) this.setHover(cell ? cell.row : null);
-          canvas.title = cell && cell.col !== null
-            ? t('att.cell', { row: grid.spec.rows[cell.row], col: grid.spec.cols[cell.col], p: Math.round(grid.spec.data[grid.spec.offset + cell.row * grid.spec.stride + cell.col] * 100) })
-            : '';
+          canvas.title = !cell ? ''
+            : cell.col === null ? grid.rowNames[cell.row]
+            : t('att.cell', { row: grid.rowNames[cell.row], col: grid.colNames[cell.col], p: Math.round(grid.spec.data[grid.spec.offset + cell.row * grid.spec.stride + cell.col] * 100) });
         };
         canvas.onmouseleave = () => { if (this.attGrids[i].linked && !this.slow) this.setHover(null); };
         return h('figure', { class: 'att' }, h('figcaption', {}, g.title), canvas);

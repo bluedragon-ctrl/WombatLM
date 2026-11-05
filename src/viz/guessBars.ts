@@ -24,8 +24,11 @@ export function guessBarsWidth(steps: number): number {
  * `highlight`: the column linked to the attention grid (hovered there or here).
  * `shown`: only the first `shown` columns are drawn, the rest are empty
  * placeholders ("write it slowly").
+ * `label`: the short text for a token ('' = end); long special tokens such as
+ * <cs:female> must come out short so they fit their column.
  */
-export function drawGuessBars(canvas: HTMLCanvasElement, steps: StepGuess[], highlight: number | null = null, shown = steps.length): void {
+export function drawGuessBars(canvas: HTMLCanvasElement, steps: StepGuess[], highlight: number | null = null, shown = steps.length,
+  label: (char: string) => string = (c) => c || '⏎'): void {
   const height = HEAD + 5 * ROW + 6;
   const ctx = prepare(canvas, guessBarsWidth(steps.length), height);
   steps.forEach((s, c) => {
@@ -49,7 +52,7 @@ export function drawGuessBars(canvas: HTMLCanvasElement, steps: StepGuess[], hig
     ctx.fillStyle = INK;
     ctx.textAlign = 'center';
     ctx.font = 'bold 18px system-ui, sans-serif';
-    ctx.fillText(s.chosen || '⏎', x + COL / 2, 12);
+    ctx.fillText(label(s.chosen), x + COL / 2, 12);
     ctx.font = '13px system-ui, sans-serif';
     s.top.forEach((g, r) => {
       const y = HEAD + r * ROW;
@@ -64,7 +67,7 @@ export function drawGuessBars(canvas: HTMLCanvasElement, steps: StepGuess[], hig
       ctx.fillStyle = INK;
       ctx.textAlign = 'center';
       ctx.font = `${chosen ? 'bold ' : ''}13px system-ui, sans-serif`;
-      ctx.fillText(g.char === '' ? '⏎' : g.char, x + 11, y + ROW / 2);
+      ctx.fillText(label(g.char), x + 11, y + ROW / 2);
       ctx.textAlign = 'right';
       ctx.fillStyle = g.p > 0.85 ? '#fff' : MUTED; // white only where the bar is under the text
       ctx.font = '11px system-ui, sans-serif';

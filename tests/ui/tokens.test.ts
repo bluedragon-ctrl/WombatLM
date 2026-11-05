@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { baseBundle } from '../../src/data/bundle';
 import { Dataset } from '../../src/data/dataset';
 import { targetToken } from '../../src/nn/vocab';
-import { learningExample, tokenIndex, tokenKind, tokenName, tokenizeWord } from '../../src/ui/tokens';
+import { learningExample, shortLabel, tokenIndex, tokenKind, tokenName, tokenizeWord } from '../../src/ui/tokens';
 
 const ds = new Dataset(baseBundle());
 const vocab = ds.vocab;
@@ -43,5 +43,16 @@ describe('tokens on screen', () => {
     expect(tokenName('<eos>', { langName })).toBe('end');
     expect(tokenName('<eos>', { langName, expert: true })).toBe('<eos>');
     expect(tokenName(' ', { langName })).toBe('␣');
+  });
+
+  it('gives every token a one-character label for narrow canvas spots', () => {
+    expect(shortLabel('a')).toBe('a');
+    expect(shortLabel(' ')).toBe('␣');
+    expect(shortLabel('')).toBe('⏎');
+    expect(shortLabel('<eos>')).toBe('⏎');
+    expect(shortLabel('<cs:female>')).toBe('✱');
+    expect(shortLabel('<en>')).toBe('✱');
+    expect(shortLabel('<unk>')).toBe('?');
+    for (const tok of vocab.tokens) expect([...shortLabel(tok)].length).toBe(1);
   });
 });
