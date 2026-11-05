@@ -68,6 +68,13 @@ describe('validation catches problems', () => {
     expect(errs.some((e) => e.includes('longer than'))).toBe(true);
     expect(errs.some((e) => e.includes('also used by'))).toBe(true);
   });
+
+  it('rejects fields that are no longer used (one right word per answer)', () => {
+    const old = { id: 'cat', names: { cs: 'kočka' }, alt: { cs: ['kocour'] }, unsure: ['cs.name'] } as unknown as Pack['animals'][number];
+    const errs = validatePacks([pack([old])], vocab, codes, bundle.forms);
+    expect(errs).toContain('t/cat: unknown field "alt"');
+    expect(errs).toContain('t/cat: unknown field "unsure"');
+  });
 });
 
 describe('merging', () => {
@@ -79,20 +86,18 @@ describe('merging', () => {
     expect(dog.split).toBe('unseen');
   });
 
-  it('builds tasks in both directions with alternatives', () => {
+  it('builds tasks in both directions', () => {
     const ds = new Dataset(bundle);
     const cat = ds.nameTasks((a) => a.id === 'cat');
     expect(cat.map((t) => `${t.source}->${t.answer}`).sort()).toEqual(['cat->kočka', 'kočka->cat']);
-    expect(cat.find((t) => t.to === 'cs')!.accepted).toContain('kocour');
   });
 
-  it('builds word-form tasks within each language, with alternatives', () => {
+  it('builds word-form tasks within each language', () => {
     const ds = new Dataset(bundle);
     const cat = ds.formTasks((a) => a.id === 'cat');
     expect(cat.map((t) => `${t.to}:${t.form} ${t.source}->${t.answer}`).sort()).toEqual([
       'cs:female kočka->kočka', 'cs:male kočka->kocour', 'cs:young kočka->kotě',
       'en:female cat->queen', 'en:male cat->tom', 'en:young cat->kitten',
     ]);
-    expect(cat.find((t) => t.form === 'young' && t.to === 'cs')!.accepted).toContain('koťátko');
   });
 });

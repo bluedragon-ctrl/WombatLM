@@ -85,12 +85,6 @@ export interface AnimalInfo {
    * them behind a "reveal" button.
    */
   forms: Record<string, Record<string, string>>;
-  /** Other accepted names per language (only used to recognise a word on the Ask tab; never trained on). */
-  alt: Record<string, string[]>;
-  /** Other accepted forms per language, used only when testing (never trained on). */
-  formsAlt: Record<string, Record<string, string[]>>;
-  /** Entries a native speaker still has to confirm, e.g. "cs.female" (still trained on). */
-  unsure: string[];
 }
 
 export interface ReadyMsg {
@@ -219,8 +213,8 @@ export interface AnswerMsg {
   /** Hidden states along the way, for "follow the signal" (transferred buffers). */
   activations: Activation[];
   badge: Badge;
-  /** For real / hidden: the real word(s) and how the output scored. */
-  answer?: { accepted: string[]; status: 'correct' | 'close' | 'wrong' };
+  /** For real / hidden: the real word and how the output scored. */
+  answer?: { word: string; status: 'correct' | 'close' | 'wrong' };
   animalId?: string;
 }
 

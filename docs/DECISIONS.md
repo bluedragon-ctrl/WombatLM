@@ -77,7 +77,7 @@ Conclusions:
 - `TranslatorTrainer` became **`FormTrainer`** (`src/train/trainer.ts`). Batches mix word-form tasks of train-split animals (`formTasks`) with "copy the name" practice (`nameTasks(…, true)`) at 1:1 (`copyWeight`). Defaults in `TRAINER_DEFAULTS`: copy mechanism, target-token start, dropout 0.1, Adam LR 3e-3, batch 16.
 - **Scoreboard per language** (`Scores`): known · never-seen pattern / partly / irregular · never-seen exact (`unseen`) · never-seen right-or-close (`close`) · fresh / old (Teach mode).
 - **Inventions:** `Dataset.missingFormTasks()` lists the forms the data lacks; `evaluate({ inventions: true })` asks for them too and marks them `invented` (never scored). `confidence(trace, eos)` = geometric mean of the chosen letters' probabilities (DESIGN §8.7).
-- `unsure` entries are still trained on, as in the experiments; dropping them is a data-review decision.
+- `unsure` entries are still trained on, as in the experiments; dropping them is a data-review decision. (Later removed altogether, see "One right word per answer".)
 - Check run (`npx tsx scripts/train-node.ts 5000 1`): known cs 98% / en 93%, never-seen cs 23% exact (35% incl. close), en 11%; 40 steps/s in Node.
 - **Evaluation cost:** the 355 real forms take ~250 ms, all 906 forms incl. inventions ~640 ms (Node). Evaluating everything every 50 steps would halve training speed, so the worker evaluates real forms on a schedule and inventions less often (see the worker entry).
 
@@ -209,10 +209,15 @@ The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–
 - **Rare letters are flagged.** A letter seen fewer than 30 times in the learning data (`LetterMapMsg.counts`, from `FormTrainer.letterCounts()`, source words + answers) gets a note that the model learned little about it and its closest letters are mostly chance (q 7×, ó 1×…). This also explains the pile of accented letters at the edge of the map.
 - Considered, not done yet: start-position ghosts with trails; hiding task tokens by default; marker size by frequency.
 
+## One right word per answer (user request)
+"Flags for answers not checked by a Czech speaker, and alternatives, are unnecessary complications for such a project. If needed I will modify the data."
+- Removed `unsure` (19 entries), `formsAlt` (16 accepted alternative forms, e.g. koťátko, cub) and `alt` (9 alternative names, e.g. kocour for kočka, rhino) from the data, the code and the Learning data tab. The main words are unchanged.
+- Every question now has exactly one right answer: `judge(output, answer)` is right / one letter off ("close") / wrong. `Task.accepted` and `AnswerMsg.answer.accepted` are gone (`answer.word`). The Ask tab recognises an animal only by its name.
+- The validator rejects any field other than `id`, `names`, `split`, `forms`, `kindOverride`, so old fields in a data file are reported, not silently ignored.
+
 ## Copy mechanism removed
 
 - **Removed completely** (user decision): the pointer-style copy attention, the write-or-copy gate, the ops `pointerMix` and `nllFromProbs`, the `copy` option of `TranslatorConfig`, `TranslationTrace.writeShare`, `StepGuess.write`, and in the UI the "copied / wrote" strip under the guess bars, the tinted "copied" answer tokens, the "Where it copies from" attention grid and the "Copying" group on the Inside tab.
 - **Why:** this is a teaching demo and should be as simple as possible. Real language models have no copy mechanism; plain attention learns to copy. The experiments above showed the mechanism does not help generalisation (never-seen Czech 8/26 without it vs 7–8/26 with it); copy practice is what makes never-seen forms work, and it stays.
 - **Cost:** known-form accuracy drops a little (measured earlier at 5 000 steps: Czech 89/102 vs 96/102, English 124/147 vs 131–141/147). Accepted: accuracy is a guide, not a gate. Re-measured with the app's trainer (`scripts/train-node.ts 5000 1`, seed 1): known Czech 91% (was 98%), English 92% (was 93%); never-seen Czech 19% (was 23%), within the ±2-word noise of the small never-seen set. The cross-attention grid still shows the stem being copied.
 - **Parameters:** 24 727 (was 26 872) with the 55-token vocabulary.
-

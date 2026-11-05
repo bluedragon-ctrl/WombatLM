@@ -110,9 +110,9 @@ describe('FormTrainer', () => {
 
 describe('scoring', () => {
   it('judges correct / close / wrong', () => {
-    expect(judge('tygřice', ['tygřice'])).toBe('correct');
-    expect(judge('tygrice', ['tygřice'])).toBe('close');
-    expect(judge('tygr', ['tygřice'])).toBe('wrong');
+    expect(judge('tygřice', 'tygřice')).toBe('correct');
+    expect(judge('tygrice', 'tygřice')).toBe('close');
+    expect(judge('tygr', 'tygřice')).toBe('wrong');
   });
 
   it('splits never-seen forms by kind and counts close answers', () => {

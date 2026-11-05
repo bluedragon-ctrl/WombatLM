@@ -27,7 +27,7 @@ const rng = new Rng(seed + 7);
 const ex = (t: Task) => ({ target: ds.targetId(t.to, t.form), src: v.encodeWord(t.source), tgt: v.encodeWord(t.answer) });
 const pick = () => (copyWeight > 0 && rng.next() < copyWeight / (1 + copyWeight) ? copies[rng.int(copies.length)] : train[rng.int(train.length)]);
 const run = (ts: Task[]) => model.greedy(ts.map((t) => ({ target: ds.targetId(t.to, t.form), src: v.encodeWord(t.source) })), ids).map((o) => v.decode(o));
-const score = (ts: Task[]) => { const o = run(ts); return { ok: ts.filter((t, i) => judge(o[i], t.accepted) === 'correct').length, close: ts.filter((t, i) => judge(o[i], t.accepted) === 'close').length, n: ts.length, o }; };
+const score = (ts: Task[]) => { const o = run(ts); return { ok: ts.filter((t, i) => judge(o[i], t.answer) === 'correct').length, close: ts.filter((t, i) => judge(o[i], t.answer) === 'close').length, n: ts.length, o }; };
 console.log(`form tasks: train ${train.length}, never-seen ${test.length}; copy practice ${copies.length}`);
 for (let s = 1; s <= steps; s++) {
   const batch = makeBatch(Array.from({ length: 16 }, () => ex(pick())), ids);
@@ -43,6 +43,6 @@ for (let s = 1; s <= steps; s++) {
 const res = score(test);
 for (const l of ds.languageCodes) for (const k of FORM_KINDS) {
   const idx = test.map((t, i) => [t, i] as const).filter(([t]) => t.to === l && formKind(t.source, t.answer) === k);
-  console.log(`  ${l} ${k.padEnd(9)} ${idx.filter(([t, i]) => judge(res.o[i], t.accepted) === 'correct').length}/${idx.length}`);
+  console.log(`  ${l} ${k.padEnd(9)} ${idx.filter(([t, i]) => judge(res.o[i], t.answer) === 'correct').length}/${idx.length}`);
 }
-test.forEach((t, i) => console.log(`  ${t.to} ${t.form.padEnd(6)} ${t.source.padEnd(9)} -> ${res.o[i].padEnd(13)} ${judge(res.o[i], t.accepted) === 'correct' ? '✓' : judge(res.o[i], t.accepted) === 'close' ? `≈ (${t.answer})` : `✗ (${t.answer})`}`));
+test.forEach((t, i) => console.log(`  ${t.to} ${t.form.padEnd(6)} ${t.source.padEnd(9)} -> ${res.o[i].padEnd(13)} ${judge(res.o[i], t.answer) === 'correct' ? '✓' : judge(res.o[i], t.answer) === 'close' ? `≈ (${t.answer})` : `✗ (${t.answer})`}`));

@@ -9,7 +9,7 @@ const info = {
   forms: ds.forms,
   languages: ds.languages,
   animals: ds.animals.map((a) => ({
-    id: a.id, split: a.split, pack: a.pack, names: a.names, forms: a.forms, alt: a.alt, formsAlt: a.formsAlt, unsure: a.unsure,
+    id: a.id, split: a.split, pack: a.pack, names: a.names, forms: a.forms,
   })),
 };
 const key = (q: { id?: string; animal?: { id: string }; lang?: string; to?: string; form: string }) =>
@@ -49,12 +49,12 @@ describe('Every question (learning data tab)', () => {
     }
   });
 
-  it('tested questions are exactly what the tests ask, with the same accepted answers', () => {
+  it('tested questions are exactly what the tests ask, with the same answers', () => {
     const tested = qs.filter((q) => q.test && q.answer);
     const tasks = ds.formTasks();
     expect(tested.map(key).sort()).toEqual(tasks.map(key).sort());
     const byKey = new Map(tasks.map((t) => [key(t), t]));
-    for (const q of tested) expect([q.answer, ...q.alts]).toEqual(byKey.get(key(q))!.accepted);
+    for (const q of tested) expect([q.source, q.answer]).toEqual([byKey.get(key(q))!.source, byKey.get(key(q))!.answer]);
     const invented = qs.filter((q) => q.test && !q.answer);
     expect(invented.map(key).sort()).toEqual(ds.missingFormTasks().map(key).sort());
   });
