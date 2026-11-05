@@ -9,6 +9,12 @@
  *   plain  translation only, no dropout
  *   copy   translation + "copy the name" practice 1:1, dropout 0.1
  *   mixed  the app's forms training (forms + copy practice) plus translation, dropout 0.1
+ *   forms  word forms only, as the app trains them (forms + copy practice 1:1), dropout 0.1
+ *          (copy practice without never-seen animals and without translation held-out names)
+ *   shared one model for both: translation 2 : forms 1 : copy practice 1, dropout 0.1.
+ *          Run it for twice the steps of `forms` / `plain` and every task has seen
+ *          exactly as many examples as when trained alone.
+ * DROPOUT=x overrides the dropout of any setup.
  *
  * Data: every pack (205 animals). Held out from translation: every 5th animal
  * of each similarity kind (lookalike / partial / different, `classify()`),
@@ -27,7 +33,7 @@ const setup = process.argv[2] ?? 'copy';
 const steps = Number(process.argv[3] ?? 8000);
 const seed = Number(process.argv[4] ?? 1);
 const outFile = process.argv[5];
-if (!['plain', 'copy', 'mixed'].includes(setup)) throw new Error(`unknown setup ${setup}`);
+if (!['plain', 'copy', 'mixed', 'forms', 'shared'].includes(setup)) throw new Error(`unknown setup ${setup}`);
 
 const ds = new Dataset({ ...baseBundle(), packs: allPacks() });
 const v = ds.vocab;
@@ -44,14 +50,18 @@ const trans = ds.nameTasks();
 const trainT = trans.filter((t) => !held.has(t.animal.id));
 const testT = trans.filter((t) => held.has(t.animal.id));
 const copies = ds.nameTasks((a) => !held.has(a.id), true);
+const formCopies = ds.nameTasks((a) => !a.unseen && !held.has(a.id), true);
 const forms = ds.formTasks((a) => !a.unseen);
 const formsUnseen = ds.formTasks((a) => a.unseen);
 
 const pools: { tasks: Task[]; w: number }[] =
   setup === 'plain' ? [{ tasks: trainT, w: 1 }]
   : setup === 'copy' ? [{ tasks: trainT, w: 1 }, { tasks: copies, w: 1 }]
+  : setup === 'forms' ? [{ tasks: forms, w: 1 }, { tasks: formCopies, w: 1 }]
+  : setup === 'shared' ? [{ tasks: trainT, w: 2 }, { tasks: forms, w: 1 }, { tasks: formCopies, w: 1 }]
   : [{ tasks: trainT, w: 1 }, { tasks: forms, w: 1 }, { tasks: copies, w: 1 }];
-const model = new Translator({ ...TRANSLATOR_DEFAULTS, vocabSize: v.size, dropout: setup === 'plain' ? 0 : 0.1, targetStart: true }, seed);
+const dropout = process.env.DROPOUT !== undefined ? Number(process.env.DROPOUT) : setup === 'plain' ? 0 : 0.1;
+const model = new Translator({ ...TRANSLATOR_DEFAULTS, vocabSize: v.size, dropout, targetStart: true }, seed);
 const opt = new Adam(model.params.list, { lr: 3e-3 });
 const rng = new Rng(seed + 7);
 const wsum = pools.reduce((s, p) => s + p.w, 0);
@@ -64,7 +74,8 @@ const ex = (t: Task) => ({ target: ds.targetId(t.to, t.form), src: v.encodeWord(
 const run = (ts: Task[]) => model.greedy(ts.map((t) => ({ target: ds.targetId(t.to, t.form), src: v.encodeWord(t.source) })), ids).map((o) => v.decode(o));
 const acc = (ts: Task[]) => { if (!ts.length) return null; const o = run(ts); return ts.filter((t, i) => o[i] === t.answer).length / ts.length; };
 const pct = (x: number | null | undefined) => (x == null || Number.isNaN(x) ? '   -' : `${Math.round(x * 100)}%`.padStart(4));
-const tag = `[${setup} s${seed}]`;
+const tag = `[${setup}${process.env.DROPOUT !== undefined ? ` d${dropout}` : ''} s${seed}]`;
+const withForms = setup === 'mixed' || setup === 'forms' || setup === 'shared';
 
 console.log(`${tag} params ${model.params.count()} | translation train ${trainT.length}, held-out ${testT.length} ` +
   `(${KINDS.map((k) => `${k} ${testT.filter((t) => kindOf.get(t.animal.id) === k).length}`).join(', ')}) | copy ${copies.length} | forms ${forms.length}`);
@@ -81,11 +92,11 @@ for (let s = 1; s <= steps; s++) {
   if (s % 500 === 0 || s === steps) {
     const row: Record<string, number | null> = { step: s, known: acc(trainT), held: acc(testT) };
     for (const k of KINDS) row[k] = acc(testT.filter((t) => kindOf.get(t.animal.id) === k));
-    if (setup === 'mixed') { row.formsKnown = acc(forms); row.formsUnseen = acc(formsUnseen); }
+    if (withForms) { row.formsKnown = acc(forms); row.formsUnseen = acc(formsUnseen); }
     curve.push(row);
     console.log(`${tag} step ${String(s).padStart(5)} known ${pct(row.known)} | held-out ${pct(row.held)} ` +
       `(look ${pct(row.lookalike)} part ${pct(row.partial)} diff ${pct(row.different)})` +
-      (setup === 'mixed' ? ` | forms known ${pct(row.formsKnown)} unseen ${pct(row.formsUnseen)}` : '') +
+      (withForms ? ` | forms known ${pct(row.formsKnown)} unseen ${pct(row.formsUnseen)}` : '') +
       ` ${((performance.now() - t0) / 1000).toFixed(0)}s`);
   }
 }
@@ -129,6 +140,10 @@ function look(t: Task) {
   return { out: v.decode(tr.output), conf: confidence(tr, v.eos), task: task / n, peak: peak / n, diag: diag / a.heads };
 }
 
+if (setup === 'forms') {
+  if (outFile) writeFileSync(outFile, JSON.stringify({ setup, seed, steps, curve }, null, 1));
+  process.exit(0);
+}
 const words = [...trainT.map((t) => [t, false] as const), ...testT.map((t) => [t, true] as const)].map(([t, isHeld]) => {
   const s = look(t);
   return { id: t.animal.id, from: t.from, to: t.to, source: t.source, answer: t.answer, kind: kindOf.get(t.animal.id)!, held: isHeld,
@@ -150,6 +165,17 @@ const recalled = wrong.filter((w) => knownAnswers.has(w.out));
 console.log(`${tag} answers with a word it learned for another animal: ${recalled.length}/${wrong.length} ${recalled.map((w) => `${w.source}→${w.out}`).join(', ')}`);
 const czechInEnglish = wrong.filter((w) => w.to === 'en' && /[áčďéěíňóřšťúůýž]/.test(w.out));
 console.log(`${tag} English answers with Czech letters: ${czechInEnglish.length} ${czechInEnglish.map((w) => `${w.source}→${w.out}`).join(', ')}`);
+if (withForms) {
+  // Does one task leak into the other?
+  const formWords = new Set(forms.map((t) => t.answer));
+  const asForm = words.filter((w) => w.status === 'wrong' && formWords.has(w.out) && !knownAnswers.has(w.out));
+  console.log(`${tag} translations answered with a word form: ${asForm.length}/${words.filter((w) => w.status === 'wrong').length} ${asForm.slice(0, 8).map((w) => `${w.source}→${w.out}`).join(', ')}`);
+  const fo = run(forms);
+  const otherName = forms.map((t, i) => [t, fo[i]] as const)
+    .filter(([t, o]) => o !== t.answer && Object.entries(t.animal.names).some(([l, n]) => l !== t.to && n === o));
+  console.log(`${tag} known word forms answered with the other language's name: ${otherName.length}/${fo.filter((o, i) => o !== forms[i].answer).length} ` +
+    otherName.slice(0, 8).map(([t, o]) => `${t.to}:${t.form} ${t.source}→${o}`).join(', '));
+}
 for (const isHeld of [false, true]) {
   console.log(`${tag} attention ${isHeld ? 'held-out' : 'known   '}: ` + KINDS.map((k) => {
     const s = words.filter((w: Word) => w.held === isHeld && w.kind === k && w.out.length > 2);
