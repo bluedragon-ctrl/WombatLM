@@ -20,3 +20,15 @@ Deviations from, and refinements of, `docs/DESIGN.md`. Newest last.
 - "Keep it as it is" practice (`<cs> tygr → tygr`, `identityWeight`) plus dropout 0.1 lifts never-seen lookalikes to ~20–30% but slows memorisation (known 40–75% at 6k steps).
 - Dropout was added as an option (`TranslatorConfig.dropout`, default off) and AdamW-style weight decay as an option (`weightDecay`, default 0).
 - **Open question (with the user):** switch the main task from cs↔en translation to within-language word forms (animal → baby / male / female), where most answers are "copy the stem, change the ending".
+
+### Word-forms feasibility check (`scripts/experiments/forms-check.ts`)
+
+Within-language forms (male / female / young), 26 Czech + 19 English training animals (118 examples), 7 + 5 never-seen animals (33 forms), 3–4k steps.
+
+| Setup | known cs | known en | never-seen cs | never-seen en |
+|---|---|---|---|---|
+| plain | 72/72 | 46/46 | 0/20 | 0/13 |
+| + dropout 0.1 | 72/72 | 45/46 | 0/20 | 0/13 |
+| + copy practice on all 276 base names, dropout 0.1 | 66–72/72 | 43–46/46 | 5–7/20 | 0–1/13 |
+
+With copy practice the model gets regular Czech forms right (buvol → buvolice, páv → pávice, vlk → vlk) and makes plausible over-regularised mistakes (vlk → *vlkice*, ovce → *ovcour*, kůň → *koň*). English stays at ~0, as expected for irregular forms. The signal is real but small with ~30 animals; the full dataset is needed to judge it properly.
