@@ -1,5 +1,14 @@
 /**
- * "Learning data" tab: everything the model learns from, as one table per
+ * "Learning data" tab: everything the model learns from and is tested on.
+ * Three views of the same data:
+ * - table: one row per animal and language (an overview);
+ * - questions: every question exactly as the model gets it (task token +
+ *   name), its right answer, other accepted answers, and whether it is
+ *   learned from, tested on, or both;
+ * - records: the data records themselves, every field, and which of them
+ *   ever reach the model.
+ *
+ * The table: one table per
  * language. For each animal: its name (copy practice) and the right male /
  * female / young word where the data has one. Never-seen animals are listed
  * too, greyed out: they are kept aside to test it, and their answers stay
@@ -20,6 +29,63 @@ import { targetToken } from '../nn/vocab';
 
 type DataFilter = 'all' | 'train' | 'unseen';
 const FILTERS: DataFilter[] = ['all', 'train', 'unseen'];
+type DataView = 'table' | 'questions' | 'records';
+const VIEWS: DataView[] = ['table', 'questions', 'records'];
+
+/**
+ * One question the data can ask: write `form` of the animal in `lang`,
+ * starting from its name. This is all the model is given (a task token for
+ * language + form, and the letters of `source`); the rest says how the
+ * question is used.
+ */
+export interface DataQuestion {
+  id: string;
+  lang: string;
+  form: string;
+  source: string;
+  /** Main right answer; '' when the language has no real word (the model can only invent one). */
+  answer: string;
+  /** Other answers accepted as right when testing (never learned from). */
+  alts: string[];
+  split: 'train' | 'unseen';
+  /** In the learning data: the trainer picks it for training steps. */
+  learn: boolean;
+  /** Asked when testing (Test tab). With no answer, whatever it writes counts as invented. */
+  test: boolean;
+  /** A native speaker still has to confirm this answer. */
+  unsure: boolean;
+}
+
+/**
+ * Every question for the animals (in one language, or all), the way the
+ * trainer and the tests use them (`FormTrainer.defaultMix`, `evaluate`):
+ * - names: "copy the name" is learned for animals it learns from; never tested;
+ * - forms with a real word: learned (animals it learns from) and tested (all animals);
+ * - forms without a real word: never learned; tested as "what does it invent".
+ */
+export function dataQuestions(ready: Pick<ReadyMsg, 'animals' | 'forms' | 'languages'>, lang?: string): DataQuestion[] {
+  const out: DataQuestion[] = [];
+  const langs = lang ? [lang] : ready.languages.map((l) => l.code);
+  for (const a of ready.animals) {
+    for (const l of langs) {
+      const source = a.names[l];
+      if (!source) continue;
+      const train = a.split === 'train';
+      for (const form of ready.forms) {
+        const isName = form === 'name';
+        const answer = isName ? source : a.forms[l]?.[form] ?? '';
+        const alts = isName ? [] : a.formsAlt?.[l]?.[form] ?? [];
+        out.push({
+          id: a.id, lang: l, form, source, answer, alts, split: a.split,
+          learn: train && !!answer,
+          test: !isName,
+          unsure: (a.unsure ?? []).includes(`${l}.${form}`),
+        });
+      }
+    }
+  }
+  return out;
+}
 
 /** Counts of what the model learns from, per language and in total. */
 export interface DataCounts {
@@ -29,20 +95,30 @@ export interface DataCounts {
   /** Learning examples: word forms and "copy the name" of train-split animals. */
   forms: number;
   copies: number;
+  /** Test questions with a right answer (all animals), and those of never-seen animals. */
+  tests: number;
+  unseenTests: number;
+  /** Test questions without a real word: whatever it writes is its own invention. */
+  inventions: number;
 }
 
 export function countData(ready: Pick<ReadyMsg, 'animals' | 'forms'>, lang?: string): DataCounts {
-  const c: DataCounts = { animals: 0, train: 0, unseen: 0, forms: 0, copies: 0 };
+  const c: DataCounts = { animals: 0, train: 0, unseen: 0, forms: 0, copies: 0, tests: 0, unseenTests: 0, inventions: 0 };
   for (const a of ready.animals) {
     const langs = lang ? [lang] : Object.keys(a.names);
     const has = langs.filter((l) => a.names[l]);
     if (has.length === 0) continue;
     c.animals++;
-    if (a.split === 'unseen') { c.unseen++; continue; }
-    c.train++;
+    const train = a.split === 'train';
+    if (train) c.train++; else c.unseen++;
     for (const l of has) {
-      c.copies++;
-      for (const f of ready.forms) if (f !== 'name' && a.forms[l]?.[f]) c.forms++;
+      if (train) c.copies++;
+      for (const f of ready.forms) {
+        if (f === 'name') continue;
+        if (!a.forms[l]?.[f]) { c.inventions++; continue; }
+        c.tests++;
+        if (train) c.forms++; else c.unseenTests++;
+      }
     }
   }
   return c;
@@ -53,6 +129,10 @@ export class DataTab {
   private ready?: ReadyMsg;
   private lang = '';
   private filter: DataFilter = 'all';
+  private view: DataView = 'table';
+  private viewPick: HTMLElement;
+  private viewNote: HTMLElement;
+  private legend: HTMLElement;
   private search = '';
   private reveal = false;
   private summary: HTMLElement;
@@ -69,6 +149,13 @@ export class DataTab {
     this.summary = h('div', { class: 'data-summary', 'data-test': 'data-summary' });
     this.langPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('language') });
     this.filterPick = h('div', { class: 'picker', role: 'group' });
+    this.viewPick = h('div', { class: 'picker data-views', role: 'group', 'data-test': 'data-views' });
+    for (const v of VIEWS) {
+      const b = h('button', { 'data-view': v, title: t(`data.view.${v}.tip`) }, t(`data.view.${v}`));
+      b.onclick = () => { this.view = v; this.render(); };
+      this.viewPick.append(b);
+    }
+    this.viewNote = h('p', { class: 'small data-view-note', 'data-test': 'data-view-note' });
     for (const f of FILTERS) {
       const b = h('button', { 'data-filter': f }, t(`data.filter.${f}`));
       b.onclick = () => { this.filter = f; this.render(); };
@@ -84,13 +171,14 @@ export class DataTab {
       h('div', { class: 'phase-head' }, h('h2', {}, t('data.title')),
         h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), h('p', {}, t('data.help')))),
       h('p', { class: 'practice-explain' }, t('data.explain')),
+      h('div', { class: 'data-given', 'data-test': 'data-given' },
+        h('b', {}, t('data.given.title')), ' ', t('data.given.body')),
       this.summary,
+      this.viewPick,
+      this.viewNote,
       h('div', { class: 'row data-controls' }, this.langPick, this.filterPick, search,
         h('label', { class: 'small' }, revealBox, ' ', t('data.reveal'))),
-      h('div', { class: 'data-legend small' },
-        h('span', { class: 'learned' }, t('data.legend.learned')),
-        h('span', { class: 'missing' }, `— ${t('data.legend.missing')}`),
-        h('span', { class: 'kept' }, t('data.legend.kept'))),
+      this.legend = h('div', { class: 'data-legend small' }),
       this.table);
     this.el = h('div', { class: 'data-layout' }, tablePanel, this.example);
   }
@@ -128,15 +216,30 @@ export class DataTab {
       h('div', { class: 'stat' }, h('b', {}, n(all.copies)), ' ', t('data.sum.copies')),
       h('div', { class: 'stat' }, h('b', {}, n(all.train)), ' ', t('data.sum.train')),
       h('div', { class: 'stat kept' }, h('b', {}, n(all.unseen)), ' ', t('data.sum.unseen')),
+      h('div', { class: 'stat' }, h('b', {}, n(all.tests)), ' ', t('data.sum.tests', { unseen: n(all.unseenTests) })),
+      h('div', { class: 'stat kept' }, h('b', {}, n(all.inventions)), ' ', t('data.sum.inventions')),
       h('p', { class: 'small' }, t('data.sum.lang', { lang: langName, examples: n(here.forms + here.copies), forms: n(here.forms), copies: n(here.copies) })));
 
+    this.langPick.hidden = this.view === 'records';
+    for (const b of this.viewPick.querySelectorAll('button')) b.classList.toggle('on', b.dataset.view === this.view);
+    this.viewNote.textContent = t(`data.view.${this.view}.note`);
+    if (this.view === 'table') this.renderTable(ready);
+    else if (this.view === 'questions') this.renderQuestions(ready);
+    else this.renderRecords(ready);
+    this.renderExample(ready);
+  }
+
+  private renderTable(ready: ReadyMsg): void {
+    this.legend.hidden = false;
+    this.legend.replaceChildren(
+      h('span', { class: 'learned' }, t('data.legend.learned')),
+      h('span', { class: 'missing' }, `— ${t('data.legend.missing')}`),
+      h('span', { class: 'kept' }, t('data.legend.kept')),
+      h('span', {}, h('sup', { class: 'alts' }, '+1'), ' ', t('data.legend.alts')),
+      h('span', { class: 'learned unsure' }, t('data.legend.unsure')));
     const lang = this.lang;
     const forms = ready.forms.filter((f) => f !== 'name');
-    const list = ready.animals
-      .filter((a) => a.names[lang])
-      .filter((a) => this.filter === 'all' || a.split === this.filter)
-      .filter((a) => !this.search || this.matches(a, lang))
-      .sort((a, b) => a.names[lang].localeCompare(b.names[lang], lang));
+    const list = this.animalsShown(ready, lang);
     const rows = list.map((a) => {
       const kept = a.split === 'unseen';
       const word = (text: string, form: string, cls: string, title: string) => {
@@ -149,7 +252,14 @@ export class DataTab {
         const w = a.forms[lang]?.[f];
         if (!w) return h('td', { class: 'cell missing', title: t('data.tip.missing') }, '—');
         if (kept && !this.reveal) return h('td', { class: 'cell kept hidden', title: t('data.tip.hidden') }, '?');
-        return word(w, f, kept ? 'kept' : 'learned', kept ? t('data.tip.kept') : t('data.tip.learned', { from: a.names[lang], to: w }));
+        const alts = a.formsAlt?.[lang]?.[f] ?? [];
+        const unsure = (a.unsure ?? []).includes(`${lang}.${f}`);
+        let tip = kept ? t('data.tip.kept') : t('data.tip.learned', { from: a.names[lang], to: w });
+        if (alts.length) tip += ` ${t('data.tip.alts', { words: alts.join(', ') })}`;
+        if (unsure) tip += ` ${t('data.tip.unsure')}`;
+        const cell = word(w, f, `${kept ? 'kept' : 'learned'}${unsure ? ' unsure' : ''}`, tip);
+        if (alts.length) cell.append(h('sup', { class: 'alts' }, `+${alts.length}`));
+        return cell;
       });
       const name = word(a.names[lang], 'name', kept ? 'kept name' : 'learned name',
         kept ? t('data.tip.kept') : t('data.tip.copy', { word: a.names[lang] }));
@@ -163,7 +273,89 @@ export class DataTab {
           h('th', {}, t('data.col.name')),
           ...forms.map((f) => h('th', {}, t(`form.${f}`))))),
         h('tbody', {}, ...rows)));
-    this.renderExample(ready);
+  }
+
+  /** Animals that pass the split filter and the search, sorted by name. */
+  private animalsShown(ready: ReadyMsg, lang: string): AnimalInfo[] {
+    return ready.animals
+      .filter((a) => a.names[lang])
+      .filter((a) => this.filter === 'all' || a.split === this.filter)
+      .filter((a) => !this.search || this.matches(a, lang))
+      .sort((a, b) => a.names[lang].localeCompare(b.names[lang], lang));
+  }
+
+  /** Every question, as the model gets it, with its answers and how it is used. */
+  private renderQuestions(ready: ReadyMsg): void {
+    this.legend.hidden = true;
+    const lang = this.lang;
+    const index = tokenIndex(ready.tokens);
+    const langName = (code: string) => ready.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
+    const opts = { expert: this.expert, langName };
+    const animals = this.animalsShown(ready, lang);
+    const order = new Map(animals.map((a, i) => [a.id, i]));
+    const qs = dataQuestions(ready, lang)
+      .filter((q) => order.has(q.id))
+      .sort((a, b) => order.get(a.id)! - order.get(b.id)! || ready.forms.indexOf(a.form) - ready.forms.indexOf(b.form));
+    const n = (v: number) => v.toLocaleString(uiLang());
+    const learn = qs.filter((q) => q.learn).length;
+    const test = qs.filter((q) => q.test && q.answer).length;
+    const invent = qs.filter((q) => q.test && !q.answer).length;
+    const unused = qs.filter((q) => !q.learn && !q.test).length;
+    const yes = (on: boolean, text = '✓') => h('td', { class: on ? 'use yes' : 'use no' }, on ? text : '—');
+    const rows = qs.map((q) => {
+      const hidden = q.split === 'unseen' && !this.reveal && q.form !== 'name';
+      const sel = this.sel?.id === q.id && this.sel.lang === q.lang && this.sel.form === q.form;
+      const answer = !q.answer ? h('span', { class: 'missing' }, t('data.q.noWord'))
+        : hidden ? h('span', { class: 'hidden', title: t('data.tip.hidden') }, '?')
+        : h('span', { class: q.unsure ? 'unsure' : '', title: q.unsure ? t('data.tip.unsure') : '' }, q.answer);
+      const alts = hidden || q.alts.length === 0 ? '' : q.alts.join(', ');
+      const tr = h('tr', { class: `${q.split === 'unseen' ? 'kept' : ''}${sel ? ' sel' : ''}` },
+        h('td', { class: 'q' }, h('span', { class: 'chips' }, tokenChip(toTok(targetToken(q.lang, q.form), index), opts)), ' ', h('b', {}, q.source)),
+        h('td', { class: 'arrow' }, '→'),
+        h('td', { class: 'ans' }, answer),
+        h('td', { class: 'small alts-cell' }, alts),
+        yes(q.learn),
+        yes(q.test, q.answer ? '✓' : t('data.q.invents')),
+        h('td', { class: 'small' }, q.split === 'unseen' ? t('neverSeen') : ''));
+      tr.onclick = () => { this.sel = { id: q.id, lang: q.lang, form: q.form }; this.render(); };
+      return tr;
+    });
+    this.table.replaceChildren(
+      h('p', { class: 'small', 'data-test': 'data-q-count' }, t('data.q.shown', { n: n(qs.length), learn: n(learn), test: n(test), invent: n(invent), unused: n(unused) })),
+      h('table', { class: 'questions', 'data-test': 'data-questions' },
+        h('thead', {}, h('tr', {},
+          h('th', {}, t('data.q.col.question')), h('th', {}),
+          h('th', {}, t('data.q.col.answer')),
+          h('th', {}, t('data.q.col.alts')),
+          h('th', {}, t('data.q.col.learn')),
+          h('th', {}, t('data.q.col.test')),
+          h('th', {}))),
+        h('tbody', {}, ...rows)));
+  }
+
+  /** The data records themselves: every field, with what reaches the model. */
+  private renderRecords(ready: ReadyMsg): void {
+    this.legend.hidden = false;
+    this.legend.replaceChildren(h('dl', { class: 'record-fields' },
+      ...(['id', 'pack', 'split', 'names', 'forms', 'formsAlt', 'alt', 'unsure'] as const).flatMap((f) => [
+        h('dt', {}, h('code', {}, f)), h('dd', {}, t(`data.rec.${f}`))])));
+    const hiddenMark = t('data.rec.hidden');
+    const animals = ready.animals
+      .filter((a) => this.filter === 'all' || a.split === this.filter)
+      .filter((a) => !this.search || Object.keys(a.names).some((l) => this.matches(a, l)))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const mask = <T>(a: AnimalInfo, v: T): T | string => (a.split === 'unseen' && !this.reveal ? hiddenMark : v);
+    const records = animals.map((a) => {
+      const rec: Record<string, unknown> = { id: a.id, pack: a.pack, split: a.split, names: a.names };
+      if (Object.keys(a.forms).length) rec.forms = mask(a, a.forms);
+      if (Object.keys(a.formsAlt ?? {}).length) rec.formsAlt = mask(a, a.formsAlt);
+      if (Object.keys(a.alt ?? {}).length) rec.alt = a.alt;
+      if (a.unsure?.length) rec.unsure = a.unsure;
+      return h('pre', { class: `record${a.split === 'unseen' ? ' kept' : ''}` }, recordJson(rec));
+    });
+    this.table.replaceChildren(
+      h('p', { class: 'small' }, t('data.rec.shown', { n: animals.length })),
+      h('div', { class: 'records', 'data-test': 'data-records' }, ...records));
   }
 
   /** Start with a word-form example of the first animal it learns from, so the panel is never empty. */
@@ -239,7 +431,21 @@ export class DataTab {
   private matches(a: AnimalInfo, lang: string): boolean {
     // Hidden answers of never-seen animals must not be findable by searching.
     const hidden = a.split === 'unseen' && !this.reveal;
-    const words = [a.names[lang], ...(hidden ? [] : Object.values(a.forms[lang] ?? {}))];
+    if (!a.names[lang]) return false;
+    const words = [a.names[lang], a.id, ...(a.alt?.[lang] ?? []),
+      ...(hidden ? [] : [...Object.values(a.forms[lang] ?? {}), ...Object.values(a.formsAlt?.[lang] ?? {}).flat()])];
     return words.some((w) => w.toLowerCase().includes(this.search));
   }
+}
+
+/** Readable JSON: one line per field; objects by language get one line per language. */
+function recordJson(rec: Record<string, unknown>): string {
+  const one = (v: unknown) => JSON.stringify(v).replace(/,"/g, ', "').replace(/":/g, '": ');
+  const lines = Object.entries(rec).map(([k, v]) => {
+    const nested = v && typeof v === 'object' && !Array.isArray(v) && Object.values(v).some((x) => x && typeof x === 'object');
+    if (!nested) return `  "${k}": ${one(v)}`;
+    const inner = Object.entries(v as Record<string, unknown>).map(([l, x]) => `    "${l}": ${one(x)}`);
+    return `  "${k}": {\n${inner.join(',\n')}\n  }`;
+  });
+  return `{\n${lines.join(',\n')}\n}`;
 }

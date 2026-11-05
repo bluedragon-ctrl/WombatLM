@@ -85,6 +85,12 @@ export interface AnimalInfo {
    * them behind a "reveal" button.
    */
   forms: Record<string, Record<string, string>>;
+  /** Other accepted names per language (only used to recognise a word on the Ask tab; never trained on). */
+  alt: Record<string, string[]>;
+  /** Other accepted forms per language, used only when testing (never trained on). */
+  formsAlt: Record<string, Record<string, string[]>>;
+  /** Entries a native speaker still has to confirm, e.g. "cs.female" (still trained on). */
+  unsure: string[];
 }
 
 export interface ReadyMsg {
