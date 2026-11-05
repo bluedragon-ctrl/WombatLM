@@ -51,3 +51,23 @@ Agreed with the user: the main task becomes **within-language word forms** inste
 | copy practice 1:1 + dropout 0.1, seeds 1–3 | 89–97/102 | 109–123/147 | 3–7/26 (+5) | 2–4/27 |
 
 Never-seen Czech "pattern" forms: 3–7 of 18 exact; most errors are plausible (vlk → *vlkice*, kamzík → *kamzíkice*, žába → *žábě*). English never-seen stays near zero, as expected. English known forms train more slowly with copy practice. Still short of the goal; the next lever is a copy-friendly model change.
+
+## Copy mechanism and target-token start
+
+- **Copy mechanism** (`TranslatorConfig.copy`): a single-head attention from the final decoder state over the input letters (never the target token or padding) plus a learned write-or-copy gate: `p = g·softmax(logits) + (1−g)·copy`. Loss is the NLL of the mixed distribution. New ops `pointerMix` and `nllFromProbs`, both gradient-checked. +2 145 parameters. `inspect()` returns the copy attention and a per-letter "wrote it itself" share for visualisation.
+- **Target-token start** (`TranslatorConfig.targetStart`): the decoder starts from the target token (`<cs:female>`) instead of `<bos>`. Without it the model often mixed up forms (čáp → male *čápice*, female *čáp*).
+
+Results (`forms-full.ts`, 5 000 steps; never-seen Czech forms are 26, 18 of them "pattern"):
+
+| Setup | known cs / en | never-seen cs exact |
+|---|---|---|
+| copy mechanism only | 96–101/102, 137–146/147 | 1/26 |
+| copy mechanism + copy practice + dropout 0.1 | 93/102, 139/147 | 7/26 |
+| + target-token start (seeds 1, 2) | 96/102, 131–141/147 | 7–8/26 |
+| target-token start + copy practice, no copy mechanism | 89/102, 124/147 | 8/26 |
+
+Conclusions:
+- **Copy practice is what makes never-seen forms work.** The copy mechanism mainly keeps known forms accurate while copy practice is on (English 131–141 vs 109–123 without it) and gives a useful visual; it does not by itself improve generalisation.
+- What the model reliably generalises is **keeping the stem** (male vlk → vlk, female žába → žába). Adding an ending to a never-seen stem is hit-and-miss (buvol → buvolice in some runs, *bulice* in others; velbloud → *veliceud*). Consonant changes (vlk → vlčice, zajíc → zaječice) fail, with believable mistakes.
+- English never-seen forms stay near zero, as expected.
+- **Defaults chosen:** copy mechanism on, target-token start on, copy practice 1:1, dropout 0.1, LR 3e-3, batch 16. The never-seen set is small (26 Czech forms), so single-run numbers move by ±2.

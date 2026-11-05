@@ -92,6 +92,25 @@ describe('translator', () => {
     expect(cross.Tk).toBe(4);
   });
 
+  it('with the copy mechanism: gradients match, it overfits, and cached decoding agrees', () => {
+    const cfg = { ...tinyConfig, copy: true, targetStart: true };
+    const small = new Translator(cfg, 4);
+    const batch = makeBatch(pairs.slice(0, 2), ids);
+    const { maxError, worst } = gradCheck(() => small.loss(batch, ids.pad), small.params.list, {
+      maxPerInput: 12, eps: 1e-2, atol: 2e-3, rtol: 3e-2,
+    });
+    expect(maxError, worst).toBeLessThan(1);
+
+    const model = new Translator({ ...cfg, dModel: 16, heads: 2, ffn: 32 }, 1);
+    expect(train(model, pairs, 400)).toBeLessThan(0.05);
+    const inputs = pairs.map((p) => ({ target: p.target, src: p.src }));
+    expect(model.greedy(inputs, ids)).toEqual(pairs.map((p) => p.tgt));
+    const tr = model.inspect(3, [5, 6, 7], ids);
+    expect(tr.writeShare).toHaveLength(4);
+    expect(tr.attention.copy.Tq).toBe(4);
+    tr.probs.forEach((p) => expect(p.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 4));
+  });
+
   it('default model has about 25k parameters', () => {
     const model = new Translator({ ...TRANSLATOR_DEFAULTS, vocabSize: 49 }, 1);
     const n = model.params.count();

@@ -553,3 +553,88 @@ export function dropout(x: Tensor, p: number, random: () => number): Tensor {
   });
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Copy mechanism ("pointer")
+// ---------------------------------------------------------------------------
+
+/**
+ * Mix "write a letter" with "copy a letter from the input".
+ *
+ *   p = g · softmax(logits) + (1 − g) · copy
+ *
+ * where g = sigmoid(gateLogit) and copy[v] adds up the attention the model
+ * pays to every input position holding token v.
+ *
+ * logits [N, V], attn [N, Ts] (each row sums to 1), src [B*Ts] input tokens,
+ * gateLogit [N, 1]; output row r belongs to batch item floor(r / rowsPerItem).
+ * Returns probabilities [N, V].
+ */
+export function pointerMix(logits: Tensor, attn: Tensor, src: Int32Array, rowsPerItem: number, gateLogit: Tensor): Tensor {
+  const [N, V] = logits.shape;
+  const Ts = attn.shape[1];
+  if (attn.shape[0] !== N || gateLogit.size !== N) throw new Error('pointerMix: shape mismatch');
+  const pv = new Float32Array(N * V);
+  const pc = new Float32Array(N * V);
+  const g = new Float32Array(N);
+  const out = Tensor.zeros([N, V]);
+  for (let r = 0; r < N; r++) {
+    const o = r * V;
+    let max = -Infinity;
+    for (let j = 0; j < V; j++) max = Math.max(max, logits.data[o + j]);
+    let s = 0;
+    for (let j = 0; j < V; j++) { pv[o + j] = Math.exp(logits.data[o + j] - max); s += pv[o + j]; }
+    for (let j = 0; j < V; j++) pv[o + j] /= s;
+    const so = Math.floor(r / rowsPerItem) * Ts;
+    for (let k = 0; k < Ts; k++) pc[o + src[so + k]] += attn.data[r * Ts + k];
+    g[r] = 1 / (1 + Math.exp(-gateLogit.data[r]));
+    for (let j = 0; j < V; j++) out.data[o + j] = g[r] * pv[o + j] + (1 - g[r]) * pc[o + j];
+  }
+  recordOp([logits, attn, gateLogit], out, () => {
+    const dp = out.grad;
+    if (!dp) return;
+    const gl = logits.requiresGrad ? logits.ensureGrad() : null;
+    const ga = attn.requiresGrad ? attn.ensureGrad() : null;
+    const gg = gateLogit.requiresGrad ? gateLogit.ensureGrad() : null;
+    for (let r = 0; r < N; r++) {
+      const o = r * V;
+      let dGate = 0, dot = 0;
+      for (let j = 0; j < V; j++) {
+        dGate += dp[o + j] * (pv[o + j] - pc[o + j]);
+        dot += pv[o + j] * dp[o + j];
+      }
+      if (gg) gg[r] += dGate * g[r] * (1 - g[r]);
+      if (gl) for (let j = 0; j < V; j++) gl[o + j] += g[r] * pv[o + j] * (dp[o + j] - dot);
+      if (ga) {
+        const so = Math.floor(r / rowsPerItem) * Ts;
+        for (let k = 0; k < Ts; k++) ga[r * Ts + k] += (1 - g[r]) * dp[o + src[so + k]];
+      }
+    }
+  });
+  return out;
+}
+
+/**
+ * Negative log-likelihood from probabilities (not logits): mean of −log p[target]
+ * over rows whose target is not `ignoreIndex`.
+ */
+export function nllFromProbs(probs: Tensor, targets: Int32Array, ignoreIndex = -1, eps = 1e-9): Tensor {
+  const [N, V] = probs.shape;
+  let total = 0, count = 0;
+  for (let i = 0; i < N; i++) {
+    if (targets[i] === ignoreIndex) continue;
+    total -= Math.log(probs.data[i * V + targets[i]] + eps);
+    count++;
+  }
+  const out = Tensor.from([count ? total / count : 0], [1]);
+  recordOp([probs], out, () => {
+    const g = out.grad;
+    if (!g || !count) return;
+    const gp = probs.ensureGrad();
+    for (let i = 0; i < N; i++) {
+      if (targets[i] === ignoreIndex) continue;
+      gp[i * V + targets[i]] -= g[0] / count / (probs.data[i * V + targets[i]] + eps);
+    }
+  });
+  return out;
+}
