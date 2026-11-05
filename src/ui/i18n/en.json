@@ -235,5 +235,9 @@
   "example.explain": "This one example is {n} guesses. Before each guess the model is shown the right answer so far (the row above) and must guess the next token (the row below): the same answer, shifted by one. The loss is how wrong these {n} guesses are, on average. All of them are checked at once, in one training step.",
   "example.guessTip": "Shown “{sofar}”, it must guess “{next}”",
   "example.kept": "Never-seen animal: the model never learns from it. It is kept aside to test the model, so there are no guesses to learn here.",
-  "example.ask": "Ask the model this question"
+  "example.ask": "Ask the model this question",
+  "wallPerSec": "real speed {n} steps/s",
+  "quiet.label": "Quiet learning (faster)",
+  "quiet.help": "While it learns, skip the pictures: no testing, no answering the batch first, no letter map or weights. Everything updates again when you pause.",
+  "quiet.note": "Quiet learning is on: the pictures wait until you pause."
 }

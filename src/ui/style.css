@@ -281,3 +281,10 @@ header .params { text-align: right; }
 .example-caption { min-height: 18px; margin: 0 0 6px; }
 .kept-note { border-left: 3px dashed var(--muted); padding-left: 8px; }
 .data-table td.cell.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Quiet learning: the pictures wait while the model learns. */
+.quiet-toggle { gap: 6px; }
+.quiet-note { display: none; color: var(--muted); font-style: italic; }
+.learn-main.quiet .quiet-note { display: block; }
+.learn-main.quiet .practice-table,
+.learn-main.quiet .panel.map { opacity: 0.45; }
