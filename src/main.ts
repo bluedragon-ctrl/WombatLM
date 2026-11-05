@@ -1,2 +1,6 @@
-// Placeholder entry point; the UI arrives in milestone M2.
-document.getElementById('app')!.textContent = 'WombatLM';
+import './ui/style.css';
+import { App, colorVars } from './ui/app';
+
+const root = document.getElementById('app')!;
+root.setAttribute('style', colorVars());
+new App(root);

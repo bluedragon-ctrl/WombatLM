@@ -88,3 +88,12 @@ Conclusions:
 - **Loop:** slices of ~12 ms of training, then yield. `max` speed trains back-to-back; a numeric speed earns steps over time (at most a quarter second banked), and the first step happens immediately on Play.
 - **Evaluation schedule:** real forms every 100 steps (or every 3 s at slow speeds), inventions every 500 steps, plus on init / reset / `step` / `evaluate`. At ~40 steps/s this costs about 10% of training time instead of ~50% for "everything every 50 steps".
 - Ticks: at most every 50 ms, carrying every batch loss since the last tick (the UI draws the loss chart from these).
+
+## M2 — minimal browser UI
+
+- `src/ui/app.ts` (vanilla DOM) + `src/viz/` (Canvas 2D: guess bars, line chart, colours) + `src/ui/style.css`. Panels: controls (play/pause, step ×1/×10, speed 1/5/20/max steps/s, seed + reset, expert LR and batch), the question box with **language and form pickers built from `languages.json` × `forms.json`**, answer with badge and confidence meter, guess bars with a copied/wrote strip, loss chart (linear; log in expert mode), scoreboard (lines for the selected language: known / pattern / partly / irregular; table for all languages with the "right or one letter off" row in bold), animal list (per selected language, columns male / female / young, ✓ ≈ ✗ ✨, never-seen badge, filters all / known / never seen / wrong).
+- Typing an animal name of another language switches the language (forms stay within one language); the hint says "looks like …".
+- **A hidden answer is shown uncoloured until "Reveal"**: colouring it green/red would give the answer away. The animal list still shows ✓/≈/✗ for never-seen animals (it is the scoreboard view) but only shows real words of known animals in its tooltips.
+- UI strings live in `src/ui/i18n/{en,cs}.json` (picked from the browser language, stored in localStorage). **The Czech copy needs the user's review** (M7 polishes it).
+- **Browser speed (headless Chromium in the cloud container, 1 worker):** ~37–38 training steps/s, ~32 steps/s wall-clock including evaluation and UI. ≥ 30 target met. A 2-minute run (~3 800 steps) reached known cs 87% / en 87%, never-seen Czech pattern 44% (`buvol → buvolice`).
+- `e2e/smoke.spec.ts` + `playwright.config.ts`: load, play 5 s, ask a question (`npm run e2e`). Not in CI (CI has no pre-installed browser).

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A tiny neural network that learns Czech <-> English animal names, trained live in the browser.",
+  "description": "A tiny neural network that learns animal word forms (male / female / young), trained live in the browser.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

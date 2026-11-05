@@ -31,7 +31,7 @@ Experiments showed that cs↔en translation on ~150 animals cannot generalise: n
 | Milestone | State |
 |---|---|
 | M1 brain library | **Done.** `src/nn`: tensors, tape autograd, ops (all gradient-checked), Adam/AdamW, dropout, translator with KV-cached greedy decoding, copy mechanism, target-token start, serialisation f32/f16/int8, vocabulary growth. 54 tests. |
-| M2 training in the browser | **In progress.** Done: dataset v2 + validator + review doc, `Dataset.formTasks()`, experiment scripts. Not done: trainer switched to form tasks, worker + protocol, UI. |
+| M2 training in the browser | **Nearly done.** Dataset v2 + validator + review doc, `FormTrainer` on word forms with copy practice, worker + engine + protocol, minimal UI, Playwright smoke test. ~38 steps/s in the browser. Open: a long browser run to confirm known ≥ 95%, the user's data review, DESIGN.md rewrite. |
 | M3–M8 | Not started. |
 
 ## Data
@@ -49,16 +49,22 @@ Expected results after 5 000 steps: known Czech ~95%, known English ~90–95%, n
 
 ## Next steps (M2)
 
-1. `src/train/trainer.ts`: `TranslatorTrainer` still samples translation tasks (`nameTasks`). Switch its mix to `formTasks()` (train split) + identity copy practice (`nameTasks(filter, true)`), use the defaults above, and score with `formKind()` per language (known / pattern / partly / irregular, plus "close").
-2. Worker (`src/train/worker.ts`) + typed protocol (`src/train/protocol.ts`) as in DESIGN §7, with form + language instead of "to:".
-3. Minimal UI: controls (play/pause/step/speed/reset), input box with form and language pickers, guess bars, loss chart, scoreboard per language, animal list with ✓ / ≈ / ✗ and never-seen badges.
-4. Measure steps/s in the browser; acceptance: known ≥ 95% (or a documented decision), some never-seen Czech forms correct.
-5. Update DESIGN.md to the forms design once M2 settles.
+Done in the second session: steps 1–3 below (see DECISIONS.md "M2 — trainer on word forms", "worker and protocol", "minimal browser UI").
+
+1. ~~Trainer on form tasks + copy practice~~ → `FormTrainer` (`src/train/trainer.ts`).
+2. ~~Worker + protocol~~ → `src/train/{engine,worker,protocol}.ts`.
+3. ~~Minimal UI~~ → `src/ui/app.ts`, `src/viz/*`.
+4. Acceptance: run ~5 000 steps in the browser (≈ 2.5 min at max speed) and record known / never-seen numbers; Node runs give known cs 98% / en 93% at 5k steps, so English may need a decision (longer training or accept ~93%).
+5. User reviews: dataset (`npm run validate-data -- --review`) and the Czech UI strings (`src/ui/i18n/cs.json`).
+6. Rewrite DESIGN.md for the forms design, then M3 (attention grids, letter map, Inside the brain). The answer message already carries the attention maps.
 
 ## Useful commands
 
 ```
-npm test                                   # vitest (54 tests)
+npm test                                   # vitest (66 tests)
+npm run e2e                                # Playwright smoke test (builds + previews)
+npm run dev                                # the app
+npx tsx scripts/train-node.ts 5000 1       # the app's trainer in Node
 npm run build                              # typecheck + vite build
 npm run validate-data [-- --review]        # data linter (+ review table)
 npx tsx scripts/experiments/forms-full.ts 5000 1 0.1 1 1 1
