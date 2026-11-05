@@ -37,7 +37,7 @@ const SLICE_MS = 12;
 const TICK_MS = 50;
 /** How many examples of the latest batch a tick carries. */
 export const PRACTICE_SAMPLE = 32;
-/** While the Practice tab is open and training is fast: own answers at most this often. */
+/** While the Practice tab is open and training is fast: answers before a step at most this often. */
 const OWN_EVERY_MS = 500;
 
 export class Engine {
@@ -67,6 +67,8 @@ export class Engine {
   /** The Practice tab is open: practice batches carry the brain's own answers (see `watchPractice`). */
   private watchPractice = false;
   private lastOwnAt = -Infinity;
+  /** The latest batch the brain answered before learning from it. */
+  private answered: PracticeBatch | undefined;
 
   constructor(private host: EngineHost, dataset?: Dataset) {
     this.dataset = dataset ?? new Dataset(baseBundle());
@@ -161,11 +163,32 @@ export class Engine {
     this.lastDelta.clear();
     this.beforeStep = null;
     this.lastPracticeStep = -1;
+    this.answered = undefined;
   }
 
   private stop(): void {
     this.running = false;
     this.generation++; // any scheduled slice of the old loop sees a stale generation and stops
+  }
+
+  /** Training too fast to follow single steps. */
+  private fastRun(): boolean {
+    return this.running && (this.speed === 'max' || this.speed > 5);
+  }
+
+  /**
+   * How many of the next batch's questions the brain should answer before
+   * learning from them (for the Practice tab and the one-step cycle). Always
+   * for Step and slow speeds (cheap); at high speeds only while the Practice
+   * tab is open, and at most every OWN_EVERY_MS (one greedy pass each).
+   */
+  private answerFirst(): number {
+    if (!this.fastRun()) return PRACTICE_SAMPLE;
+    if (!this.watchPractice) return 0;
+    const now = this.host.now();
+    if (now - this.lastOwnAt < OWN_EVERY_MS) return 0;
+    this.lastOwnAt = now;
+    return PRACTICE_SAMPLE;
   }
 
   private trainOne(): void {
@@ -176,7 +199,9 @@ export class Engine {
       this.beforeStep![i].set(p.data);
     });
     const t0 = this.host.now();
-    const loss = this.trainer.trainStep();
+    const answerFirst = this.answerFirst();
+    const loss = this.trainer.trainStep(answerFirst);
+    if (answerFirst > 0) this.answered = this.trainer.practice(PRACTICE_SAMPLE) ?? undefined;
     const dt = this.host.now() - t0;
     if (dt > 0) {
       const sps = 1000 / dt;
@@ -213,13 +238,12 @@ export class Engine {
     const tr = this.trainer;
     // The latest batch it practised on (only when there is a new one).
     let practice: PracticeBatch | undefined;
-    if (tr.step !== this.lastPracticeStep) {
-      if (!this.watchPractice) practice = tr.practice(PRACTICE_SAMPLE) ?? undefined;
-      else if (!this.running || this.speed !== 'max' && this.speed <= 5 || now - this.lastOwnAt >= OWN_EVERY_MS) {
-        // Answering the shown examples costs one greedy pass: at high speeds at most every OWN_EVERY_MS.
-        practice = tr.practice(PRACTICE_SAMPLE, true) ?? undefined;
-        this.lastOwnAt = now;
-      }
+    if (this.watchPractice && this.fastRun()) {
+      // Practice tab open at high speed: show the latest batch it answered (kept
+      // until sent, since later steps of the same tick would replace it).
+      if (this.answered && this.answered.step !== this.lastPracticeStep) practice = this.answered;
+    } else if (tr.step !== this.lastPracticeStep) {
+      practice = tr.practice(PRACTICE_SAMPLE) ?? undefined;
     }
     if (practice) this.lastPracticeStep = practice.step;
     this.host.post({

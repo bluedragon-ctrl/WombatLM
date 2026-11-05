@@ -8,10 +8,9 @@
  * lets the model keep the stem of animals it has never seen.
  */
 import { Tape } from '../nn/autograd';
-import type { Tensor } from '../nn/tensor';
 import { Adam } from '../nn/optim';
 import { Rng } from '../nn/rng';
-import { Batch, Example, SpecialIds, TRANSLATOR_DEFAULTS, TranslationTrace, Translator, TranslatorConfig, makeBatch } from '../nn/translator';
+import { Example, SpecialIds, TRANSLATOR_DEFAULTS, TranslationTrace, Translator, TranslatorConfig, makeBatch } from '../nn/translator';
 import { Vocab } from '../nn/vocab';
 import { Animal, Dataset, FormKind, Split, Task, editDistance, formKind } from '../data/dataset';
 
@@ -65,45 +64,32 @@ export interface EvalResult {
   results: TaskResult[];
 }
 
-/**
- * One example the model just practised on, with the model's own guess
- * (teacher-forced: for every letter it is shown the correct letters before it,
- * so each guessed letter is a separate small test). Read from the scores the
- * loss already computed, with dropout on, exactly as the model was graded.
- */
+/** One example the model just learned from (learning data), and what it answered before learning from it. */
 export interface PracticeExample {
   source: string;
   lang: string;
   form: string;
-  /** The correct answer it was shown. */
+  /** The right answer (the learning data). */
   target: string;
-  /** Guess per position of the target plus the end of the word ('' = "end of word"). */
-  guess: string[];
-  /** Every letter and the end of the word were guessed right. */
-  right: boolean;
-  /** This example's share of the mistake: mean -log p(correct letter). */
-  loss: number;
   /**
-   * Only with `practice(limit, true)`: what the brain answers when asked the
-   * same question on its own (greedy decoding, no help, no dropout), right
-   * after this step, and how that answer scores.
+   * What the brain answered when asked this question just before the step
+   * (ordinary answering: no help, nothing changes). Only present when the
+   * step was asked to answer first, see `trainStep(answerFirst)`.
    */
-  own?: string;
-  ownStatus?: 'correct' | 'close' | 'wrong';
+  answer?: string;
+  status?: 'correct' | 'close' | 'wrong';
 }
 
 /** The latest training batch, as the UI shows it. */
 export interface PracticeBatch {
   step: number;
   batchSize: number;
-  /** How many examples of the whole batch were guessed fully right (with help). */
-  rightCount: number;
-  /** With `own`: how many of the shown examples it answers right on its own. */
-  ownRightCount?: number;
   /** The batch loss (the mistake that was measured). */
   loss: number;
   /** The first examples of the batch (at most the limit asked for). */
   examples: PracticeExample[];
+  /** If the brain answered them first: how many of the shown examples it got right. */
+  rightCount?: number;
 }
 
 /** Chosen from the experiments in docs/DECISIONS.md. */
@@ -144,8 +130,8 @@ export class FormTrainer {
   /** Packs whose animals count as "new" on the scoreboard (Teach mode). */
   freshPacks = new Set<string>();
   private mix: MixPart[] = [];
-  /** The latest batch and the scores the model gave it (decoded only when asked, see `practice`). */
-  private last: { step: number; tasks: Task[]; batch: Batch; scores: Float32Array; loss: number } | null = null;
+  /** The latest batch, and what the brain answered before learning from it (if asked to). */
+  private last: { step: number; tasks: Task[]; answers: string[]; loss: number } | null = null;
 
   constructor(public dataset: Dataset, opts: TrainerOptions) {
     this.rng = new Rng(opts.seed ^ 0x5eed);
@@ -207,15 +193,21 @@ export class FormTrainer {
     return last.tasks[this.rng.int(last.tasks.length)];
   }
 
-  /** One optimisation step on a random batch. Returns the batch loss. */
-  trainStep(): number {
+  /**
+   * One optimisation step on a random batch. Returns the batch loss.
+   * With `answerFirst` > 0, the brain first answers that many of the batch's
+   * questions the ordinary way (greedy, no dropout, weights only read), so the
+   * UI can show "learning data → what it answered → right or wrong" before
+   * the mistake is measured and the numbers are nudged.
+   */
+  trainStep(answerFirst = 0): number {
     if (this.mix.length === 0) throw new Error('Nothing to train on');
     const tasks = Array.from({ length: this.batchSize }, () => this.sampleTask());
+    const answers = answerFirst > 0 ? this.runTasks(tasks.slice(0, answerFirst)) : [];
     const batch = makeBatch(tasks.map((t) => this.toExample(t)), this.ids);
     this.opt.zeroGrad();
     const tape = new Tape();
-    const keep: { scores?: Tensor } = {};
-    const loss = tape.run(() => this.model.loss(batch, this.vocab.pad, keep));
+    const loss = tape.run(() => this.model.loss(batch, this.vocab.pad));
     tape.backward(loss);
     const info = this.opt.step();
     this.step++;
@@ -223,61 +215,26 @@ export class FormTrainer {
     this.lastLr = info.lr;
     this.lastGradNorm = info.gradNorm;
     this.lossEma = this.lossEma === null ? this.lastLoss : 0.95 * this.lossEma + 0.05 * this.lastLoss;
-    // Keep references only (no copies); `practice()` decodes them on demand.
-    this.last = { step: this.step, tasks, batch, scores: keep.scores!.data, loss: this.lastLoss };
+    this.last = { step: this.step, tasks, answers, loss: this.lastLoss };
     return this.lastLoss;
   }
 
-  /**
-   * What the latest step practised: the batch's examples with the model's
-   * guesses (the argmax of the scores the loss was computed from), or null
-   * before the first step. Cheap: no forward pass, called at most per tick.
-   * With `own`, also asks the brain each shown question on its own (one
-   * greedy pass over the shown examples; reads the weights, never changes them).
-   */
-  practice(limit = 8, own = false): PracticeBatch | null {
+  /** The latest batch: its learning data and, if it answered first, its answers. Null before the first step. */
+  practice(limit = 8): PracticeBatch | null {
     const last = this.last;
     if (!last) return null;
-    const { batch, scores, tasks } = last;
-    const V = scores.length / (batch.B * batch.Tt);
-    const vocab = this.vocab;
-    const probs = !!this.model.config.copy; // with the copy mechanism the scores are probabilities, else logits
-    let rightCount = 0;
-    const examples: PracticeExample[] = [];
-    tasks.forEach((task, b) => {
-      const guess: string[] = [];
-      let right = true;
-      let nll = 0;
-      let n = 0;
-      for (let t = 0; t < batch.Tt; t++) {
-        const want = batch.tgtOut[b * batch.Tt + t];
-        if (want === vocab.pad) break;
-        const row = (b * batch.Tt + t) * V;
-        let best = 0;
-        for (let i = 1; i < V; i++) if (scores[row + i] > scores[row + best]) best = i;
-        guess.push(best === vocab.eos ? '' : vocab.isChar(best) ? vocab.tokens[best] : '?');
-        if (best !== want) right = false;
-        nll += probs ? -Math.log(Math.max(1e-9, scores[row + want])) : logSumExp(scores, row, V) - scores[row + want];
-        n++;
+    let right = 0;
+    const examples = last.tasks.slice(0, limit).map((task, i): PracticeExample => {
+      const ex: PracticeExample = { source: task.source, lang: task.to, form: task.form, target: task.answer };
+      if (i < last.answers.length) {
+        ex.answer = last.answers[i];
+        ex.status = judge(ex.answer, task.accepted) as 'correct' | 'close' | 'wrong';
+        if (ex.status === 'correct') right++;
       }
-      if (right) rightCount++;
-      if (examples.length < limit) {
-        examples.push({ source: task.source, lang: task.to, form: task.form, target: task.answer, guess, right, loss: n ? nll / n : 0 });
-      }
+      return ex;
     });
-    const result: PracticeBatch = { step: last.step, batchSize: tasks.length, rightCount, loss: last.loss, examples };
-    if (own && examples.length) {
-      const shownTasks = tasks.slice(0, examples.length);
-      const outputs = this.runTasks(shownTasks);
-      let ownRight = 0;
-      examples.forEach((ex, i) => {
-        ex.own = outputs[i];
-        ex.ownStatus = judge(outputs[i], shownTasks[i].accepted) as 'correct' | 'close' | 'wrong';
-        if (ex.ownStatus === 'correct') ownRight++;
-      });
-      result.ownRightCount = ownRight;
-    }
-    return result;
+    const answered = last.answers.length >= examples.length && examples.length > 0;
+    return { step: last.step, batchSize: last.tasks.length, loss: last.loss, examples, ...(answered ? { rightCount: right } : {}) };
   }
 
   setLearningRate(lr: number): void {
@@ -324,14 +281,6 @@ export class FormTrainer {
     const src = this.vocab.encodeWord(text).slice(0, model.config.maxLen - 2);
     return model.inspect(this.dataset.targetId(lang, form), src, this.ids);
   }
-}
-
-function logSumExp(x: Float32Array, off: number, n: number): number {
-  let m = -Infinity;
-  for (let i = 0; i < n; i++) m = Math.max(m, x[off + i]);
-  let s = 0;
-  for (let i = 0; i < n; i++) s += Math.exp(x[off + i] - m);
-  return m + Math.log(s);
 }
 
 export function judge(output: string, accepted: readonly string[]): Status {

@@ -206,21 +206,26 @@ describe('Engine', () => {
     expect((h.of('tick').at(-1) as TickMsg).practice).toBeUndefined();
   });
 
-  it('with the Practice tab open, practice batches carry its own answers', () => {
+  it('answers before each step while paused or slow; at max speed only for the open Practice tab', () => {
     const h = fakeHost();
     const e = new Engine(h.host, ds);
-    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'init', seed: 3, speed: 'max' });
     e.handle({ type: 'step', n: 1 });
-    expect((h.of('tick').at(-1) as TickMsg).practice!.examples[0].own).toBeUndefined();
+    const stepped = (h.of('tick').at(-1) as TickMsg).practice!;
+    expect(stepped.examples.every((x) => typeof x.answer === 'string')).toBe(true);
+    expect(stepped.rightCount).toBeDefined();
+    // Max speed, Practice tab closed: no answering (full speed).
+    e.handle({ type: 'play' });
+    h.runDue(2);
+    expect(h.of('tick').filter((t) => (t as TickMsg).practice?.step! > 1).every((t) => (t as TickMsg).practice!.rightCount === undefined)).toBe(true);
+    // Practice tab open: only answered batches are sent.
     e.handle({ type: 'watchPractice', on: true });
-    const p = (h.of('tick').at(-1) as TickMsg).practice!;
-    expect(p.step).toBe(1);
-    expect(p.examples.every((x) => typeof x.own === 'string')).toBe(true);
-    e.handle({ type: 'step', n: 1 });
-    expect((h.of('tick').at(-1) as TickMsg).practice!.examples[0].own).toBeDefined();
-    e.handle({ type: 'watchPractice', on: false });
-    e.handle({ type: 'step', n: 1 });
-    expect((h.of('tick').at(-1) as TickMsg).practice!.examples[0].own).toBeUndefined();
+    const from = h.sent.length;
+    h.runDue(6);
+    const ticks = h.sent.slice(from).filter((m) => m.type === 'tick' && m.practice) as TickMsg[];
+    expect(ticks.length).toBeGreaterThan(0);
+    expect(ticks.every((t) => t.practice!.rightCount !== undefined)).toBe(true);
+    e.handle({ type: 'pause' });
   });
 
   it('answering and evaluating never change the brain', () => {

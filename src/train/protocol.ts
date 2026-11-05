@@ -32,9 +32,9 @@ export type ToWorker =
   /** Evaluate now; `inventions` also asks for the forms the data lacks. */
   | { type: 'evaluate'; inventions?: boolean }
   /**
-   * The Practice tab is open (on) or closed (off). While on, the practice
-   * batch in ticks also carries the brain's own answers to the shown examples
-   * (sent at most every 500 ms while training fast).
+   * The Practice tab is open (on) or closed (off). While on, the brain also
+   * answers the shown examples before learning from them at high speeds (at
+   * most every 500 ms; at slow speeds and on Step it always does).
    */
   | { type: 'watchPractice'; on: boolean }
   /**
@@ -116,7 +116,7 @@ export interface TickMsg {
   /** Raw batch losses of every step since the previous tick. */
   losses: LossPoint[];
   /**
-   * What the latest training step practised on (up to 32 examples; with `watchPractice` also the brain's own answers) with the
+   * What the latest training step practised on (up to 32 examples of learning data and, when it answered them before the step, its answers) with the
    * model's guesses). Only present when there was a new step since the
    * previous tick.
    */

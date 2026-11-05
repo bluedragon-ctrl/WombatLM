@@ -80,8 +80,8 @@ test('learning vs answering', async ({ page }) => {
   await page.locator('.panel.askbox').screenshot({ path: `${LDIR}/4-answer-fresh.png` });
   // One step slowly: the four stages light up one after another.
   await page.click('text=Step ×1');
-  await expect(page.locator('[data-test=cycle] .stage.current[data-stage=guess]')).toBeVisible();
-  await page.locator('.panel.controls').screenshot({ path: `${LDIR}/5-cycle-guess.png` });
+  await expect(page.locator('[data-test=cycle] .stage.current[data-stage=answer]')).toBeVisible();
+  await page.locator('.panel.controls').screenshot({ path: `${LDIR}/5-cycle-answer.png` });
   await expect(page.locator('[data-test=cycle] .stage.current[data-stage=measure]')).toBeVisible();
   await page.locator('.panel.controls').screenshot({ path: `${LDIR}/6-cycle-measure.png` });
   await expect(page.locator('[data-test=cycle] .stage.current')).toHaveCount(0, { timeout: 5_000 });
@@ -91,8 +91,8 @@ test('learning vs answering', async ({ page }) => {
   await page.click('[data-test=tab-practice]');
   await page.locator('main.practice-main').screenshot({ path: `${LDIR}/10-practice-tab.png` });
   await page.click('[data-test=step-practice]');
-  await expect(page.locator('[data-test=cycle-practice] .stage.current[data-stage=guess]')).toBeVisible();
-  await page.locator('main.practice-main').screenshot({ path: `${LDIR}/11-practice-tab-guess.png` });
+  await expect(page.locator('[data-test=cycle-practice] .stage.current[data-stage=answer]')).toBeVisible();
+  await page.locator('main.practice-main').screenshot({ path: `${LDIR}/11-practice-tab-answer.png` });
   await expect(page.locator('[data-test=cycle-practice] .stage.current')).toHaveCount(0, { timeout: 5_000 });
   await page.click('[data-test=tab-forms]');
   // Write it slowly.

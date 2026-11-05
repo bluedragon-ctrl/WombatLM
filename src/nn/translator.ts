@@ -256,16 +256,11 @@ export class Translator {
     return tgtIn;
   }
 
-  /**
-   * Mean cross-entropy over all real target characters. If `keep` is given,
-   * the output scores are stored in it (no extra work: the UI reads the
-   * model's teacher-forced guesses from them).
-   */
-  loss(batch: Batch, padId: number, keep?: { scores?: Tensor }): Tensor {
+  /** Mean cross-entropy over all real target characters. */
+  loss(batch: Batch, padId: number): Tensor {
     this.training = true;
     try {
       const scores = this.logits(batch);
-      if (keep) keep.scores = scores;
       return this.config.copy ? nllFromProbs(scores, batch.tgtOut, padId) : crossEntropy(scores, batch.tgtOut, padId);
     } finally {
       this.training = false;

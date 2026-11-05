@@ -15,8 +15,8 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   // The Practice tab shows the whole batch.
   await page.click('[data-test=open-practice]');
   await expect(page.locator('[data-test=practice] tr.ex')).toHaveCount(16);
-  // Both: the guesses with help (graded) and its own answers (asked, brain frozen).
-  await expect(page.locator('[data-test=practice] td.own .word-own')).toHaveCount(16);
+  // Learning data with the right answers, and what it answered before learning from them.
+  await expect(page.locator('[data-test=practice] td.answer .word-own')).toHaveCount(16);
   await expect(page.locator('[data-test=cycle-practice] .stage.lit')).toHaveCount(4);
   await page.click('[data-test=tab-forms]');
   await expect(page.locator('[data-test=stamp]')).toContainText(/step 1\b/);

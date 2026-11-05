@@ -8,7 +8,7 @@
  * draws what comes back.
  */
 import type { AnimalInfo, AnswerMsg, EvalMsg, FromWorker, LetterMapMsg, LossPoint, ReadyMsg, Speed, TickMsg, ToWorker } from '../train/protocol';
-import type { PracticeBatch, PracticeExample, Scores, TaskResult } from '../train/trainer';
+import type { PracticeBatch, Scores, TaskResult } from '../train/trainer';
 import { LETTER_KINDS, LetterKind, STATUS_COLORS, STATUS_ICONS, SCORE_STYLE } from '../viz/colors';
 import { attentionCellAt, drawAttentionGrid, GridSpec } from '../viz/attentionGrid';
 import { drawGuessBars, guessColumnAt } from '../viz/guessBars';
@@ -33,7 +33,7 @@ const CYCLE_MS = 700;
 const PRACTICE_FAST_MS = 500;
 /** After a step while paused, the learning badge says "learning" for this long. */
 const LEARN_GLOW_MS = 1500;
-const CYCLE_STAGES = ['pick', 'guess', 'measure', 'nudge'] as const;
+const CYCLE_STAGES = ['pick', 'answer', 'measure', 'nudge'] as const;
 
 /** A "?" that opens a short explanation (keyboard accessible). */
 const help = (text: string) => h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), h('p', {}, text));
@@ -484,10 +484,7 @@ export class App {
     const practiceMain = h('main', { class: 'practice-main', hidden: true },
       h('section', { class: 'panel phase build' },
         h('div', { class: 'phase-head' }, h('h2', {}, t('practice.title')), practiceHelp),
-        h('ul', { class: 'practice-explain' },
-          h('li', {}, h('span', { class: 'tag help' }, t('practice.col.help')), ' ', t('practice.explain.help')),
-          h('li', {}, h('span', { class: 'tag own' }, t('practice.col.own')), ' ', t('practice.explain.own')),
-          h('li', {}, h('span', { class: 'tag mistake' }, t('practice.col.mistake')), ' ', t('practice.explain.mistake'))),
+        h('p', { class: 'practice-explain' }, t('practice.explain')),
         h('div', { class: 'row' }, play2, step1b, learning2),
         cycleB.el,
         cycleB.note,
@@ -803,7 +800,7 @@ export class App {
     // The four stages of one step.
     const values = p ? [
       t('cycle.pickVal'),
-      t('cycle.guessVal', { right: p.rightCount, n: p.batchSize }),
+      p.rightCount === undefined ? '' : t('cycle.answerVal', { right: p.rightCount, n: p.examples.length }),
       t('cycle.measureVal', { loss: p.loss.toFixed(2) }),
       t('cycle.nudgeVal', { n }),
     ] : ['', '', '', ''];
@@ -821,65 +818,39 @@ export class App {
     if (this.tab !== 'practice') return; // the examples are drawn only while their tab is visible
     practiceHelp.querySelector('p')!.textContent = t('practice.help', { shown: Math.min(PRACTICE_SHOWN, p?.batchSize ?? 16), batch: p?.batchSize ?? 16 });
 
-    // The examples, revealed with the stages: right answers, then guesses with
-    // help, then right/wrong and the mistake, then (after the nudge) its own answers.
+    // The learning data, revealed with the stages: questions and right answers,
+    // then what it answered, then right or wrong (the mistake is measured).
     if (!p) {
       practiceList.replaceChildren(h('p', { class: 'empty small' }, t('practice.empty')));
       return;
     }
     const langName = (code: string) => this.ready!.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
-    const judged = phase >= 3;
-    const showOwn = phase >= 4;
-    const shownN = p.examples.length;
+    const answered = p.rightCount !== undefined;
     const summary = [t('practice.step', { step: p.step.toLocaleString(uiLang()) })];
-    if (judged) summary.push(t('practice.sumHelp', { right: p.examples.filter((e) => e.right).length, n: shownN }));
-    if (showOwn && p.ownRightCount !== undefined) summary.push(t('practice.sumOwn', { right: p.ownRightCount, n: shownN }));
+    if (answered && phase >= 3) summary.push(t('practice.sumRight', { right: p.rightCount!, n: p.examples.length }));
+    if (phase >= 3) summary.push(t('cycle.measureVal', { loss: p.loss.toFixed(2) }));
     const rows = p.examples.map((ex) => {
       const task = ex.form === 'name' ? t('practice.copy') : `${t(`form.${ex.form}`)} · ${langName(ex.lang)}`;
-      const helpCell = h('td', { class: 'help' });
-      if (phase >= 2) {
-        if (judged) helpCell.append(h('span', { class: `mark ${ex.right ? 'correct' : 'wrong'}`, title: t(`status.${ex.right ? 'correct' : 'wrong'}`) }, ex.right ? '✓' : '✗'), ' ');
-        helpCell.append(this.guessLetters(ex, judged));
-      }
-      const mistakeCell = h('td', { class: 'mistake' });
-      if (judged) {
-        mistakeCell.append(
-          h('span', { class: 'mbar' }, h('span', { style: `width:${Math.round(Math.min(1, ex.loss / 3) * 100)}%` })),
-          h('span', { class: 'num' }, ex.loss.toFixed(2)));
-      }
-      const ownCell = h('td', { class: 'own' });
-      if (showOwn) {
-        if (ex.own === undefined) ownCell.append(h('span', { class: 'small' }, '…'));
-        else ownCell.append(h('span', { class: `word-own ${ex.ownStatus}`, title: t(`status.${ex.ownStatus}`) }, `${STATUS_ICONS[ex.ownStatus!]} ${ex.own || '∅'}`));
+      const answerCell = h('td', { class: 'answer' });
+      if (phase >= 2 && ex.answer !== undefined) {
+        const judged = phase >= 3;
+        answerCell.append(h('span', { class: `word-own ${judged ? ex.status : ''}`, title: judged ? t(`status.${ex.status}`) : '' },
+          `${judged ? STATUS_ICONS[ex.status!] + ' ' : ''}${ex.answer || '∅'}`));
       }
       return h('tr', { class: 'ex' },
         h('td', { class: 'example' }, h('span', { class: 'src' }, ex.source), h('span', { class: 'task' }, task)),
         h('td', { class: 'tgt' }, ex.target),
-        helpCell, mistakeCell, ownCell);
+        answerCell);
     });
     practiceList.replaceChildren(
       h('p', { class: 'small step-of' }, summary.join(' · ')),
+      answered ? '' : h('p', { class: 'small' }, t('practice.noAnswers')),
       h('table', {},
         h('thead', {}, h('tr', {},
           h('th', {}, t('practice.col.example')),
-          h('th', {}, t('practice.col.right')),
-          h('th', { class: 'help' }, t('practice.col.help')),
-          h('th', { class: 'mistake' }, t('practice.col.mistake')),
-          h('th', { class: 'own' }, t('practice.col.own')))),
+          h('th', { class: 'data' }, t('practice.col.right')),
+          h('th', { class: 'answer' }, t('practice.col.answer')))),
         h('tbody', {}, ...rows)));
-  }
-
-  /** The guessed letters; wrong ones marked (red, underlined) once judged. */
-  private guessLetters(ex: PracticeExample, judged: boolean): HTMLElement {
-    const want = [...ex.target];
-    const out = h('span', { class: 'guess' });
-    ex.guess.forEach((g, i) => {
-      const end = i === want.length;
-      if (end && g === '') return; // ended the word at the right place
-      const miss = end || g !== want[i];
-      out.append(judged && miss ? h('span', { class: 'miss' }, g === '' ? '⏎' : g) : (g === '' ? '⏎' : g));
-    });
-    return out;
   }
 
   private renderLoss(): void {

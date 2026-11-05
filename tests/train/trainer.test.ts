@@ -22,48 +22,43 @@ describe('FormTrainer', () => {
     for (let i = 0; i < 5; i++) expect(a.trainStep()).toBe(b.trainStep());
   });
 
-  it('reports the latest batch with teacher-forced guesses, at no change to training', () => {
+  it('reports the latest batch: learning data and, if asked, its answers from before the step', () => {
     const tr = new FormTrainer(ds, { seed: 7 });
     expect(tr.practice()).toBeNull();
     const loss = tr.trainStep();
-    const p = tr.practice(8)!;
-    expect(p.step).toBe(1);
-    expect(p.batchSize).toBe(16);
-    expect(p.examples.length).toBe(8);
-    expect(p.loss).toBe(loss);
-    for (const ex of p.examples) {
-      expect(ex.guess.length).toBe([...ex.target].length + 1); // every letter + the end of the word
-      expect(ex.right).toBe(ex.guess.join('') === ex.target && ex.guess.at(-1) === '');
-      expect(ex.loss).toBeGreaterThan(0);
-    }
-    expect(p.rightCount).toBeGreaterThanOrEqual(p.examples.filter((e) => e.right).length);
-    // Asking for the practice batch does not disturb training.
-    const other = new FormTrainer(ds, { seed: 7 });
-    other.trainStep();
-    expect(tr.trainStep()).toBe(other.trainStep());
+    const plain = tr.practice(8)!;
+    expect(plain.step).toBe(1);
+    expect(plain.batchSize).toBe(16);
+    expect(plain.loss).toBe(loss);
+    expect(plain.examples.length).toBe(8);
+    expect(plain.rightCount).toBeUndefined();
+    expect(plain.examples[0].answer).toBeUndefined();
+
+    // Answering first: the answers are those of the brain before the step.
+    const before = new FormTrainer(ds, { seed: 7 });
+    before.trainStep();
+    const snapshot = before.model.params.snapshot();
+    const expected = before.runTasks([]);
+    expect(expected).toEqual([]);
+    before.trainStep(16);
+    const p = before.practice(16)!;
+    expect(p.examples.every((e) => typeof e.answer === 'string')).toBe(true);
+    expect(p.rightCount).toBe(p.examples.filter((e) => e.status === 'correct').length);
+    before.model.params.load(snapshot);
+    expect(before.runTasks(p.examples.map((e) => ({ ...ds.formTasks()[0], source: e.source, to: e.lang, form: e.form })))).toEqual(p.examples.map((e) => e.answer));
   });
 
-  it('can also answer the shown examples on its own, without changing the brain', () => {
-    const tr = new FormTrainer(ds, { seed: 7 });
-    const twin = new FormTrainer(ds, { seed: 7 });
-    for (let i = 0; i < 30; i++) { tr.trainStep(); twin.trainStep(); }
-    const p = tr.practice(16, true)!;
-    expect(tr.practice(16)!.examples[0].own).toBeUndefined();
-    for (const ex of p.examples) {
-      expect(typeof ex.own).toBe('string');
-      expect(['correct', 'close', 'wrong']).toContain(ex.ownStatus);
-    }
-    expect(p.ownRightCount).toBe(p.examples.filter((e) => e.ownStatus === 'correct').length);
-    // Its own answers are exactly what asking gives.
-    expect(p.examples[0].own).toBe(tr.runTasks([{ ...ds.formTasks()[0], source: p.examples[0].source, to: p.examples[0].lang, form: p.examples[0].form }])[0]);
-    expect(tr.trainStep()).toBe(twin.trainStep());
+  it('answering first does not change training', () => {
+    const a = new FormTrainer(ds, { seed: 7 });
+    const b = new FormTrainer(ds, { seed: 7 });
+    for (let i = 0; i < 5; i++) expect(a.trainStep(16)).toBe(b.trainStep());
   });
 
-  it('practice guesses become right once it has learned', () => {
+  it('answers the learning data right more often once it has learned', () => {
     const tr = new FormTrainer(ds, { seed: 1 });
     for (let i = 0; i < 600; i++) tr.trainStep();
-    const p = tr.practice(16)!;
-    expect(p.rightCount).toBeGreaterThan(4);
+    tr.trainStep(16);
+    expect(tr.practice(16)!.rightCount).toBeGreaterThan(4);
   });
 
   it('evaluates every form per language, with inventions on request', () => {

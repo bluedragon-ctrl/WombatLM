@@ -185,30 +185,17 @@ main.practice-main { padding: 14px 20px; max-width: 1240px; }
 .practice-main .cycle { max-width: 760px; }
 .open-practice { padding: 0; margin-top: 2px; }
 
-/* Practice tab: with help vs on its own */
-.practice-explain { list-style: none; padding: 0; margin: 0 0 12px; font-size: 13px; color: var(--muted); max-width: 1000px; }
-.practice-explain li { margin-bottom: 4px; }
-.practice-explain .tag { display: inline-block; font-weight: 600; padding: 0 6px; border-radius: 4px; color: var(--ink); }
-.tag.help { background: #fef3c7; border: 1px solid #f59e0b; }
-.tag.own { background: #dbeafe; border: 1px solid var(--accent); }
-.tag.mistake { background: #f1f5f9; border: 1px solid #cbd5e1; }
-.practice-table table { border-collapse: collapse; width: 100%; font-size: 14px; }
-.practice-table th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 4px 8px; border-bottom: 2px solid var(--line); }
-.practice-table th.help { border-bottom-color: #f59e0b; color: #92400e; }
-.practice-table th.own { border-bottom-color: var(--accent); color: var(--accent); }
-.practice-table td { padding: 3px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: baseline; }
-.practice-table td.help { background: #fffbeb; }
-.practice-table td.own { background: #f5f9ff; }
+/* Practice tab: learning data and what it answered */
+.practice-explain { margin: 0 0 12px; font-size: 14px; color: var(--muted); max-width: 900px; }
+.practice-table table { border-collapse: collapse; width: 100%; max-width: 900px; font-size: 15px; }
+.practice-table th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 4px 10px; border-bottom: 2px solid var(--line); }
+.practice-table th.data { border-bottom-color: #f59e0b; color: #92400e; }
+.practice-table th.answer { border-bottom-color: var(--accent); color: var(--accent); }
+.practice-table td { padding: 4px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: baseline; }
+.practice-table td.tgt { font-weight: 600; background: #fffbeb; }
+.practice-table td.answer { background: #f5f9ff; }
 .practice-table .example .src { font-weight: 500; }
-.practice-table .example .task { margin-left: 8px; font-size: 11px; color: var(--muted); }
-.practice-table td.tgt { font-weight: 600; }
-.practice-table .guess { font-family: ui-monospace, monospace; letter-spacing: 0.04em; }
-.practice-table .miss { color: var(--wrong); font-weight: 700; text-decoration: underline wavy; text-underline-offset: 3px; }
-.practice-table .mark.correct { color: var(--correct); font-weight: 700; }
-.practice-table .mark.wrong { color: var(--wrong); font-weight: 700; }
-.practice-table td.mistake { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.practice-table .mbar { display: inline-block; width: 70px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin-right: 6px; vertical-align: middle; }
-.practice-table .mbar span { display: block; height: 100%; background: #94a3b8; }
+.practice-table .example .task { margin-left: 8px; font-size: 12px; color: var(--muted); }
 .practice-table .word-own { font-weight: 600; }
 .practice-table .word-own.correct { color: var(--correct); }
 .practice-table .word-own.close { color: var(--close); }
