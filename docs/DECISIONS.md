@@ -98,3 +98,11 @@ Conclusions:
 - **Browser speed (headless Chromium in the cloud container, 1 worker):** ~37–38 training steps/s, ~32 steps/s wall-clock including evaluation and UI. ≥ 30 target met. A 2-minute run (~3 800 steps) reached known cs 87% / en 87%, never-seen Czech pattern 44% (`buvol → buvolice`).
 - `e2e/smoke.spec.ts` + `playwright.config.ts`: load, play 5 s, ask a question (`npm run e2e`). Not in CI (CI has no pre-installed browser).
 - **Acceptance run in the browser** (seed 1, max speed): 5 000 steps in 160 s wall-clock (38 steps/s training). Known cs **98%**, en **93%**; never-seen Czech pattern 33% (35% right or one letter off), English never-seen 11%. Identical to the Node run with the same seed (`scripts/train-node.ts 5000 1`), so training is deterministic across Node and the worker. English known forms are below the 95% target at 5k steps; whether to train longer or accept this is open for the user.
+
+## Project priority: teaching value over accuracy (user decision)
+
+WombatLM is a teaching demo. Its value is in **showing how a model works**: how tokens are generated letter by letter, how weights change while it learns, what it copies and what it invents. Model accuracy does not need to be perfect.
+
+- The M2 acceptance target "known ≥ 95%" is dropped. Known cs 98% / en 93% at 5 000 steps is accepted as is; no longer default training.
+- Visible mistakes are welcome: believable near-misses and inventions (vlk → *vlkice*) are part of the lesson.
+- When choosing what to work on next, prefer clearer visualisations and explanations over accuracy tuning.

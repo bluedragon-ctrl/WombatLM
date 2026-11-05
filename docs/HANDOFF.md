@@ -3,7 +3,9 @@
 State of the project at the end of the first working session, and what changed against `docs/DESIGN.md`.
 **Project name: WombatLM** (same as the repository; it replaces the working title "Zvířátka AI" everywhere: page title, package name, docs).
 
-Where this file and DESIGN.md disagree, **this file wins**. Detailed reasoning and numbers: `docs/DECISIONS.md`.
+Where this file and DESIGN.md disagree, **this file wins**.
+
+**Priority (user):** this is a teaching demo. The goal is to show how the model works (token-by-token generation, weights changing, copying vs inventing), not perfect accuracy. Prefer clearer visuals and explanations over accuracy tuning; accuracy targets in DESIGN.md are guides, not gates. Detailed reasoning and numbers: `docs/DECISIONS.md`.
 
 ## The big change: word forms instead of translation
 
@@ -31,7 +33,7 @@ Experiments showed that cs↔en translation on ~150 animals cannot generalise: n
 | Milestone | State |
 |---|---|
 | M1 brain library | **Done.** `src/nn`: tensors, tape autograd, ops (all gradient-checked), Adam/AdamW, dropout, translator with KV-cached greedy decoding, copy mechanism, target-token start, serialisation f32/f16/int8, vocabulary growth. 54 tests. |
-| M2 training in the browser | **Nearly done.** Dataset v2 + validator + review doc, `FormTrainer` on word forms with copy practice, worker + engine + protocol, minimal UI, Playwright smoke test. ~38 steps/s in the browser. Open: a long browser run to confirm known ≥ 95%, the user's data review, DESIGN.md rewrite. |
+| M2 training in the browser | **Nearly done.** Dataset v2 + validator + review doc, `FormTrainer` on word forms with copy practice, worker + engine + protocol, minimal UI, Playwright smoke test. ~38 steps/s in the browser. Accuracy accepted (cs 98% / en 93%). Open: the user's data review, DESIGN.md rewrite. |
 | M3–M8 | Not started. |
 
 ## Data
@@ -54,7 +56,7 @@ Done in the second session: steps 1–3 below (see DECISIONS.md "M2 — trainer 
 1. ~~Trainer on form tasks + copy practice~~ → `FormTrainer` (`src/train/trainer.ts`).
 2. ~~Worker + protocol~~ → `src/train/{engine,worker,protocol}.ts`.
 3. ~~Minimal UI~~ → `src/ui/app.ts`, `src/viz/*`.
-4. Acceptance run done (seed 1, 5k steps, 160 s): known cs 98% / en 93%, identical to Node. **Open decision for the user:** English known 93% < 95% target, so either train longer by default or accept it.
+4. Acceptance run done (seed 1, 5k steps, 160 s): known cs 98% / en 93%, identical to Node. **Accepted by the user:** this is a teaching demo; showing how the model works matters more than accuracy (DECISIONS.md, "Project priority").
 5. User reviews: dataset (`npm run validate-data -- --review`) and the Czech UI strings (`src/ui/i18n/cs.json`).
 6. Rewrite DESIGN.md for the forms design, then M3 (attention grids, letter map, Inside the brain). The answer message already carries the attention maps.
 
