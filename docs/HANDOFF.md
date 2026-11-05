@@ -51,6 +51,8 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 
 ## Waiting for the user
 
+- **Transparency review:** `docs/REVIEW_TRANSPARENCY.md` lists what a user cannot yet see in one learning step and in answering, with a suggested order (before → after the nudge, sampling/temperature, the optimiser, the generation loop). Pick what to build.
+
 - **Slovak and German:** review of `data/animals.sk.json` and `data/animals.de.json` by a fluent speaker (`docs/DATA_REVIEW.md` has the tables); decide the "Learn until" default / options for four languages (5 000 steps gives known English ~40–50 %; ~30 000 for 95 %+).
 
 - **Data review:** no flags any more (one right word per answer; fix or delete doubtful words in the JSON); regenerate the table with `npm run validate-data -- --review` → `docs/DATA_REVIEW.md` (deferred by the user: "data tuning later").
