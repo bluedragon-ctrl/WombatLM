@@ -113,7 +113,10 @@ export interface TranslationTrace {
    * of length heads*Tq*Tk, plus its dimensions.
    */
   attention: Record<string, { heads: number; Tq: number; Tk: number; data: Float32Array }>;
-  /** Activations after each block, [T, d] each (for "follow the signal"). */
+  /**
+   * Activations, [T, d] each, in the order the signal flows (for "follow the
+   * signal"): `enc.in` (letters + positions), `enc0.out`, …, `dec.in`, `dec0.out`, ….
+   */
   activations: Record<string, { T: number; d: number; data: Float32Array }>;
   /** Copy mechanism only: per step, how much the model wrote itself (1) vs copied (0). */
   writeShare?: number[];
@@ -189,6 +192,7 @@ export class Translator {
   /** Encoder: [B*Ts] tokens -> memory [B*Ts, d]. */
   encode(src: Int32Array, srcValid: Uint8Array, B: number, Ts: number, trace?: Trace): Tensor {
     let x = this.embed(src, B, Ts, this.encPos);
+    trace?.set('enc.in', x);
     const mask = keyPaddingMask(srcValid, B, Ts, Ts);
     for (const block of this.enc) x = block.forward(x, B, Ts, mask, undefined, trace, this.drop);
     return this.encNorm.forward(x);
@@ -201,6 +205,7 @@ export class Translator {
    */
   decode(memory: Tensor, src: Int32Array, srcValid: Uint8Array, tgtIn: Int32Array, B: number, Ts: number, Tt: number, trace?: Trace): Tensor {
     let y = this.embed(tgtIn, B, Tt, this.decPos);
+    trace?.set('dec.in', y);
     const selfMask = causalMask(B, Tt);
     const crossMask = keyPaddingMask(srcValid, B, Tt, Ts);
     for (const block of this.dec) {

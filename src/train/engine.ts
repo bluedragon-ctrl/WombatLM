@@ -9,8 +9,11 @@
 import { Dataset, Animal } from '../data/dataset';
 import { baseBundle } from '../data/bundle';
 import { Vocab } from '../nn/vocab';
+import { pca2 } from '../nn/pca';
 import { FormTrainer, TRAINER_DEFAULTS, confidence, judge } from './trainer';
-import type { AnimalInfo, AnswerMsg, AttentionMap, Badge, FromWorker, LossPoint, Speed, StepGuess, ToWorker } from './protocol';
+import type {
+  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, FromWorker, InspectMode, LossPoint, MatrixInfo, Speed, StepGuess, ToWorker,
+} from './protocol';
 
 export interface EngineHost {
   post(msg: FromWorker, transfer?: Transferable[]): void;
@@ -50,6 +53,11 @@ export class Engine {
   private stepsPerSec = 0;
   private lr: number = TRAINER_DEFAULTS.lr;
   private batchSize: number = TRAINER_DEFAULTS.batchSize;
+  /** For `inspect` in delta mode: weights at the previous request, and the change found then. */
+  private deltaBase = new Map<string, { step: number; data: Float32Array }>();
+  private lastDelta = new Map<string, { steps: number; data: Float32Array }>();
+  /** Weights before the latest training step (reused buffers), so the first delta request has something to show. */
+  private beforeStep: Float32Array[] | null = null;
 
   constructor(private host: EngineHost, dataset?: Dataset) {
     this.dataset = dataset ?? new Dataset(baseBundle());
@@ -76,6 +84,7 @@ export class Engine {
           forms: this.dataset.forms.slice(),
           animals: this.dataset.animals.map(animalInfo),
           tokens: this.dataset.vocab.tokens.slice(),
+          matrices: this.matrices(),
         });
         this.evaluate(true);
         this.tick(true);
@@ -120,6 +129,10 @@ export class Engine {
       case 'evaluate':
         this.evaluate(msg.inventions ?? false);
         break;
+      case 'inspect':
+        if (msg.matrixIds.length) this.sendWeights(msg.id, msg.matrixIds, msg.mode);
+        if (msg.letterMap) this.sendLetterMap(msg.id);
+        break;
     }
   }
 
@@ -131,6 +144,9 @@ export class Engine {
     this.stepsPerSec = 0;
     this.lastEvalStep = -1;
     this.lastInventionStep = -1;
+    this.deltaBase.clear();
+    this.lastDelta.clear();
+    this.beforeStep = null;
   }
 
   private stop(): void {
@@ -139,6 +155,12 @@ export class Engine {
   }
 
   private trainOne(): void {
+    const params = this.trainer.model.params.list;
+    if (!this.beforeStep || this.beforeStep.length !== params.length) this.beforeStep = params.map((p) => new Float32Array(p.size));
+    params.forEach((p, i) => {
+      if (this.beforeStep![i].length !== p.size) this.beforeStep![i] = new Float32Array(p.size);
+      this.beforeStep![i].set(p.data);
+    });
     const t0 = this.host.now();
     const loss = this.trainer.trainStep();
     const dt = this.host.now() - t0;
@@ -209,13 +231,73 @@ export class Engine {
       };
     });
     const attention: AttentionMap[] = Object.entries(trace.attention).map(([name, a]) => ({ name, ...a }));
+    const activations: Activation[] = Object.entries(trace.activations).map(([name, a]) => ({ name, ...a }));
     const output = vocab.decode(trace.output);
     const msg: AnswerMsg = {
       type: 'answer', id, step: this.trainer.step, text: word, lang, form, output, finished: trace.finished,
-      input: trace.input.map((i) => tokens[i]), steps, confidence: confidence(trace, vocab.eos), attention,
+      input: trace.input.map((i) => tokens[i]), steps, confidence: confidence(trace, vocab.eos), attention, activations,
       ...this.badge(word, lang, form, output),
     };
-    this.host.post(msg, attention.map((a) => a.data.buffer as ArrayBuffer));
+    this.host.post(msg, [...attention, ...activations].map((a) => a.data.buffer as ArrayBuffer));
+  }
+
+  /** Every parameter as a matrix (vectors are one row). */
+  private matrices(): MatrixInfo[] {
+    const ps = this.trainer.model.params;
+    return ps.list.map((t) => {
+      const meta = ps.meta.get(t.name)!;
+      const [rows, cols] = t.shape.length === 2 ? t.shape : [1, t.shape[0]];
+      return { name: t.name, rows, cols, rowKind: t.shape.length === 2 ? meta.rows : 'none', colKind: meta.cols, role: meta.role };
+    });
+  }
+
+  private sendWeights(id: number, names: string[], mode: InspectMode): void {
+    const ps = this.trainer.model.params;
+    const step = this.trainer.step;
+    let steps = 0;
+    const matrices = names.map((name) => {
+      const p = ps.get(name);
+      if (mode === 'weights') return { name, data: p.data.slice() };
+      if (mode === 'grad') {
+        steps = step > 0 && p.grad ? 1 : 0;
+        return { name, data: p.grad && step > 0 ? p.grad.slice() : new Float32Array(p.size) };
+      }
+      // delta: change since the previous request. If nothing was trained in
+      // between, show the previous change again rather than a blank picture.
+      const base = this.deltaBase.get(name);
+      let delta = this.lastDelta.get(name);
+      if (!base || base.data.length !== p.size) {
+        // First request: show the change of the latest step, if there was one.
+        const before = this.beforeStep?.[ps.list.indexOf(p)];
+        const d = new Float32Array(p.size);
+        if (step > 0 && before && before.length === p.size) for (let i = 0; i < d.length; i++) d[i] = p.data[i] - before[i];
+        delta = { steps: step > 0 && before ? 1 : 0, data: d };
+        this.lastDelta.set(name, delta);
+        this.deltaBase.set(name, { step, data: p.data.slice() });
+      } else if (base.step !== step) {
+        const d = new Float32Array(p.size);
+        for (let i = 0; i < d.length; i++) d[i] = p.data[i] - base.data[i];
+        delta = { steps: step - base.step, data: d };
+        this.lastDelta.set(name, delta);
+        this.deltaBase.set(name, { step, data: p.data.slice() });
+      } else if (!delta) {
+        delta = { steps: 0, data: new Float32Array(p.size) };
+      }
+      steps = Math.max(steps, delta.steps);
+      return { name, data: delta.data.slice() };
+    });
+    this.host.post({ type: 'weights', id, step, mode, steps, matrices }, matrices.map((m) => m.data.buffer as ArrayBuffer));
+  }
+
+  /** PCA of the letter table: characters, end of word and the task tokens. */
+  private sendLetterMap(id: number): void {
+    const vocab = this.dataset.vocab;
+    const emb = this.trainer.model.tokEmb;
+    const ids: number[] = [];
+    for (let i = 0; i < vocab.size; i++) if (vocab.isChar(i) || i === vocab.eos) ids.push(i);
+    ids.push(...vocab.targetIds());
+    const { coords, explained } = pca2(emb.data, emb.shape[1], ids);
+    this.host.post({ type: 'letterMap', id, step: this.trainer.step, ids, coords, explained }, [coords.buffer as ArrayBuffer]);
   }
 
   /** What the data says about this question (see `Badge`). */

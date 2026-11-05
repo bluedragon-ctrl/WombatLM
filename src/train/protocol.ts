@@ -4,6 +4,7 @@
  * The worker owns the model, the optimiser and the dataset. The main thread
  * never holds live weights; it receives data ready to draw.
  */
+import type { AxisKind } from '../nn/transformer';
 import type { Scores, TaskResult } from './trainer';
 
 /** Training speed: steps per second, or 'max' (as fast as possible). */
@@ -29,7 +30,22 @@ export type ToWorker =
    */
   | { type: 'ask'; id: number; text: string; lang: string; form: string }
   /** Evaluate now; `inventions` also asks for the forms the data lacks. */
-  | { type: 'evaluate'; inventions?: boolean };
+  | { type: 'evaluate'; inventions?: boolean }
+  /**
+   * Look inside: the listed weight matrices (answered with `weights`, empty
+   * list = none) and, if `letterMap`, the letter map (answered with `letterMap`).
+   * `id` is echoed back.
+   */
+  | { type: 'inspect'; id: number; matrixIds: string[]; mode: InspectMode; letterMap?: boolean };
+
+/**
+ * What a weight heatmap shows:
+ * - weights: the numbers themselves;
+ * - delta: how much they changed since the previous `inspect` that came
+ *   after at least one training step (the "change in the last steps");
+ * - grad: the gradient of the latest training batch.
+ */
+export type InspectMode = 'weights' | 'delta' | 'grad';
 
 // ---------------------------------------------------------------------------
 // Worker -> main
@@ -57,6 +73,21 @@ export interface ReadyMsg {
   forms: string[];
   animals: AnimalInfo[];
   tokens: string[];
+  /** Every trainable matrix/vector of the model, in model order. */
+  matrices: MatrixInfo[];
+}
+
+/** Describes one weight matrix (vectors have rows = 1). */
+export interface MatrixInfo {
+  /** Technical name, e.g. "dec0.cross.q.W". */
+  name: string;
+  rows: number;
+  cols: number;
+  /** What rows / columns stand for (letters, positions, dimensions, …). */
+  rowKind: AxisKind;
+  colKind: AxisKind;
+  /** Kind of weight ("Wq", "embed", "ln.gamma", …), for a plain-language label. */
+  role: string;
 }
 
 export interface LossPoint {
@@ -117,6 +148,15 @@ export interface AttentionMap {
   data: Float32Array;
 }
 
+export interface Activation {
+  /** "enc.in", "enc0.out", "dec.in", "dec0.out", … in the order the signal flows. */
+  name: string;
+  /** Number of positions (tokens). */
+  T: number;
+  d: number;
+  data: Float32Array;
+}
+
 export interface AnswerMsg {
   type: 'answer';
   id: number;
@@ -133,6 +173,8 @@ export interface AnswerMsg {
   /** Geometric mean of the chosen letters' probabilities, 0..1. */
   confidence: number;
   attention: AttentionMap[];
+  /** Hidden states along the way, for "follow the signal" (transferred buffers). */
+  activations: Activation[];
   badge: Badge;
   /** For real / hidden: the real word(s) and how the output scored. */
   answer?: { accepted: string[]; status: 'correct' | 'close' | 'wrong' };
@@ -144,4 +186,30 @@ export interface ErrorMsg {
   message: string;
 }
 
-export type FromWorker = ReadyMsg | TickMsg | EvalMsg | AnswerMsg | ErrorMsg;
+export interface WeightsMsg {
+  type: 'weights';
+  id: number;
+  step: number;
+  mode: InspectMode;
+  /**
+   * For `delta`: how many training steps the change covers (0 = no change
+   * yet). For `grad`: 0 if the model has not trained yet (all zeros).
+   */
+  steps: number;
+  /** Requested matrices, same shapes as in `ready.matrices` (transferred buffers). */
+  matrices: { name: string; data: Float32Array }[];
+}
+
+export interface LetterMapMsg {
+  type: 'letterMap';
+  id: number;
+  step: number;
+  /** Token ids on the map (characters, end of word and the task tokens). */
+  ids: number[];
+  /** [ids.length, 2] PCA coordinates of their rows in the letter table. */
+  coords: Float32Array;
+  /** Share of all variation each axis shows. */
+  explained: [number, number];
+}
+
+export type FromWorker = ReadyMsg | TickMsg | EvalMsg | AnswerMsg | WeightsMsg | LetterMapMsg | ErrorMsg;

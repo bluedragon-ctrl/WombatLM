@@ -16,7 +16,9 @@ header h1 { margin: 0; font-size: 22px; }
 header .sub { color: var(--muted); }
 header .params { margin-left: auto; color: var(--muted); font-size: 13px; }
 h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
-main { display: grid; grid-template-columns: 480px minmax(0, 1fr); gap: 14px; padding: 14px 20px; align-items: start; }
+main.forms { display: grid; grid-template-columns: 430px minmax(0, 1fr) 340px; gap: 14px; padding: 14px 20px; align-items: start; }
+main[hidden] { display: none !important; }
+main.inside-main { padding: 14px 20px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
 .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .small { font-size: 13px; color: var(--muted); }
@@ -81,3 +83,43 @@ canvas { display: block; }
 .cell.wrong { color: var(--wrong); }
 .cell.invented { color: var(--invented); }
 .cell.none { color: #cbd5e1; }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; margin-left: 24px; align-self: center; }
+.tabs button { border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; background: none; border-color: transparent; font-weight: 500; }
+.tabs button.on { border-bottom-color: var(--accent); background: #eff6ff; color: var(--accent); font-weight: 600; }
+
+/* Attention grids */
+.att-grids { display: flex; flex-wrap: wrap; gap: 16px 22px; align-items: flex-start; }
+.att { margin: 0; }
+.att figcaption { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.att canvas { cursor: crosshair; }
+
+/* Letter map */
+.right .panel.map { position: sticky; top: 14px; }
+.map-wrap { width: 100%; }
+.letter-map { cursor: crosshair; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.map-legend span { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Inside the brain */
+.inside-head .intro { font-size: 18px; margin: 0 0 10px; }
+.legend { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.swatch-box { display: inline-block; width: 14px; height: 14px; border: 1px solid #cbd5e1; margin-left: 8px; }
+.inside-body { display: flex; flex-wrap: wrap; gap: 0 14px; align-items: flex-start; }
+.inside-body .panel { margin-bottom: 14px; flex: 1 1 auto; }
+.inside-body .group { flex: 1 1 100%; }
+.inside-body .group.letters, .inside-body .group.copy { flex: 1 1 420px; }
+.parts { display: flex; flex-wrap: wrap; gap: 0 32px; }
+.part h3 { font-size: 13px; font-weight: 600; margin: 10px 0 6px; color: var(--ink); }
+.cards { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-start; }
+.card { margin: 0; }
+.card .label { font-size: 13px; font-weight: 500; margin-bottom: 3px; }
+.card .label code { font-size: 11px; color: var(--muted); font-weight: 400; }
+.card figcaption { margin-top: 2px; font-size: 11px; }
+.card canvas.heat { cursor: crosshair; border: 1px solid var(--line); }
+.strip-body { display: flex; gap: 4px; }
+.strip-labels { display: flex; flex-direction: column; font-size: 11px; padding-top: 1px; }
+.strip-labels div { height: 12px; line-height: 12px; width: 14px; text-align: center; }
+.tooltip { position: fixed; z-index: 10; pointer-events: none; background: #111827; color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 6px; max-width: 360px; }
+.tooltip[hidden] { display: none; }

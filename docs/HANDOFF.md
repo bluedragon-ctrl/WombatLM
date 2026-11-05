@@ -1,6 +1,6 @@
 # WombatLM handoff — read this first
 
-State of the project after the second working session (end of M2). **`docs/DESIGN.md` is the current spec** (rewritten for the word-forms design); `docs/DECISIONS.md` has the reasoning and numbers behind it.
+State of the project after the third working session (M3 in a pull request). **`docs/DESIGN.md` is the current spec** (rewritten for the word-forms design); `docs/DECISIONS.md` has the reasoning and numbers behind it.
 
 ## Priority (user)
 
@@ -20,8 +20,9 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 |---|---|
 | M1 brain library | **Done.** `src/nn`: tensors, tape autograd, ops (all gradient-checked), Adam/AdamW, dropout, translator with KV-cached greedy decoding, copy mechanism, target-token start, serialisation f32/f16/int8, vocabulary growth. |
 | M2 training in the browser | **Done** (pending the user's data review). Dataset v2 + validator + review doc, `FormTrainer` with copy practice, engine + worker + protocol, minimal UI, Playwright smoke test. ~38 steps/s in the browser; known cs 98% / en 93% at 5k steps (accepted by the user). |
-| M3 seeing inside | **Next, in a fresh session.** |
-| M4–M7 | Not started. |
+| M3 seeing inside | **Done in a PR** (branch `claude/eloquent-rubin-gpetwf` → `main`), waiting for the user's review. Tabs (Forms · Inside the brain), attention grids linked to the guess bars, letter map (PCA + Procrustes + glide), weight / change / gradient heatmaps, "follow the signal" (expert). |
+| M4 time travel | **Next.** |
+| M5–M7 | Not started. |
 
 ## Where things are
 
@@ -30,24 +31,27 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 - **UI:** `src/ui/app.ts` (one class, vanilla DOM), visuals in `src/viz/` (Canvas 2D), strings in `src/ui/i18n/{en,cs}.json`. Elements used by tests have `data-test` attributes.
 - **Data:** `data/animals.base.json` (151 animals, 92 with forms, 11 never-seen). `Dataset.formTasks()`, `missingFormTasks()` (inventions), `nameTasks(…, true)` (copy practice), `formKind()`.
 
-## Notes for M3
+## Notes for M4
 
-- The `answer` message already carries every attention map (`dec0.cross`, `dec0.self`, `enc0.self`, `copy`, …) with their sizes, the input tokens and per-step data; the attention grid can be drawn from it without new worker code. Activations for "follow the signal" are in the worker's `TranslationTrace.activations` but not sent yet.
-- New messages needed: `inspect{matrixIds, mode}` → `weights` (values, delta since the previous request, gradient) and `letterMap` (DESIGN §7).
-- The UI is a single tab today; M3 adds tabs (Forms · Inside the brain).
-- Take Playwright screenshots of each panel at step 0 and after training (DESIGN §12, M3 acceptance) and put them in the PR.
+- `inspect` already serves any parameter by name; for time travel the engine needs a separate **view model** (DESIGN §7.3) and `inspect`/`ask`/`letterMap` must read from it while a snapshot is shown. `ParamSet.snapshot()`/`load()` exist.
+- The change mode keeps per-matrix baselines in the engine (`deltaBase`, `lastDelta`, `beforeStep`); seeking must clear them like `reset` does.
+- Panels request data only while visible: the Forms tab asks for the letter map, the Inside tab for the heatmaps (`App.requestInspect`, at most one in flight, every 250 ms).
+- The UI is in `src/ui/app.ts` (Forms tab + tabs) and `src/ui/inside.ts` (Inside tab); visuals in `src/viz/` (`attentionGrid`, `letterMap`, `weightHeatmap`).
+- `npm run screenshots` regenerates the PR screenshots in `docs/screenshots/m3/` (opt-in, ~1.5 min).
 
 ## Waiting for the user
 
 - **Data review:** 19 `unsure` entries; regenerate the table with `npm run validate-data -- --review` → `docs/DATA_REVIEW.md` (deferred by the user: "data tuning later").
-- **Czech UI copy:** `src/ui/i18n/cs.json`.
+- **Czech UI copy:** `src/ui/i18n/cs.json` (M3 added ~70 strings: tabs, attention, letter map, Inside the brain).
+- **M3 review:** the PR's screenshots and questions.
 
 ## Useful commands
 
 ```
-npm test                                   # vitest (66 tests)
+npm test                                   # vitest (76 tests)
 npm run build                              # typecheck + vite build
 npm run e2e                                # Playwright smoke test (builds + previews on :4173)
+npm run screenshots                        # M3 panel screenshots at step 0 and 2000 (docs/screenshots/m3)
 npm run dev                                # the app
 npm run validate-data [-- --review]        # data linter (+ review table)
 npx tsx scripts/train-node.ts 5000 1       # the app's trainer in Node

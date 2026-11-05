@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { baseBundle } from '../../src/data/bundle';
 import { Dataset } from '../../src/data/dataset';
 import { Engine, EngineHost } from '../../src/train/engine';
-import type { AnswerMsg, EvalMsg, FromWorker, ReadyMsg, TickMsg } from '../../src/train/protocol';
+import type { AnswerMsg, EvalMsg, FromWorker, LetterMapMsg, ReadyMsg, TickMsg, WeightsMsg } from '../../src/train/protocol';
 
 const ds = new Dataset(baseBundle());
 
@@ -101,6 +101,95 @@ describe('Engine', () => {
     expect(a.steps[0].top.length).toBe(5);
     expect(a.attention.length).toBeGreaterThan(0);
     expect(a.input[0]).toBe(`<${lang}:${known.form}>`);
+  });
+
+  it('answers carry the activations in the order the signal flows', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'ask', id: 1, text: 'tygr', lang: ds.languageCodes[0], form: 'female' });
+    const a = h.of('answer')[0] as AnswerMsg;
+    expect(a.activations.map((x) => x.name)).toEqual(['enc.in', 'enc0.out', 'dec.in', 'dec0.out']);
+    const encIn = a.activations[0];
+    expect(encIn.T).toBe(a.input.length);
+    expect(encIn.data.length).toBe(encIn.T * encIn.d);
+  });
+
+  it('ready lists every matrix with its shape and axis kinds', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    const ready = h.of('ready')[0] as ReadyMsg;
+    expect(ready.matrices.reduce((n, m) => n + m.rows * m.cols, 0)).toBe(ready.params);
+    const emb = ready.matrices.find((m) => m.name === 'tokEmb')!;
+    expect([emb.rows, emb.cols, emb.rowKind, emb.colKind]).toEqual([ds.vocab.size, 32, 'token', 'dim']);
+    const bias = ready.matrices.find((m) => m.name === 'outBias')!;
+    expect([bias.rows, bias.cols, bias.colKind]).toEqual([1, ds.vocab.size, 'token']);
+  });
+
+  it('inspect sends weights, their change and the gradient', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    const names = ['tokEmb', 'dec0.cross.q.W'];
+    const last = () => h.of('weights').at(-1) as WeightsMsg;
+
+    e.handle({ type: 'inspect', id: 1, matrixIds: names, mode: 'weights' });
+    expect(last().matrices.map((m) => m.name)).toEqual(names);
+    expect(Array.from(last().matrices[0].data)).toEqual(Array.from(e.trainer.model.tokEmb.data));
+
+    // Gradient before any training: all zeros, steps 0.
+    e.handle({ type: 'inspect', id: 2, matrixIds: names, mode: 'grad' });
+    expect(last().steps).toBe(0);
+    expect(last().matrices[0].data.every((v) => v === 0)).toBe(true);
+
+    // Delta: the first request sets the baseline (no change yet).
+    e.handle({ type: 'inspect', id: 3, matrixIds: names, mode: 'delta' });
+    expect(last().steps).toBe(0);
+    const before = e.trainer.model.tokEmb.data.slice();
+    e.handle({ type: 'step', n: 3 });
+    e.handle({ type: 'inspect', id: 4, matrixIds: names, mode: 'delta' });
+    expect(last().steps).toBe(3);
+    const d = last().matrices[0].data;
+    const after = e.trainer.model.tokEmb.data;
+    for (let i = 0; i < d.length; i += 97) expect(d[i]).toBeCloseTo(after[i] - before[i], 6);
+    expect(d.some((v) => v !== 0)).toBe(true);
+    // No training in between: the previous change is shown again.
+    e.handle({ type: 'inspect', id: 5, matrixIds: names, mode: 'delta' });
+    expect(last().steps).toBe(3);
+    expect(Array.from(last().matrices[0].data)).toEqual(Array.from(d));
+
+    e.handle({ type: 'inspect', id: 6, matrixIds: names, mode: 'grad' });
+    expect(last().steps).toBe(1);
+    expect(last().matrices[0].data.some((v) => v !== 0)).toBe(true);
+    expect(last().id).toBe(6);
+  });
+
+  it('the first change request after training shows the latest step', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'step', n: 2 });
+    e.handle({ type: 'inspect', id: 1, matrixIds: ['tokEmb'], mode: 'delta' });
+    const w = h.of('weights').at(-1) as WeightsMsg;
+    expect(w.steps).toBe(1);
+    expect(w.matrices[0].data.some((v) => v !== 0)).toBe(true);
+  });
+
+  it('inspect sends the letter map: characters, end of word and task tokens', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'inspect', id: 7, matrixIds: [], mode: 'weights', letterMap: true });
+    expect(h.of('weights').length).toBe(0);
+    const m = h.of('letterMap')[0] as LetterMapMsg;
+    const v = ds.vocab;
+    expect(m.ids).toContain(v.eos);
+    expect(m.ids).not.toContain(v.pad);
+    expect(m.ids).toContain(v.id('<cs:female>'));
+    expect(m.coords.length).toBe(m.ids.length * 2);
+    expect(m.explained[0]).toBeGreaterThanOrEqual(m.explained[1]);
+    expect(m.coords.every(Number.isFinite)).toBe(true);
   });
 
   it('reports errors instead of throwing', () => {

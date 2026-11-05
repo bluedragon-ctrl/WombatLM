@@ -18,5 +18,16 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.locator('[data-form=young]').click();
   await expect(page.locator('[data-test=output] .from')).toContainText('kočka');
   await expect(page.locator('canvas.bars')).toBeVisible();
+
+  // M3: attention grids, letter map, the Inside tab with heatmaps.
+  await expect(page.locator('[data-test=attention] canvas')).toHaveCount(3);
+  await expect(page.locator('[data-test=letter-map]')).toBeVisible();
+  await page.click('[data-test=tab-inside]');
+  await expect(page.locator('[data-test=heatmaps] canvas[data-matrix=tokEmb]')).toBeVisible();
+  await expect(page.locator('[data-test=mode-note]')).toContainText(/changed/);
+  await page.click('[data-mode=grad]');
+  await expect(page.locator('[data-test=mode-note]')).toContainText(/batch/);
+  await page.click('[data-test=tab-forms]');
+  await expect(page.locator('[data-test=bars]')).toBeVisible();
   expect(errors).toEqual([]);
 });
