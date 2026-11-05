@@ -112,7 +112,7 @@ canvas { display: block; }
 .inside-body { display: flex; flex-wrap: wrap; gap: 0 14px; align-items: flex-start; }
 .inside-body .panel { margin-bottom: 14px; flex: 1 1 auto; }
 .inside-body .group { flex: 1 1 100%; }
-.inside-body .group.letters, .inside-body .group.copy { flex: 1 1 420px; }
+.inside-body .group.letters { flex: 1 1 420px; }
 .parts { display: flex; flex-wrap: wrap; gap: 0 32px; }
 .part h3 { font-size: 13px; font-weight: 600; margin: 10px 0 6px; color: var(--ink); }
 .cards { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-start; }
@@ -247,7 +247,6 @@ header .params { text-align: right; }
 .tok-special { border-color: #6b7280; background: #f3f4f6; }
 .tok-special b { font-size: 13px; }
 .tok-unk { border-color: var(--wrong, #dc2626); background: #fef2f2; color: var(--wrong, #dc2626); }
-.tok.copied { background: #ede9fe; border-color: #a78bfa; }
 .tok.hover { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tokens-panel { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
 .token-rows { display: flex; flex-direction: column; gap: 6px; }
@@ -256,9 +255,6 @@ header .params { text-align: right; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .token-row .chips .tok { cursor: default; }
 .tok-warn { color: var(--wrong, #dc2626); font-size: 13px; margin: 2px 0 0; }
-.tok-legend { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
-.tok-legend .tok { min-width: 18px; padding: 0 4px; }
-.tok-legend .tok b { font-size: 12px; }
 
 /* Learning data: the table and one learning example as tokens. */
 .data-layout { display: grid; grid-template-columns: minmax(0, 1fr) 460px; gap: 14px; align-items: start; }

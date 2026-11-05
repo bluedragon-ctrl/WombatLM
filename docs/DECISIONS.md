@@ -208,3 +208,11 @@ The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–
 - Measure: cosine similarity **from the average letter** (`nearestRows` in `src/nn/pca.ts`), computed in the worker with the PCA (`LetterMapMsg.near`). Compared after 5,000 steps (seed 1): plain cosine and distance gave noisier lists; centred cosine gave the clearest vowel groups (a → á ý o ě, o → á a e, á → o a e u). The similarities are modest (≈ 0.3–0.4): the letter table only needs to be good enough for the task.
 - **Rare letters are flagged.** A letter seen fewer than 30 times in the learning data (`LetterMapMsg.counts`, from `FormTrainer.letterCounts()`, source words + answers) gets a note that the model learned little about it and its closest letters are mostly chance (q 7×, ó 1×…). This also explains the pile of accented letters at the edge of the map.
 - Considered, not done yet: start-position ghosts with trails; hiding task tokens by default; marker size by frequency.
+
+## Copy mechanism removed
+
+- **Removed completely** (user decision): the pointer-style copy attention, the write-or-copy gate, the ops `pointerMix` and `nllFromProbs`, the `copy` option of `TranslatorConfig`, `TranslationTrace.writeShare`, `StepGuess.write`, and in the UI the "copied / wrote" strip under the guess bars, the tinted "copied" answer tokens, the "Where it copies from" attention grid and the "Copying" group on the Inside tab.
+- **Why:** this is a teaching demo and should be as simple as possible. Real language models have no copy mechanism; plain attention learns to copy. The experiments above showed the mechanism does not help generalisation (never-seen Czech 8/26 without it vs 7–8/26 with it); copy practice is what makes never-seen forms work, and it stays.
+- **Cost:** known-form accuracy drops a little (measured earlier at 5 000 steps: Czech 89/102 vs 96/102, English 124/147 vs 131–141/147). Accepted: accuracy is a guide, not a gate. Re-measured with the app's trainer (`scripts/train-node.ts 5000 1`, seed 1): known Czech 91% (was 98%), English 92% (was 93%); never-seen Czech 19% (was 23%), within the ±2-word noise of the small never-seen set. The cross-attention grid still shows the stem being copied.
+- **Parameters:** 24 727 (was 26 872) with the 55-token vocabulary.
+

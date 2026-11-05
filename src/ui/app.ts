@@ -526,7 +526,7 @@ export class App {
     const tokensPanel = h('div', { class: 'tokens-panel' },
       h('div', { class: 'row guess-head' }, h('h2', {}, t('tokens.title')), help(t('tokens.help'))),
       tokenRows,
-      h('div', { class: 'row small' }, h('label', {}, tokenNumbers, ' ', t('tokens.numbers')), h('span', { class: 'tok-legend' }, h('span', { class: 'tok copied' }, h('b', {}, 'a')), ' ', t('tokens.copiedLegend'))),
+      h('div', { class: 'row small' }, h('label', {}, tokenNumbers, ' ', t('tokens.numbers'))),
       tokenNote);
     const bars = h('canvas', { class: 'bars', 'data-test': 'bars' });
     bars.onmousemove = (e) => { if (!this.slow) this.setHover(guessColumnAt(e.offsetX, this.shown()?.steps.length ?? 0)); };
@@ -795,7 +795,7 @@ export class App {
       h('span', {}, `${Math.round(a.confidence * 100)}`));
     output.replaceChildren(h('div', { class: 'answer-line' }, ...parts), badge, meter);
     if (this.hoverStep !== null && this.hoverStep >= a.steps.length) this.hoverStep = null;
-    drawGuessBars(bars, a.steps, { copied: t('copied'), wrote: t('wrote') }, this.hoverStep, writing);
+    drawGuessBars(bars, a.steps, this.hoverStep, writing);
     this.renderTokens(a, writing, langName);
     this.renderSlowCaption(a);
     this.renderAttention();
@@ -812,8 +812,7 @@ export class App {
     const reads = a.input.map((tok) => tokenChip(toTok(tok, idx), opts));
     const steps = writing !== undefined ? a.steps.slice(0, writing) : a.steps;
     const writes = steps.map((s, i) => {
-      const copied = s.chosen !== '' && s.write !== undefined && s.write < 0.5;
-      const chip = tokenChip(toTok(s.chosen || EOS, idx), opts, `${copied ? 'copied' : ''}${i === this.hoverStep ? ' hover' : ''}`);
+      const chip = tokenChip(toTok(s.chosen || EOS, idx), opts, i === this.hoverStep ? 'hover' : '');
       chip.dataset.step = String(i);
       chip.onmouseenter = () => { if (!this.slow) this.setHover(i); };
       chip.onmouseleave = () => { if (!this.slow) this.setHover(null); };
@@ -835,7 +834,7 @@ export class App {
     this.hoverStep = step;
     for (const c of this.els.tokenRows.querySelectorAll<HTMLElement>('[data-step]')) c.classList.toggle('hover', c.dataset.step === String(step));
     const a = this.shown();
-    if (a) drawGuessBars(this.els.bars, a.steps, { copied: t('copied'), wrote: t('wrote') }, step, this.shownSteps());
+    if (a) drawGuessBars(this.els.bars, a.steps, step, this.shownSteps());
     this.drawAttention();
   }
 
@@ -858,7 +857,6 @@ export class App {
     const layers = [...new Set(a.attention.map((x) => x.name.match(/^dec(\d+)\./)?.[1]).filter((x): x is string => x !== undefined))];
     const layerNote = (l: string) => (layers.length > 1 ? ` · ${t('att.layer', { n: Number(l) + 1 })}` : '');
     for (const l of layers) add(`dec${l}.cross`, (hd) => t('att.cross', { n: hd + 1 }) + layerNote(l), out, input, true);
-    add('copy', () => t('att.copy'), out, input, true);
     if (this.expert) {
       for (const l of layers) add(`dec${l}.self`, (hd) => t('att.decSelf', { n: hd + 1 }) + layerNote(l), out, decIn, true);
       for (const name of a.attention.map((x) => x.name).filter((n) => /^enc\d+\.self$/.test(n))) {

@@ -181,8 +181,6 @@ export interface StepGuess {
   chosen: string;
   /** Top 5 candidates, most likely first ('' = end of word). */
   top: { char: string; p: number }[];
-  /** Copy mechanism: how much the model wrote this letter itself (1) vs copied it (0). */
-  write?: number;
 }
 
 export interface AttentionMap {

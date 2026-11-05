@@ -18,7 +18,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 
 | Milestone | State |
 |---|---|
-| M1 brain library | **Done.** `src/nn`: tensors, tape autograd, ops (all gradient-checked), Adam/AdamW, dropout, translator with KV-cached greedy decoding, copy mechanism, target-token start, serialisation f32/f16/int8, vocabulary growth. |
+| M1 brain library | **Done.** `src/nn`: tensors, tape autograd, ops (all gradient-checked), Adam/AdamW, dropout, translator with KV-cached greedy decoding, target-token start, serialisation f32/f16/int8, vocabulary growth. |
 | M2 training in the browser | **Done** (pending the user's data review). Dataset v2 + validator + review doc, `FormTrainer` with copy practice, engine + worker + protocol, minimal UI, Playwright smoke test. ~38 steps/s in the browser; known cs 98% / en 93% at 5k steps (accepted by the user). |
 | M3 seeing inside | **Done** (merged into `main`). Tabs (Forms · Inside the model), attention grids linked to the guess bars, letter map (PCA + Procrustes + glide), weight / change / gradient heatmaps, "follow the signal" (expert). |
 | Learning vs answering | **Done in a PR** (user feedback after M3): ① Build / ② Ask phases, Practice tab (now part of Model learning) with the latest batch: learning data vs what it answered before the step (`tick.practice`, `watchPractice`), frozen-brain step label, answer waits while training (+ "keep answering" toggle), Write it slowly, one-step cycle. See DECISIONS. |
@@ -67,8 +67,8 @@ npm run screenshots                        # PR screenshots (docs/screenshots/m3
 npm run dev                                # the app
 npm run validate-data [-- --review]        # data linter (+ review table)
 npx tsx scripts/train-node.ts 5000 1       # the app's trainer in Node
-npx tsx scripts/experiments/forms-full.ts 5000 1 0.1 1 1 1
-    # steps seed dropout copyPracticeWeight copyMechanism targetStart
+npx tsx scripts/experiments/forms-full.ts 5000 1 0.1 1 1
+    # steps seed dropout copyPracticeWeight targetStart
 ```
 
 Playwright 1.63.0 is pinned to the pre-installed browser; don't run `playwright install`.

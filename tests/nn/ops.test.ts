@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  add, bmm, concat, crossEntropy, gather, gelu, layerNorm, matmul, mergeHeads, mul, nllFromProbs, pointerMix, reshape, scale,
+  add, bmm, concat, crossEntropy, gather, gelu, layerNorm, matmul, mergeHeads, mul, reshape, scale,
   softmax, splitHeads, sum, transpose,
 } from '../../src/nn/ops';
 import { Rng } from '../../src/nn/rng';
@@ -94,31 +94,5 @@ describe('op values', () => {
       expect(mean).toBeCloseTo(0, 5);
       expect(v).toBeCloseTo(1, 3);
     }
-  });
-});
-
-describe('copy mechanism ops', () => {
-  const r = new Rng(9);
-  const logits = randTensor(r, [4, 6]);
-  const raw = randTensor(r, [4, 3]);
-  const gate = randTensor(r, [4, 1]);
-  const src = Int32Array.from([2, 5, 2, 1, 0, 3]); // 2 items × 3 positions
-  it('pointerMix: gradient matches finite differences', () => {
-    const { maxError, worst } = gradCheck(() => project(pointerMix(logits, softmax(raw), src, 2, gate)), [logits, raw, gate]);
-    expect(maxError, worst).toBeLessThan(1);
-  });
-  it('pointerMix rows are probabilities and copy mass lands on input tokens', () => {
-    const p = pointerMix(logits, softmax(raw), src, 2, Tensor.from([-50, -50, -50, -50], [4, 1])).data;
-    for (let i = 0; i < 4; i++) {
-      const row = Array.from(p.subarray(i * 6, i * 6 + 6));
-      expect(row.reduce((a, b) => a + b)).toBeCloseTo(1, 5);
-      const allowed = i < 2 ? [2, 5] : [1, 0, 3];
-      row.forEach((v, j) => { if (!allowed.includes(j)) expect(v).toBeLessThan(1e-6); });
-    }
-  });
-  it('nllFromProbs: gradient matches finite differences', () => {
-    const probs = randTensor(r, [3, 4]);
-    const { maxError, worst } = gradCheck(() => nllFromProbs(softmax(probs), Int32Array.from([1, 0, 3]), 0), [probs]);
-    expect(maxError, worst).toBeLessThan(1);
   });
 });

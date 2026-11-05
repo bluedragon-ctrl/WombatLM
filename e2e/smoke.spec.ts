@@ -88,7 +88,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=slow-caption]')).toContainText(/writing letter 1 of/, { timeout: 3_000 });
   await page.click('[data-test=slow]');
   await expect(page.locator('[data-test=slow-caption]')).toHaveText('');
-  await expect(page.locator('[data-test=attention] canvas')).toHaveCount(3);
+  await expect(page.locator('[data-test=attention] canvas')).toHaveCount(2);
 
   // Inside the model: heatmaps.
   await page.click('[data-test=tab-inside]');
