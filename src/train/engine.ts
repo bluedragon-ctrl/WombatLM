@@ -424,11 +424,11 @@ export class Engine {
     if (!animal) return { badge: 'free' };
     const main = form === 'name' ? animal.names[lang] : animal.forms[lang]?.[form];
     if (!main) return { badge: 'invention', animalId: animal.id };
-    const badge: Badge = animal.split === 'train' ? 'real' : 'hidden';
+    const badge: Badge = !animal.unseen ? 'real' : 'hidden';
     return { badge, animalId: animal.id, answer: { word: main, status: judge(output, main) as 'correct' | 'close' | 'wrong' } };
   }
 }
 
 function animalInfo(a: Animal): AnimalInfo {
-  return { id: a.id, split: a.split, pack: a.pack, names: { ...a.names }, forms: structuredClone(a.forms) };
+  return { id: a.id, unseen: a.unseen, pack: a.pack, names: { ...a.names }, forms: structuredClone(a.forms) };
 }

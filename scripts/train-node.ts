@@ -36,7 +36,7 @@ console.log(`full evaluation with inventions: ${ev.results.length} words in ${(p
 if (!quiet) {
   const mark = { correct: '✓', close: '≈', wrong: '✗', invented: '✨' } as const;
   for (const r of ev.results) {
-    if (r.split === 'unseen' || r.status === 'invented') {
+    if (r.unseen || r.status === 'invented') {
       console.log(`  ${mark[r.status]} ${r.lang} ${r.form.padEnd(6)} ${r.source.padEnd(12)} -> ${r.output.padEnd(14)} ${r.answer ? `(${r.answer})` : ''}`);
     }
   }

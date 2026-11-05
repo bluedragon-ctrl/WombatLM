@@ -12,7 +12,7 @@ import { Adam } from '../nn/optim';
 import { Rng } from '../nn/rng';
 import { Example, SpecialIds, TRANSLATOR_DEFAULTS, TranslationTrace, Translator, TranslatorConfig, makeBatch } from '../nn/translator';
 import { Vocab } from '../nn/vocab';
-import { Animal, Dataset, FormKind, Split, Task, editDistance, formKind } from '../data/dataset';
+import { Animal, Dataset, FormKind, Task, editDistance, formKind } from '../data/dataset';
 
 /**
  * correct / close (edit distance 1) / wrong for forms that exist in the data;
@@ -29,7 +29,8 @@ export interface TaskResult {
   answer: string;
   output: string;
   status: Status;
-  split: Split;
+  /** The animal was never trained on. */
+  unseen: boolean;
   /** How the real word relates to the name (undefined for inventions). */
   kind?: FormKind;
 }
@@ -161,14 +162,14 @@ export class FormTrainer {
     return { pad: this.vocab.pad, bos: this.vocab.bos, eos: this.vocab.eos };
   }
 
-  /** Word-form tasks of train-split animals. */
+  /** Word-form tasks of trained animals (not unseen). */
   trainTasks(filter?: (a: Animal) => boolean): Task[] {
-    return this.dataset.formTasks((a) => a.split === 'train' && (!filter || filter(a)));
+    return this.dataset.formTasks((a) => !a.unseen && (!filter || filter(a)));
   }
 
-  /** "Copy the name" tasks of train-split animals. */
+  /** "Copy the name" tasks of trained animals (not unseen). */
   copyTasks(filter?: (a: Animal) => boolean): Task[] {
-    return this.dataset.nameTasks((a) => a.split === 'train' && (!filter || filter(a)), true);
+    return this.dataset.nameTasks((a) => !a.unseen && (!filter || filter(a)), true);
   }
 
   /** Word forms plus copy practice, for the given animals. */
@@ -301,7 +302,7 @@ export class FormTrainer {
       answer: t.answer,
       output: outputs[i],
       status: t.answer ? judge(outputs[i], t.answer) : 'invented',
-      split: t.animal.split,
+      unseen: t.animal.unseen,
       kind: t.answer ? formKind(t.source, t.answer) : undefined,
     }));
     const packs = new Map(this.dataset.animals.map((a) => [a.id, a.pack]));
@@ -342,14 +343,14 @@ export function scoreResults(results: readonly TaskResult[], isFresh: (id: strin
     const s = (acc[r.lang] ??= Object.fromEntries(SCORE_KEYS.map((k) => [k, [0, 0]])) as Record<keyof Scores, [number, number]>);
     const ok = r.status === 'correct' ? 1 : 0;
     const add = (k: keyof Scores, hit = ok) => { s[k][0] += hit; s[k][1] += 1; };
-    if (r.split === 'train') add('known');
+    if (!r.unseen) add('known');
     else {
       if (r.kind) add(r.kind);
       add('unseen');
       add('close', r.status === 'wrong' ? 0 : 1);
     }
     if (isFresh(r.id)) add('fresh');
-    else if (r.split === 'train') add('old');
+    else if (!r.unseen) add('old');
   }
   const out: Record<string, Scores> = {};
   for (const [lang, s] of Object.entries(acc)) {

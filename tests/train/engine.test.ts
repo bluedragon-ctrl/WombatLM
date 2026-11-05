@@ -100,8 +100,8 @@ describe('Engine', () => {
     const e = new Engine(h.host, ds);
     e.handle({ type: 'init', seed: 3 });
     const lang = ds.languageCodes[0];
-    const known = ds.formTasks((a) => a.split === 'train').find((t) => t.to === lang)!;
-    const hidden = ds.formTasks((a) => a.split === 'unseen').find((t) => t.to === lang)!;
+    const known = ds.formTasks((a) => !a.unseen).find((t) => t.to === lang)!;
+    const hidden = ds.formTasks((a) => a.unseen).find((t) => t.to === lang)!;
     const invented = ds.missingFormTasks().find((t) => t.to === lang)!;
     e.handle({ type: 'ask', id: 1, text: known.source, lang, form: known.form });
     e.handle({ type: 'ask', id: 2, text: hidden.source.toUpperCase(), lang, form: hidden.form });

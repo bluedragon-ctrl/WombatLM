@@ -19,7 +19,7 @@
  * the next token it must guess at each step.
  *
  * This mirrors the trainer (`FormTrainer.defaultMix`): word-form tasks and
- * "copy the name" tasks of train-split animals, main answers only.
+ * "copy the name" tasks of trained animals (not unseen), main answers only.
  */
 import type { AnimalInfo, ReadyMsg } from '../train/protocol';
 import { h } from './dom';
@@ -45,7 +45,8 @@ export interface DataQuestion {
   source: string;
   /** The right answer; '' when the language has no real word (the model can only invent one). */
   answer: string;
-  split: 'train' | 'unseen';
+  /** Never trained on: kept aside to test the patterns. */
+  unseen: boolean;
   /** In the learning data: the trainer picks it for training steps. */
   learn: boolean;
   /** Asked when testing (Test tab). With no answer, whatever it writes counts as invented. */
@@ -66,12 +67,12 @@ export function dataQuestions(ready: Pick<ReadyMsg, 'animals' | 'forms' | 'langu
     for (const l of langs) {
       const source = a.names[l];
       if (!source) continue;
-      const train = a.split === 'train';
+      const train = !a.unseen;
       for (const form of ready.forms) {
         const isName = form === 'name';
         const answer = isName ? source : a.forms[l]?.[form] ?? '';
         out.push({
-          id: a.id, lang: l, form, source, answer, split: a.split,
+          id: a.id, lang: l, form, source, answer, unseen: a.unseen,
           learn: train && !!answer,
           test: !isName,
         });
@@ -86,7 +87,7 @@ export interface DataCounts {
   animals: number;
   train: number;
   unseen: number;
-  /** Learning examples: word forms and "copy the name" of train-split animals. */
+  /** Learning examples: word forms and "copy the name" of trained animals (not unseen). */
   forms: number;
   copies: number;
   /** Test questions with a right answer (all animals), and those of never-seen animals. */
@@ -103,7 +104,7 @@ export function countData(ready: Pick<ReadyMsg, 'animals' | 'forms'>, lang?: str
     const has = langs.filter((l) => a.names[l]);
     if (has.length === 0) continue;
     c.animals++;
-    const train = a.split === 'train';
+    const train = !a.unseen;
     if (train) c.train++; else c.unseen++;
     for (const l of has) {
       if (train) c.copies++;
@@ -233,7 +234,7 @@ export class DataTab {
     const forms = ready.forms.filter((f) => f !== 'name');
     const list = this.animalsShown(ready, lang);
     const rows = list.map((a) => {
-      const kept = a.split === 'unseen';
+      const kept = a.unseen;
       const word = (text: string, form: string, cls: string, title: string) => {
         const sel = this.sel?.id === a.id && this.sel.lang === lang && this.sel.form === form;
         const cell = h('td', { class: `cell ${cls}${sel ? ' sel' : ''}`, title }, text);
@@ -260,11 +261,11 @@ export class DataTab {
         h('tbody', {}, ...rows)));
   }
 
-  /** Animals that pass the split filter and the search, sorted by name. */
+  /** Animals that pass the trained / unseen filter and the search, sorted by name. */
   private animalsShown(ready: ReadyMsg, lang: string): AnimalInfo[] {
     return ready.animals
       .filter((a) => a.names[lang])
-      .filter((a) => this.filter === 'all' || a.split === this.filter)
+      .filter((a) => this.filter === 'all' || (this.filter === 'unseen') === a.unseen)
       .filter((a) => !this.search || this.matches(a, lang))
       .sort((a, b) => a.names[lang].localeCompare(b.names[lang], lang));
   }
@@ -288,18 +289,18 @@ export class DataTab {
     const unused = qs.filter((q) => !q.learn && !q.test).length;
     const yes = (on: boolean, text = '✓') => h('td', { class: on ? 'use yes' : 'use no' }, on ? text : '—');
     const rows = qs.map((q) => {
-      const hidden = q.split === 'unseen' && !this.reveal && q.form !== 'name';
+      const hidden = q.unseen && !this.reveal && q.form !== 'name';
       const sel = this.sel?.id === q.id && this.sel.lang === q.lang && this.sel.form === q.form;
       const answer = !q.answer ? h('span', { class: 'missing' }, t('data.q.noWord'))
         : hidden ? h('span', { class: 'hidden', title: t('data.tip.hidden') }, '?')
         : h('span', {}, q.answer);
-      const tr = h('tr', { class: `${q.split === 'unseen' ? 'kept' : ''}${sel ? ' sel' : ''}` },
+      const tr = h('tr', { class: `${q.unseen ? 'kept' : ''}${sel ? ' sel' : ''}` },
         h('td', { class: 'q' }, h('span', { class: 'chips' }, tokenChip(toTok(targetToken(q.lang, q.form), index), opts)), ' ', h('b', {}, q.source)),
         h('td', { class: 'arrow' }, '→'),
         h('td', { class: 'ans' }, answer),
         yes(q.learn),
         yes(q.test, q.answer ? '✓' : t('data.q.invents')),
-        h('td', { class: 'small' }, q.split === 'unseen' ? t('neverSeen') : ''));
+        h('td', { class: 'small' }, q.unseen ? t('neverSeen') : ''));
       tr.onclick = () => { this.sel = { id: q.id, lang: q.lang, form: q.form }; this.render(); };
       return tr;
     });
@@ -319,18 +320,19 @@ export class DataTab {
   private renderRecords(ready: ReadyMsg): void {
     this.legend.hidden = false;
     this.legend.replaceChildren(h('dl', { class: 'record-fields' },
-      ...(['id', 'pack', 'split', 'names', 'forms'] as const).flatMap((f) => [
+      ...(['id', 'pack', 'names', 'forms', 'unseen'] as const).flatMap((f) => [
         h('dt', {}, h('code', {}, f)), h('dd', {}, t(`data.rec.${f}`))])));
     const hiddenMark = t('data.rec.hidden');
     const animals = ready.animals
-      .filter((a) => this.filter === 'all' || a.split === this.filter)
+      .filter((a) => this.filter === 'all' || (this.filter === 'unseen') === a.unseen)
       .filter((a) => !this.search || Object.keys(a.names).some((l) => this.matches(a, l)))
       .sort((a, b) => a.id.localeCompare(b.id));
-    const mask = <T>(a: AnimalInfo, v: T): T | string => (a.split === 'unseen' && !this.reveal ? hiddenMark : v);
+    const mask = <T>(a: AnimalInfo, v: T): T | string => (a.unseen && !this.reveal ? hiddenMark : v);
     const records = animals.map((a) => {
-      const rec: Record<string, unknown> = { id: a.id, pack: a.pack, split: a.split, names: a.names };
+      const rec: Record<string, unknown> = { id: a.id, pack: a.pack, names: a.names };
       if (Object.keys(a.forms).length) rec.forms = mask(a, a.forms);
-      return h('pre', { class: `record${a.split === 'unseen' ? ' kept' : ''}` }, recordJson(rec));
+      if (a.unseen) rec.unseen = true;
+      return h('pre', { class: `record${a.unseen ? ' kept' : ''}` }, recordJson(rec));
     });
     this.table.replaceChildren(
       h('p', { class: 'small' }, t('data.rec.shown', { n: animals.length })),
@@ -340,7 +342,7 @@ export class DataTab {
   /** Start with a word-form example of the first animal it learns from, so the panel is never empty. */
   private firstExample(ready: ReadyMsg): DataTab['sel'] {
     const lang = this.lang;
-    const train = ready.animals.filter((a) => a.split === 'train' && a.names[lang])
+    const train = ready.animals.filter((a) => !a.unseen && a.names[lang])
       .sort((a, b) => a.names[lang].localeCompare(b.names[lang], lang));
     for (const form of ['female', ...ready.forms.filter((f) => f !== 'name')]) {
       const a = train.find((x) => x.forms[lang]?.[form]);
@@ -363,7 +365,7 @@ export class DataTab {
     const opts = { expert: this.expert, langName };
     const source = a.names[lang];
     const answer = form === 'name' ? source : a.forms[lang]?.[form] ?? '';
-    const kept = a.split === 'unseen';
+    const kept = a.unseen;
     const chips = (toks: Tok[]) => h('span', { class: 'chips' }, ...toks.map((tok) => tokenChip(tok, opts)));
     const row = (label: string, el: HTMLElement) => h('div', { class: 'token-row stacked' }, h('span', { class: 'token-label small' }, label), el);
     const ask = h('button', { 'data-test': 'example-ask' }, t('example.ask'));
@@ -409,7 +411,7 @@ export class DataTab {
 
   private matches(a: AnimalInfo, lang: string): boolean {
     // Hidden answers of never-seen animals must not be findable by searching.
-    const hidden = a.split === 'unseen' && !this.reveal;
+    const hidden = a.unseen && !this.reveal;
     if (!a.names[lang]) return false;
     const words = [a.names[lang], a.id, ...(hidden ? [] : Object.values(a.forms[lang] ?? {}))];
     return words.some((w) => w.toLowerCase().includes(this.search));

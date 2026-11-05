@@ -1094,12 +1094,12 @@ export class App {
       const cells = forms.map((f, i) => {
         const r = rs[i];
         if (!r) return h('td', { class: 'cell none' }, t('noForm'));
-        const title = `${t(`form.${f}`)}: ${r.output} — ${t(`status.${r.status}`)}${r.answer && a.split === 'train' ? ` (${r.answer})` : ''}`;
+        const title = `${t(`form.${f}`)}: ${r.output} — ${t(`status.${r.status}`)}${r.answer && !a.unseen ? ` (${r.answer})` : ''}`;
         const cell = h('td', { class: `cell ${r.status}`, title }, `${STATUS_ICONS[r.status]} ${r.output || '∅'}`);
         cell.onclick = (e) => { e.stopPropagation(); this.askOnAskTab({ text: a.names[lang], lang, form: f }); };
         return cell;
       });
-      const name = h('td', { class: 'name' }, a.names[lang], a.split === 'unseen' ? h('span', { class: 'never' }, t('neverSeen')) : null);
+      const name = h('td', { class: 'name' }, a.names[lang], a.unseen ? h('span', { class: 'never' }, t('neverSeen')) : null);
       const row = h('tr', { class: a.names[lang] === this.question.text ? 'sel' : '' }, name, ...cells);
       row.onclick = () => this.askOnAskTab({ text: a.names[lang], lang });
       rows.push(row);
@@ -1111,8 +1111,8 @@ export class App {
   private keep(a: AnimalInfo, rs: (TaskResult | undefined)[]): boolean {
     switch (this.filter) {
       case 'all': return true;
-      case 'known': return a.split === 'train';
-      case 'unseen': return a.split === 'unseen';
+      case 'known': return !a.unseen;
+      case 'unseen': return a.unseen;
       case 'wrong': return rs.some((r) => r && (r.status === 'wrong' || r.status === 'close'));
     }
   }

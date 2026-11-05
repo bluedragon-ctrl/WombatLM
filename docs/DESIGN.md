@@ -139,22 +139,22 @@ Total: **55 tokens**. Code never assumes 55 or a fixed set of languages. Max wor
   "animals": [
     { "id": "tiger", "names": { "cs": "tygr", "en": "tiger" },
       "forms": { "cs": { "male": "tygr", "female": "tygřice", "young": "tygře" },
-                 "en": { "male": "tiger", "female": "tigress", "young": "cub" } },
-      "split": "train" },
+                 "en": { "male": "tiger", "female": "tigress", "young": "cub" } } },
     { "id": "wolf", "names": { "cs": "vlk", "en": "wolf" },
       "forms": { "cs": { "male": "vlk", "female": "vlčice", "young": "vlče" },
                  "en": { "female": "she-wolf", "young": "pup" } },
-      "split": "unseen" },
+      "unseen": true },
     { "id": "giraffe", "names": { "cs": "žirafa", "en": "giraffe" },
       "forms": { "en": { "male": "bull", "female": "cow", "young": "calf" } },
-      "split": "unseen" }
+      "unseen": true }
   ]
 }
 ```
 - `names`: one entry per language code. Packs **merge by `id`**, so a later pack can add languages or forms to existing animals.
 - `forms`: per language, any subset of the word forms. **Missing forms are deliberate**: no real word exists (žirafa has no Czech male/female/young word), and that is what the model invents. Generic phrases (*mládě*, *baby tiger*) are never main entries. Words unsuitable for an 11+ audience are left out.
 - **One right word per answer.** No alternative names or forms, no "unsure" flags: a doubtful word is fixed or deleted in the data (the user edits it). The validator rejects any other field.
-- `split`: `train` or `unseen`, **per animal** (an unseen animal is unseen in all languages and forms, so nothing leaks). Never-seen animals give the "hidden real answers".
+- `unseen: true` marks a never-seen animal; without it the model learns from the animal. **Per animal** (an unseen animal is unseen in all languages and forms, and in every pack that mentions it, so nothing leaks). Never-seen animals give the "hidden real answers".
+- That is the whole format: `id`, `names`, `forms`, `unseen`. Nothing else (no kind overrides; the form kind below is always computed).
 
 ### 4.4 Form kind
 How a form relates to its name, computed (`formKind()` in `src/data/dataset.ts`), not stored. The share of the name's letters (without diacritics) found in order in the form (longest common subsequence / name length):
@@ -173,7 +173,7 @@ Used for colours, the scoreboard lines and the explanations. Thresholds live in 
 Separate files, same format. Existing: `ocean` and `insects` (names only, from the translation design) and `farm-babies` (now redundant with `young` forms). **Rework in M5** into packs with forms, e.g. "farm animals" (kůň → klisna / hříbě, horse → mare / foal) and "birds" (páv → pávice). Adding animals later means adding a JSON file, no code changes.
 
 ### 4.7 Validation (`scripts/validate-data.ts`, also a test)
-All characters in the vocabulary · lengths ≤ 20 · NFC · lower-case · no duplicate ids within a pack · no name used by two animals · forms only for languages with a name · known form names · no unknown fields · packs of ≥ 8 animals have both splits.
+All characters in the vocabulary · lengths ≤ 20 · NFC · lower-case · no duplicate ids within a pack · no name used by two animals · forms only for languages with a name · known form names · no unknown fields · `unseen` is `true` or left out · packs of ≥ 8 animals have both trained and unseen animals.
 
 ### 4.8 User additions
 In Teach mode a user can type an animal with forms. Stored in `localStorage` as pack `user`; export/import as JSON in the same format.
@@ -215,7 +215,7 @@ Why the decoder starts from the target token: without it the model often mixed u
 The model has **no special copy machinery**. Keeping the stem (tygr → tygr|ice) is learned by ordinary cross-attention, the same way real language models learn to copy. The cross-attention grid shows it: while writing the stem the model looks at the matching input letter. An earlier version had a pointer-style copy mechanism with a write-or-copy gate; it was removed to keep the model simple (see `docs/DECISIONS.md`).
 
 ### 6.3 Training
-- **Batch mix:** word-form tasks of train-split animals (both languages, all forms) mixed **1:1 with copy practice** (`<cs> tygr → tygr` for every train-split name). Copy practice is what makes never-seen forms work: it teaches "keep the stem".
+- **Batch mix:** word-form tasks of trained animals (not `unseen`) (both languages, all forms) mixed **1:1 with copy practice** (`<cs> tygr → tygr` for every trained name). Copy practice is what makes never-seen forms work: it teaches "keep the stem".
 - Teacher forcing, cross-entropy on target characters, batch 16, no label smoothing (so probability bars stay honest).
 - `FormTrainer` in `src/train/trainer.ts`; defaults in `TRAINER_DEFAULTS`.
 
@@ -230,7 +230,7 @@ The model has **no special copy machinery**. Keeping the stem (tygr → tygr|ice
 
 ### 6.5 Namer: "Invent an animal" (M6)
 - Decoder-only character model: 2 blocks (masked self-attention), d_model 32, 2 heads, its own embeddings, ≈ 25k params.
-- Trained on all train-split names with a language token (`<cs>` + name, `<en>` + name), so the user can pick "Czech-sounding" or "English-sounding".
+- Trained on all trained (not `unseen`) names with a language token (`<cs>` + name, `<en>` + name), so the user can pick "Czech-sounding" or "English-sounding".
 - Sampling with a **temperature** slider (0.2–1.5) and per-letter probability bars.
 - Labels: **"real animal!"** (exists in the data), **"new!"**, or **"looks like X"** (nearest real name by edit distance ≤ 2).
 - Trains in the same worker with its own trainer, only when its tab is active.
@@ -252,9 +252,9 @@ Planned: `seekSnapshot{index}` · `returnToLive` (M4) · `addPack{pack}` · `set
 
 ### 7.2 Messages worker → main
 Built (M2):
-- `ready`: seed, parameter count, languages, forms, animal list (names, forms, split), vocabulary tokens.
+- `ready`: seed, parameter count, languages, forms, animal list (names, forms, unseen), vocabulary tokens.
 - `tick` (≤ 20 Hz): step, running, speed, loss EMA, LR, batch size, gradient norm, measured steps/s, and **every batch loss since the previous tick** (the loss chart is drawn from these).
-- `eval`: step, scores per language, per-form results (`TaskResult`: animal, language, form, output, status, split, kind), whether inventions are included, and how long it took.
+- `eval`: step, scores per language, per-form results (`TaskResult`: animal, language, form, output, status, unseen, kind), whether inventions are included, and how long it took.
 - `answer`: the output word, whether it finished, the input tokens, **per letter the top-5 candidates with probabilities**, the confidence, **all attention maps** (transferred buffers), the badge and, for real/hidden, the accepted answers and status.
 - `error`.
 
