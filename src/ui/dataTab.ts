@@ -3,8 +3,8 @@
  * Three views of the same data:
  * - table: one row per animal and language (an overview);
  * - questions: every question exactly as the model gets it (task token +
- *   name), its right answer, other accepted answers, and whether it is
- *   learned from, tested on, or both;
+ *   name), its right answer, and whether it is learned from, tested on, or
+ *   both;
  * - records: the data records themselves, every field, and which of them
  *   ever reach the model.
  *
@@ -43,17 +43,13 @@ export interface DataQuestion {
   lang: string;
   form: string;
   source: string;
-  /** Main right answer; '' when the language has no real word (the model can only invent one). */
+  /** The right answer; '' when the language has no real word (the model can only invent one). */
   answer: string;
-  /** Other answers accepted as right when testing (never learned from). */
-  alts: string[];
   split: 'train' | 'unseen';
   /** In the learning data: the trainer picks it for training steps. */
   learn: boolean;
   /** Asked when testing (Test tab). With no answer, whatever it writes counts as invented. */
   test: boolean;
-  /** A native speaker still has to confirm this answer. */
-  unsure: boolean;
 }
 
 /**
@@ -74,12 +70,10 @@ export function dataQuestions(ready: Pick<ReadyMsg, 'animals' | 'forms' | 'langu
       for (const form of ready.forms) {
         const isName = form === 'name';
         const answer = isName ? source : a.forms[l]?.[form] ?? '';
-        const alts = isName ? [] : a.formsAlt?.[l]?.[form] ?? [];
         out.push({
-          id: a.id, lang: l, form, source, answer, alts, split: a.split,
+          id: a.id, lang: l, form, source, answer, split: a.split,
           learn: train && !!answer,
           test: !isName,
-          unsure: (a.unsure ?? []).includes(`${l}.${form}`),
         });
       }
     }
@@ -234,9 +228,7 @@ export class DataTab {
     this.legend.replaceChildren(
       h('span', { class: 'learned' }, t('data.legend.learned')),
       h('span', { class: 'missing' }, `— ${t('data.legend.missing')}`),
-      h('span', { class: 'kept' }, t('data.legend.kept')),
-      h('span', {}, h('sup', { class: 'alts' }, '+1'), ' ', t('data.legend.alts')),
-      h('span', { class: 'learned unsure' }, t('data.legend.unsure')));
+      h('span', { class: 'kept' }, t('data.legend.kept')));
     const lang = this.lang;
     const forms = ready.forms.filter((f) => f !== 'name');
     const list = this.animalsShown(ready, lang);
@@ -252,14 +244,7 @@ export class DataTab {
         const w = a.forms[lang]?.[f];
         if (!w) return h('td', { class: 'cell missing', title: t('data.tip.missing') }, '—');
         if (kept && !this.reveal) return h('td', { class: 'cell kept hidden', title: t('data.tip.hidden') }, '?');
-        const alts = a.formsAlt?.[lang]?.[f] ?? [];
-        const unsure = (a.unsure ?? []).includes(`${lang}.${f}`);
-        let tip = kept ? t('data.tip.kept') : t('data.tip.learned', { from: a.names[lang], to: w });
-        if (alts.length) tip += ` ${t('data.tip.alts', { words: alts.join(', ') })}`;
-        if (unsure) tip += ` ${t('data.tip.unsure')}`;
-        const cell = word(w, f, `${kept ? 'kept' : 'learned'}${unsure ? ' unsure' : ''}`, tip);
-        if (alts.length) cell.append(h('sup', { class: 'alts' }, `+${alts.length}`));
-        return cell;
+        return word(w, f, kept ? 'kept' : 'learned', kept ? t('data.tip.kept') : t('data.tip.learned', { from: a.names[lang], to: w }));
       });
       const name = word(a.names[lang], 'name', kept ? 'kept name' : 'learned name',
         kept ? t('data.tip.kept') : t('data.tip.copy', { word: a.names[lang] }));
@@ -307,13 +292,11 @@ export class DataTab {
       const sel = this.sel?.id === q.id && this.sel.lang === q.lang && this.sel.form === q.form;
       const answer = !q.answer ? h('span', { class: 'missing' }, t('data.q.noWord'))
         : hidden ? h('span', { class: 'hidden', title: t('data.tip.hidden') }, '?')
-        : h('span', { class: q.unsure ? 'unsure' : '', title: q.unsure ? t('data.tip.unsure') : '' }, q.answer);
-      const alts = hidden || q.alts.length === 0 ? '' : q.alts.join(', ');
+        : h('span', {}, q.answer);
       const tr = h('tr', { class: `${q.split === 'unseen' ? 'kept' : ''}${sel ? ' sel' : ''}` },
         h('td', { class: 'q' }, h('span', { class: 'chips' }, tokenChip(toTok(targetToken(q.lang, q.form), index), opts)), ' ', h('b', {}, q.source)),
         h('td', { class: 'arrow' }, '→'),
         h('td', { class: 'ans' }, answer),
-        h('td', { class: 'small alts-cell' }, alts),
         yes(q.learn),
         yes(q.test, q.answer ? '✓' : t('data.q.invents')),
         h('td', { class: 'small' }, q.split === 'unseen' ? t('neverSeen') : ''));
@@ -326,7 +309,6 @@ export class DataTab {
         h('thead', {}, h('tr', {},
           h('th', {}, t('data.q.col.question')), h('th', {}),
           h('th', {}, t('data.q.col.answer')),
-          h('th', {}, t('data.q.col.alts')),
           h('th', {}, t('data.q.col.learn')),
           h('th', {}, t('data.q.col.test')),
           h('th', {}))),
@@ -337,7 +319,7 @@ export class DataTab {
   private renderRecords(ready: ReadyMsg): void {
     this.legend.hidden = false;
     this.legend.replaceChildren(h('dl', { class: 'record-fields' },
-      ...(['id', 'pack', 'split', 'names', 'forms', 'formsAlt', 'alt', 'unsure'] as const).flatMap((f) => [
+      ...(['id', 'pack', 'split', 'names', 'forms'] as const).flatMap((f) => [
         h('dt', {}, h('code', {}, f)), h('dd', {}, t(`data.rec.${f}`))])));
     const hiddenMark = t('data.rec.hidden');
     const animals = ready.animals
@@ -348,9 +330,6 @@ export class DataTab {
     const records = animals.map((a) => {
       const rec: Record<string, unknown> = { id: a.id, pack: a.pack, split: a.split, names: a.names };
       if (Object.keys(a.forms).length) rec.forms = mask(a, a.forms);
-      if (Object.keys(a.formsAlt ?? {}).length) rec.formsAlt = mask(a, a.formsAlt);
-      if (Object.keys(a.alt ?? {}).length) rec.alt = a.alt;
-      if (a.unsure?.length) rec.unsure = a.unsure;
       return h('pre', { class: `record${a.split === 'unseen' ? ' kept' : ''}` }, recordJson(rec));
     });
     this.table.replaceChildren(
@@ -432,8 +411,7 @@ export class DataTab {
     // Hidden answers of never-seen animals must not be findable by searching.
     const hidden = a.split === 'unseen' && !this.reveal;
     if (!a.names[lang]) return false;
-    const words = [a.names[lang], a.id, ...(a.alt?.[lang] ?? []),
-      ...(hidden ? [] : [...Object.values(a.forms[lang] ?? {}), ...Object.values(a.formsAlt?.[lang] ?? {}).flat()])];
+    const words = [a.names[lang], a.id, ...(hidden ? [] : Object.values(a.forms[lang] ?? {}))];
     return words.some((w) => w.toLowerCase().includes(this.search));
   }
 }

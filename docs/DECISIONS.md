@@ -77,7 +77,7 @@ Conclusions:
 - `TranslatorTrainer` became **`FormTrainer`** (`src/train/trainer.ts`). Batches mix word-form tasks of train-split animals (`formTasks`) with "copy the name" practice (`nameTasks(…, true)`) at 1:1 (`copyWeight`). Defaults in `TRAINER_DEFAULTS`: copy mechanism, target-token start, dropout 0.1, Adam LR 3e-3, batch 16.
 - **Scoreboard per language** (`Scores`): known · never-seen pattern / partly / irregular · never-seen exact (`unseen`) · never-seen right-or-close (`close`) · fresh / old (Teach mode).
 - **Inventions:** `Dataset.missingFormTasks()` lists the forms the data lacks; `evaluate({ inventions: true })` asks for them too and marks them `invented` (never scored). `confidence(trace, eos)` = geometric mean of the chosen letters' probabilities (DESIGN §8.7).
-- `unsure` entries are still trained on, as in the experiments; dropping them is a data-review decision.
+- `unsure` entries are still trained on, as in the experiments; dropping them is a data-review decision. (Later removed altogether, see "One right word per answer".)
 - Check run (`npx tsx scripts/train-node.ts 5000 1`): known cs 98% / en 93%, never-seen cs 23% exact (35% incl. close), en 11%; 40 steps/s in Node.
 - **Evaluation cost:** the 355 real forms take ~250 ms, all 906 forms incl. inventions ~640 ms (Node). Evaluating everything every 50 steps would halve training speed, so the worker evaluates real forms on a schedule and inventions less often (see the worker entry).
 
@@ -208,3 +208,9 @@ The user reported 15–20 minutes to build the model on a ThinkPad T14s at 37–
 - Measure: cosine similarity **from the average letter** (`nearestRows` in `src/nn/pca.ts`), computed in the worker with the PCA (`LetterMapMsg.near`). Compared after 5,000 steps (seed 1): plain cosine and distance gave noisier lists; centred cosine gave the clearest vowel groups (a → á ý o ě, o → á a e, á → o a e u). The similarities are modest (≈ 0.3–0.4): the letter table only needs to be good enough for the task.
 - **Rare letters are flagged.** A letter seen fewer than 30 times in the learning data (`LetterMapMsg.counts`, from `FormTrainer.letterCounts()`, source words + answers) gets a note that the model learned little about it and its closest letters are mostly chance (q 7×, ó 1×…). This also explains the pile of accented letters at the edge of the map.
 - Considered, not done yet: start-position ghosts with trails; hiding task tokens by default; marker size by frequency.
+
+## One right word per answer (user request)
+"Flags for answers not checked by a Czech speaker, and alternatives, are unnecessary complications for such a project. If needed I will modify the data."
+- Removed `unsure` (19 entries), `formsAlt` (16 accepted alternative forms, e.g. koťátko, cub) and `alt` (9 alternative names, e.g. kocour for kočka, rhino) from the data, the code and the Learning data tab. The main words are unchanged.
+- Every question now has exactly one right answer: `judge(output, answer)` is right / one letter off ("close") / wrong. `Task.accepted` and `AnswerMsg.answer.accepted` are gone (`answer.word`). The Ask tab recognises an animal only by its name.
+- The validator rejects any field other than `id`, `names`, `split`, `forms`, `kindOverride`, so old fields in a data file are reported, not silently ignored.

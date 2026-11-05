@@ -258,7 +258,7 @@ export class FormTrainer {
       const ex: PracticeExample = { source: task.source, lang: task.to, form: task.form, target: task.answer, letters, loss };
       if (i < last.answers.length) {
         ex.answer = last.answers[i];
-        ex.status = judge(ex.answer, task.accepted) as 'correct' | 'close' | 'wrong';
+        ex.status = judge(ex.answer, task.answer) as 'correct' | 'close' | 'wrong';
         if (ex.status === 'correct') right++;
       }
       return ex;
@@ -300,7 +300,7 @@ export class FormTrainer {
       source: t.source,
       answer: t.answer,
       output: outputs[i],
-      status: t.answer ? judge(outputs[i], t.accepted) : 'invented',
+      status: t.answer ? judge(outputs[i], t.answer) : 'invented',
       split: t.animal.split,
       kind: t.answer ? formKind(t.source, t.answer) : undefined,
     }));
@@ -315,9 +315,10 @@ export class FormTrainer {
   }
 }
 
-export function judge(output: string, accepted: readonly string[]): Status {
-  if (accepted.includes(output)) return 'correct';
-  return Math.min(...accepted.map((a) => editDistance(output, a))) <= 1 ? 'close' : 'wrong';
+/** Right, one letter off ("close") or wrong, against the one right answer. */
+export function judge(output: string, answer: string): Status {
+  if (output === answer) return 'correct';
+  return editDistance(output, answer) <= 1 ? 'close' : 'wrong';
 }
 
 /**

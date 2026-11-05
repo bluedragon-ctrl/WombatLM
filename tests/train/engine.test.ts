@@ -109,7 +109,7 @@ describe('Engine', () => {
     e.handle({ type: 'ask', id: 4, text: 'qqq', lang, form: 'young' });
     const [a, b, c, d] = h.of('answer') as AnswerMsg[];
     expect(a.badge).toBe('real');
-    expect(a.answer!.accepted[0]).toBe(known.answer);
+    expect(a.answer!.word).toBe(known.answer);
     expect(b.badge).toBe('hidden');
     expect(b.text).toBe(hidden.source);
     expect(c.badge).toBe('invention');

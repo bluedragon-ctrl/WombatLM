@@ -326,8 +326,6 @@ button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .data-views { margin-bottom: 4px; }
 .data-view-note { margin: 0 0 8px; }
 .data-legend[hidden] { display: none; }
-.data-table sup.alts, .data-legend sup.alts { font-size: 10px; color: var(--muted); margin-left: 3px; }
-.data-table .unsure, .data-legend .unsure { text-decoration: underline dotted #b45309; text-underline-offset: 3px; }
 .data-table table.questions { border-spacing: 6px 2px; font-size: 14px; }
 .data-table table.questions tr { cursor: pointer; }
 .data-table table.questions tr:hover td { background: #f8fafc; }
@@ -336,7 +334,6 @@ button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .data-table table.questions td { white-space: nowrap; padding: 1px 4px; }
 .data-table table.questions td.q .chips { display: inline-flex; vertical-align: middle; }
 .data-table table.questions td.arrow { color: var(--muted); }
-.data-table table.questions td.alts-cell { color: var(--muted); white-space: normal; }
 .data-table table.questions td.use.yes { color: #15803d; }
 .data-table table.questions td.use.no { color: #cbd5e1; }
 .data-table table.questions .missing { color: #94a3b8; font-style: italic; }
