@@ -54,7 +54,7 @@ Done in the second session: steps 1–3 below (see DECISIONS.md "M2 — trainer 
 1. ~~Trainer on form tasks + copy practice~~ → `FormTrainer` (`src/train/trainer.ts`).
 2. ~~Worker + protocol~~ → `src/train/{engine,worker,protocol}.ts`.
 3. ~~Minimal UI~~ → `src/ui/app.ts`, `src/viz/*`.
-4. Acceptance: run ~5 000 steps in the browser (≈ 2.5 min at max speed) and record known / never-seen numbers; Node runs give known cs 98% / en 93% at 5k steps, so English may need a decision (longer training or accept ~93%).
+4. Acceptance run done (seed 1, 5k steps, 160 s): known cs 98% / en 93%, identical to Node. **Open decision for the user:** English known 93% < 95% target, so either train longer by default or accept it.
 5. User reviews: dataset (`npm run validate-data -- --review`) and the Czech UI strings (`src/ui/i18n/cs.json`).
 6. Rewrite DESIGN.md for the forms design, then M3 (attention grids, letter map, Inside the brain). The answer message already carries the attention maps.
 
