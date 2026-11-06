@@ -389,3 +389,6 @@ User: split "Inside the model" into one tab for where it is learning (the model'
 
 ### Ask tab: Tokens and Guesses as separate blocks (user)
 Three rows: Answering | Insights; Tokens | "Where it looks" (spans rows 2–3); Guesses, letter by letter | the rest of "Where it looks".
+
+### Screenshots no longer kept in the repo (user)
+`docs/screenshots/` was removed and is git-ignored. `npm run screenshots` still writes there for local review. Older entries above still name screenshot paths as they were at the time.

@@ -50,7 +50,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 - The change mode keeps per-matrix baselines in the engine (`deltaBase`, `lastDelta`, `beforeStep`, and `summaryBase`/`lastSummary` for the change summary); seeking must clear them like `reset` does. `explain` must also read from the view model.
 - Panels request data only while visible: the Model learning tab asks for the letter map and turns on `watchPractice`, the Inside tab asks for the scan and The numbers tab for the heatmaps (`App.requestInspect`, at most one in flight, every 250 ms), the Test tab turns on testing (`watchTests`).
 - The UI is in `src/ui/app.ts` (tabs, Model learning, Ask, Test), `src/ui/dataTab.ts` (Learning data tab), `src/ui/inside.ts` (Where it learns tab: the brain scan), `src/ui/letterTab.ts` (How it picks a letter tab: one letter in detail, the detectors) and `src/ui/numbersTab.ts` (The numbers, expert only: heatmaps, step detail); visuals in `src/viz/` (`attentionGrid`, `letterMap`, `weightHeatmap`).
-- `npm run screenshots` regenerates the PR screenshots in `docs/screenshots/m3/` and `docs/screenshots/learn-vs-answer/` (opt-in, ~3 min).
+- `npm run screenshots` makes screenshots of the panels in `docs/screenshots/` for review (opt-in, ~3 min). They are not kept in the repo (git-ignored).
 - Time travel must respect the learning/answering split: a seeked snapshot is a frozen brain too, so the step label under the answer ("Answer from the brain at step N") should show the snapshot's step, and the practice strip should be hidden or say it is history.
 
 ## Waiting for the user
@@ -84,7 +84,7 @@ This is a **teaching demo**. The goal is to show how the model works (token-by-t
 npm test                                   # vitest (113 tests)
 npm run build                              # typecheck + vite build
 npm run e2e                                # Playwright smoke test (builds + previews on :4173)
-npm run screenshots                        # PR screenshots (docs/screenshots/m3, docs/screenshots/learn-vs-answer)
+npm run screenshots                        # screenshots for review in docs/screenshots/ (git-ignored)
 npm run dev                                # the app
 npm run validate-data [-- --review]        # data linter (+ review table)
 npx tsx scripts/train-node.ts 5000 1       # the app's trainer in Node
