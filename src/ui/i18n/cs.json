@@ -795,5 +795,21 @@
   "explain.ffn.boardKey": "Oranžová = jak silně je detektor zapnutý. Orámované = ty, které „{tok}“ potřebuje nejvíc. Klikněte na čtvereček a uvidíte ten detektor.",
   "explain.ffn.boardKeyTeam": "Oranžová = jak silně je detektor zapnutý. Klikněte na čtvereček a uvidíte ten detektor.",
   "explain.ffn.unitPicked": "Detektor {n}, jak jste ho vybrali (dalším kliknutím ho zavřete):",
-  "unit.offNowLabel": "Bez něj by teď šance „{tok}“ byla:"
+  "unit.offNowLabel": "Bez něj by teď šance „{tok}“ byla:",
+  "intro.title": "Vítejte ve WombatLM",
+  "intro.text": "WombatLM je malinký jazykový model, který se přímo ve vašem prohlížeči učí, jak se mění zvířecí slova: samec, samice a mládě (například lev → lvice → lvíče). Na začátku neumí nic a učí se jen z příkladů. Můžete sledovat každý jeho krok: z čeho se učí, jak se učí, jak odpovídá a co se děje uvnitř.",
+  "intro.stepsLead": "Záložky nahoře vyprávějí příběh krok za krokem:",
+  "intro.data": "Všechno, z čeho se model učí: zvířata a tvary jejich slov. Některá zvířata nikdy neuvidí, slouží jen k testu.",
+  "intro.learn": "Tady učení spustíte (▶ Učit nebo Krok ×1). Sledujte každý krok: odpoví na pár příkladů, změří své chyby a trochu posune svá čísla.",
+  "intro.ask": "Zeptejte se modelu na jakékoli zvíře, i vymyšlené, a podívejte se, jak si je jistý každým písmenem a kam se dívá.",
+  "intro.test": "Automatická kontrola všech zvířat a tvarů: kolik jich umí správně, včetně těch nikdy neviděných.",
+  "intro.letter": "Jedno písmeno odpovědi podrobně: jak ho model vybírá a detektory, které mu pomáhají rozhodnout.",
+  "intro.scan": "Snímek všech čísel modelu: které části se mění, když se učí.",
+  "intro.matrix": "Odpověď jako mřížka čísel, kterou uvnitř modelu skutečně je, stanici po stanici.",
+  "intro.numbers": "Skutečná čísla za vším: velikosti, váhy, gradienty a celý výpočet jednoho kroku učení.",
+  "intro.expertOnly": "pro pokročilé",
+  "intro.expertNote": "Záložky označené „pro pokročilé“ se objeví, když vpravo nahoře zaškrtnete „Pro pokročilé“. Dobrý začátek: otevřete Učení a stiskněte ▶ Učit, pak zkuste Ptej se.",
+  "intro.skip": "Při startu už nezobrazovat",
+  "intro.start": "Začít",
+  "intro.about": "O aplikaci"
 }

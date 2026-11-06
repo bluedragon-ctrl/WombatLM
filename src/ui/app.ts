@@ -39,6 +39,7 @@ import { ScanTab } from './inside';
 import { LetterTab } from './letterTab';
 import { NumbersTab } from './numbersTab';
 import { DataTab } from './dataTab';
+import { IntroDialog } from './intro';
 import { shortLabel, tokenChip, tokenIndex, tokenName, toTok } from './tokens';
 import { EOS, Vocab } from '../nn/vocab';
 
@@ -241,6 +242,8 @@ export class App {
   private journey: JourneyView;
   /** The answer as a matrix, station by station (Matrix tab). */
   private matrix: MatrixTab;
+  /** The start-up window: a short introduction and one line per tab. */
+  private intro!: IntroDialog;
 
   constructor(private root: HTMLElement) {
     this.worker = new Worker(new URL('../train/worker.ts', import.meta.url), { type: 'module' });
@@ -276,6 +279,8 @@ export class App {
     this.letterMap.onSelect = (sel) => this.renderMapPick(sel);
     this.renderMapPick(null);
     window.addEventListener('resize', () => { this.invalidate('loss', 'scores'); this.letterMap.draw(); });
+    this.intro = new IntroDialog((tab) => this.pickFromIntro(tab as Tab));
+    this.intro.openAtStart();
     const seed = 1 + Math.floor(Math.random() * 9999);
     this.send({ type: 'init', seed, speed: 'max' });
     this.send({ type: 'setGoal', steps: DEFAULT_GOAL });
@@ -603,6 +608,15 @@ export class App {
     this.requestInspect(true);
   }
 
+  /** A tab picked in the start-up window: an expert tab turns expert mode on first. */
+  private pickFromIntro(tab: Tab): void {
+    if (EXPERT_TABS.includes(tab) && !this.expert) {
+      this.els.expertBox.checked = true;
+      this.els.expertBox.dispatchEvent(new Event('change'));
+    }
+    this.setTab(tab);
+  }
+
   private showError(message: string): void {
     this.els.error.textContent = t('workerError', { message });
     this.els.error.hidden = false;
@@ -804,6 +818,8 @@ export class App {
     const testLegend = h('div', { class: 'test-legend small' },
       ...(['correct', 'close', 'wrong', 'invented'] as const).map((k) => h('span', { class: `cell ${k}` }, `${STATUS_ICONS[k]} ${t(`status.${k}`)}`)));
     const params = h('div', { class: 'params' });
+    const about = h('button', { class: 'link', 'data-test': 'about' }, t('intro.about'));
+    about.onclick = () => this.intro.open();
     const uiSwitch = h('button', { class: 'link' }, t('uiLanguage'));
     uiSwitch.onclick = () => {
       setUiLang(UI_LANGUAGES.find((l) => l !== uiLang()) ?? 'en');
@@ -878,7 +894,7 @@ export class App {
 
     this.root.replaceChildren(
       h('header', {}, h('h1', {}, t('title')), h('span', { class: 'sub' }, t('subtitle')), tabs, params,
-        h('label', { class: 'small expert-toggle' }, expertBox, ' ', t('expert')), uiSwitch),
+        h('label', { class: 'small expert-toggle' }, expertBox, ' ', t('expert')), about, uiSwitch),
       error,
       dataMain,
       learnMain,
@@ -894,7 +910,7 @@ export class App {
       dataMain, learnMain, askMain, matrixMain, insideMain, letterMain, testMain, numbersMain, testLangPick, testWhen,
       stamp, stampText, askAgain, insights, insightRows, wordRow, slowBtn, answerNowBtn, slowCaption, prompt, results, attPrompt, practiceList, practiceHelp,
       playButtons: [play], learnings: [learning], cycles: [cycleA],
-      lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
+      lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error, expertBox,
     };
   }
 

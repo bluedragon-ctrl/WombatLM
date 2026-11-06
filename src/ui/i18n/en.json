@@ -795,5 +795,21 @@
   "explain.ffn.boardKey": "Orange = how strongly each detector is on. Outlined = the ones “{tok}” needs most. Click a square to see that detector.",
   "explain.ffn.boardKeyTeam": "Orange = how strongly each detector is on. Click a square to see that detector.",
   "explain.ffn.unitPicked": "Detector {n}, as you picked it (click it again to close):",
-  "unit.offNowLabel": "Without it now, the chance of “{tok}”:"
+  "unit.offNowLabel": "Without it now, the chance of “{tok}”:",
+  "intro.title": "Welcome to WombatLM",
+  "intro.text": "WombatLM is a tiny language model that learns, right here in your browser, how animal words change: the male, the female and the young (for example lion → lioness → cub). It starts knowing nothing and learns only from examples. You can watch every step of it: what it learns from, how it learns, how it answers, and what happens inside it.",
+  "intro.stepsLead": "The tabs at the top tell the story step by step:",
+  "intro.data": "Everything the model learns from: the animals and their word forms. Some animals are kept back, never seen, to test it.",
+  "intro.learn": "Start learning here (▶ Learn or Step ×1). Watch each step: it answers a few examples, measures its mistakes and nudges its numbers.",
+  "intro.ask": "Ask the model about any animal, even a made-up one, and see how sure it is of each letter and where it looks.",
+  "intro.test": "An automatic check of every animal and form: how many it gets right, including the never-seen ones.",
+  "intro.letter": "One letter of the answer in detail: how the model chooses it, and the detectors that help it decide.",
+  "intro.scan": "A scan of all the model's numbers: which parts change while it learns.",
+  "intro.matrix": "The answer as the grid of numbers it really is inside the model, followed station by station.",
+  "intro.numbers": "The real numbers behind everything: sizes, weights, gradients and the full calculation of one learning step.",
+  "intro.expertOnly": "expert",
+  "intro.expertNote": "Tabs marked “expert” appear when you tick “Expert” at the top right. A good start: open Learn and press ▶ Learn, then try Ask.",
+  "intro.skip": "Don't show this at start",
+  "intro.start": "Start",
+  "intro.about": "About"
 }
