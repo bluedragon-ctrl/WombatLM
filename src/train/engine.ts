@@ -443,6 +443,7 @@ export class Engine {
     });
     const attention: AttentionMap[] = Object.entries(trace.attention).map(([name, a]) => ({ name, ...a }));
     const activations: Activation[] = Object.entries(trace.activations).map(([name, a]) => ({ name, ...a }));
+    const adds: Activation[] = Object.entries(trace.adds).map(([name, a]) => ({ name, ...a }));
     const output = vocab.decode(trace.output);
     // The rows each token looks up: letter table + position (their sums are enc.in / dec.in).
     const model = this.trainer.model;
@@ -461,10 +462,11 @@ export class Engine {
     const msg: AnswerMsg = {
       type: 'answer', id, step: this.trainer.step, text: word, lang, form, output, finished: trace.finished,
       input: trace.input.map((i) => tokens[i]), inputIds: trace.input, steps, confidence: confidence(trace, vocab.eos), attention, activations,
-      lookup, vocabSize: vocab.size,
+      lookup, adds, letterTable: model.tokEmb.data.slice(), logits: trace.logits, vocabSize: vocab.size,
       ...this.badge(word, lang, form, output),
     };
-    this.host.post(msg, [...attention, ...activations, ...Object.values(lookup)].map((a) => ('data' in a ? a.data : a).buffer as ArrayBuffer));
+    const buffers = [...attention, ...activations, ...adds, ...Object.values(lookup), msg.letterTable, msg.logits];
+    this.host.post(msg, buffers.map((a) => ('data' in a ? a.data : a).buffer as ArrayBuffer));
   }
 
   /** A number of the model as the UI names it, with its change in the recorded step. */

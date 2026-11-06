@@ -193,3 +193,31 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=attention] canvas').nth(3)).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('the matrix tab shows the answer station by station and follows one number', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.addInitScript(() => localStorage.setItem('wombatlm.uiLang', 'en'));
+  await page.goto('/');
+  await page.click('[data-test=tab-matrix]');
+  // The answer asked at start: reading first, all input rows come in from the letter table.
+  await expect(page.locator('[data-test=matrix-caption]')).toContainText(/Reading the animal, station 1 of 5: letters/, { timeout: 15_000 });
+  await expect(page.locator('.mx-stations button')).toHaveCount(5);
+  await page.click('[data-test=matrix-next]');
+  await expect(page.locator('[data-test=matrix-caption]')).toContainText(/\+ position/);
+  // The first writing pass: seven stations, ending with the guess.
+  await page.locator('.mx-passes [data-pass="1"]').click();
+  await expect(page.locator('.mx-stations button')).toHaveCount(7);
+  await page.locator('.mx-stations [data-station=guess]').click();
+  await expect(page.locator('[data-test=matrix-caption]')).toContainText(/compared with every row of the letter table/);
+  // Follow one number: click a square of the matrix.
+  await expect(page.locator('[data-test=matrix-trail]')).toContainText(/click any square/);
+  const box = (await page.locator('[data-test=matrix-canvas]').boundingBox())!;
+  await page.mouse.click(box.x + box.width - 30, box.y + 34 + 10);
+  await expect(page.locator('[data-test=matrix-trail] .mx-trail-step')).toHaveCount(6);
+  await page.click('[data-test=matrix-mode-added]');
+  await page.click('[data-test=matrix-play]');
+  await expect(page.locator('[data-test=matrix-play]')).toHaveText(/Stop/);
+  await page.click('[data-test=matrix-play]');
+  expect(errors).toEqual([]);
+});

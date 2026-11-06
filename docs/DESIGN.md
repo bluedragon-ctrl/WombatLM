@@ -103,6 +103,7 @@ Runtime dependencies: none. Dev dependencies: vite, typescript, vitest, tsx, @pl
 │  ├─ ui/
 │  │  ├─ app.ts style.css          ✔ the app: tabs, Forms tab
 │  │  ├─ inside.ts dom.ts          ✔ Inside the brain tab, DOM helpers
+│  │  ├─ matrixTab.ts matrixModel.ts ✔ The matrix tab: the answer as a matrix, station by station
 │  │  ├─ explainView.ts            ✔ "look inside one letter"
 │  │  ├─ i18n/{cs,en}.json, index.ts ✔
 │  │  └─ tabs, tour, help          ◌
