@@ -222,7 +222,10 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 .practice-table th.data { border-bottom-color: #f59e0b; color: #92400e; }
 .practice-table th.answer { border-bottom-color: var(--accent); color: var(--accent); }
 .practice-table td { padding: 4px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: baseline; }
-.practice-table td.tgt { font-weight: 600; background: #fffbeb; }
+.practice-table td.tgt { font-weight: 600; background: #fffbeb; white-space: nowrap; }
+/* A long junk answer (early on) wraps, so the right answer beside it stays on one line. */
+.practice-table td.answer { min-width: 8.5em; }
+.practice-table td.answer .word-own { word-break: break-all; }
 .practice-table td.answer { background: #f5f9ff; }
 .practice-table .example .src { font-weight: 500; }
 .practice-table .example .task { margin-left: 8px; font-size: 12px; color: var(--muted); }
@@ -340,6 +343,8 @@ header .params { text-align: right; }
 .loss-val { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; cursor: help; }
 .loss-val .num { min-width: 2.6em; text-align: right; }
 .loss-val .track { display: inline-block; width: 60px; height: 8px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+.loss-cell { cursor: help; }
+.loss-cell .sure { display: block; font-size: 12px; color: var(--muted); }
 .loss-val .fill { display: block; height: 100%; background: #dc2626; opacity: 0.7; }
 .loss-explain { max-width: 900px; margin-top: 8px; }
 
