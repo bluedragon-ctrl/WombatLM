@@ -224,6 +224,20 @@ describe('Engine', () => {
     expect([bias.rows, bias.cols, bias.colKind]).toEqual([1, ds.vocab.size, 'token']);
   });
 
+  it('ready carries the model sizes and learning settings', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    const c = (h.of('ready')[0] as ReadyMsg).config;
+    expect(c.vocabSize).toBe(ds.vocab.size);
+    expect([c.dModel, c.heads, c.ffn, c.encLayers, c.decLayers]).toEqual([32, 2, 64, 1, 1]);
+    expect(c.dropout).toBe(0.1);
+    expect([c.beta1, c.beta2, c.clipNorm, c.warmupSteps]).toEqual([0.9, 0.98, 1, 100]);
+    // The sizes match the letter table.
+    const emb = (h.of('ready')[0] as ReadyMsg).matrices.find((m) => m.name === 'tokEmb')!;
+    expect([emb.rows, emb.cols]).toEqual([c.vocabSize, c.dModel]);
+  });
+
   it('inspect sends weights, their change and the gradient', () => {
     const h = fakeHost();
     const e = new Engine(h.host, ds);

@@ -36,7 +36,15 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=cycle] .stage.lit')).toHaveCount(5, { timeout: 5_000 });
   await expect(page.locator('[data-test=practice] td.check .check-loss')).toHaveCount(16);
   await expect(page.locator('[data-test=check-explain]')).toContainText(/After the step/);
-  // What this step changed: the numbers that moved, and why the first one moved, to the last digit.
+  // Plain mode: no step arithmetic and no "The numbers" tab.
+  await expect(page.locator('[data-test=step-detail]')).toBeHidden();
+  await expect(page.locator('[data-test=step-link]')).toBeHidden();
+  await expect(page.locator('[data-test=tab-numbers]')).toBeHidden();
+  // Expert: the tab appears; what this step changed: the numbers that moved, and why the first one moved, to the last digit.
+  await page.locator('[data-test=expert]').check();
+  await expect(page.locator('[data-test=tab-numbers]')).toBeVisible();
+  await page.click('[data-test=step-link]');
+  await expect(page.locator('[data-test=tab-numbers]')).toHaveClass(/on/);
   await expect(page.locator('[data-test=sd-numbers] tbody tr')).toHaveCount(10);
   await expect(page.locator('[data-test=sd-why]')).toContainText(/exactly the model's number now/);
   await expect(page.locator('[data-test=sd-shares] tr')).not.toHaveCount(0);
@@ -44,6 +52,18 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.locator('[data-test=sd-numbers] tbody tr').nth(1).click();
   await expect(page.locator('[data-test=sd-numbers] tbody tr.on')).toHaveCount(1);
   await expect(page.locator('[data-test=sd-why]')).toContainText(/exactly the model's number now/);
+  // A square of a heatmap explains that number in the same tab.
+  await page.locator('canvas[data-matrix=tokEmb]').click({ position: { x: 60, y: 40 } });
+  await expect(page.locator('[data-test=sd-why] h3')).toContainText(/letter table/i);
+  // The model in numbers: sizes, live values, every matrix.
+  await expect(page.locator('[data-test=nums-sizes]')).toContainText(/Numbers per token\s*d_model\s*32/);
+  await expect(page.locator('[data-test=nums-live]')).toContainText(/Learning step\s*1(?!\d)/);
+  await expect(page.locator('[data-test=nums-matrices] tbody tr[data-row-matrix=tokEmb]')).toContainText('tokEmb');
+  // Leaving expert mode on this tab goes back to a plain tab.
+  await page.locator('[data-test=expert]').uncheck();
+  await expect(page.locator('[data-test=tab-numbers]')).toBeHidden();
+  await expect(page.locator('[data-test=tab-inside]')).toHaveClass(/on/);
+  await page.click('[data-test=tab-learn]');
   // The whole batch: learning data with the right answers, and what it answered before learning from them.
   await expect(page.locator('[data-test=practice] tr.ex')).toHaveCount(16);
   await expect(page.locator('[data-test=practice] td.answer .word-own')).toHaveCount(16);
@@ -70,7 +90,6 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-test=go-learn]');
   await page.click('[data-test=play]');
   await expect(page.locator('[data-test=status]')).toContainText(/steps\/s/, { timeout: 10_000 });
-  await expect(page.locator('[data-test=step-detail]')).toContainText(/Not shown while it learns/);
   await expect(page.locator('[data-test=learning]')).toContainText(/numbers nudged/);
   // While it learns, the answer waits and says it is out of date.
   await page.click('[data-test=tab-ask]');
@@ -135,13 +154,13 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=scan] .scan-tile')).toHaveCount(7);
   await expect(page.locator('[data-test=scan] .scan-tile').first()).toContainText(/2,343 numbers/);
   await expect(page.locator('[data-test=scan-verdict]')).not.toBeEmpty();
-  // Plain mode: the heatmaps are folded away until a part of the scan is clicked.
+  // Plain mode: no heatmaps; a click on the scan stays here.
   await expect(page.locator('[data-test=heatmaps]')).toBeHidden();
   await page.locator('[data-test=scan] .scan-tile[data-box=letters]').click();
-  await expect(page.locator('[data-test=heatmaps] canvas[data-matrix=tokEmb]')).toBeVisible();
-  await expect(page.locator('[data-test=mode-note]')).toContainText(/moved/);
-  await page.click('[data-mode=grad]');
-  await expect(page.locator('[data-test=mode-note]')).toContainText(/batch/);
+  await expect(page.locator('[data-test=tab-inside]')).toHaveClass(/on/);
+  await expect(page.locator('[data-test=scan-note]')).toContainText(/moved/);
+  await page.click('.scan [data-mode=grad]');
+  await expect(page.locator('[data-test=scan-note]')).toContainText(/batch/);
   await expect(page.locator('[data-test=scan] .scan-tile').first()).toContainText(/of the push/);
   await expect(page.locator('[data-test=overview]')).toBeHidden();
 
@@ -164,14 +183,22 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=units-note]')).toContainText(/letters of the learning data/);
   await expect(page.locator('[data-test=explain-units] [data-test=unit-off-now]').first()).toContainText(/Without it now/);
   await expect(page.locator('[data-test=unit-cards] [data-test=unit-off]').first()).toContainText(/Switched off at these moments/);
-  // Expert: every number, and where it comes from; how fast each part changes.
+  // Expert: every number of the letter, and where it comes from.
   await page.locator('[data-test=expert]').check();
-  await expect(page.locator('[data-test=overview] .flow-box')).toHaveCount(7);
-  await expect(page.locator('[data-test=overview] .flow-box').first()).toContainText(/per step/);
   await page.locator('canvas[data-strip="dec0.cross:add"]').click({ position: { x: 7, y: 7 } });
   await expect(page.locator('[data-test=explain-detail]')).toContainText(/Where it comes from/);
   await page.locator('[data-test=explain-guesses] button').first().click();
   await expect(page.locator('[data-test=explain-detail]')).toContainText(/favourite-letter bonus/);
+  // Expert: a part of the scan opens its heatmaps on "The numbers"; how fast each part changes; follow the signal.
+  await page.locator('[data-test=scan] .scan-tile[data-box=letters]').click();
+  await expect(page.locator('[data-test=tab-numbers]')).toHaveClass(/on/);
+  await expect(page.locator('[data-test=heatmaps] canvas[data-matrix=tokEmb]')).toBeVisible();
+  await expect(page.locator('[data-test=mode-note]')).toContainText(/after \d+ learning steps/);
+  await page.click('.numbers [data-mode=grad]');
+  await expect(page.locator('[data-test=mode-note]')).toContainText(/batch/);
+  await expect(page.locator('[data-test=overview] .flow-box')).toHaveCount(7);
+  await expect(page.locator('[data-test=overview] .flow-box').first()).toContainText(/per step/, { timeout: 5_000 });
+  await expect(page.locator('[data-test=signal] canvas').first()).toBeVisible();
   await page.locator('[data-test=expert]').uncheck();
 
   // A learning example can be asked on the Ask tab.
