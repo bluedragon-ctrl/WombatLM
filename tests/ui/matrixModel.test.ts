@@ -100,4 +100,16 @@ describe('matrix model', () => {
     expect(add.anchor).toEqual({ area: 'grid', row: 1, col: 3 });
     expect(add.text).toContain(pos.grid[1 * m.d + 3].toFixed(2));
   });
+
+  it('every station that passes the rows through learned numbers carries them, exactly as in the model', () => {
+    const kinds = (kind: string, lane: string) => m.stations.find((s) => s.kind === kind && s.lane === lane)!.machine;
+    const shape = (ps: { key: string; rows: number; cols: number }[]) => ps.map((p) => `${p.key} ${p.rows}×${p.cols}`);
+    expect(shape(kinds('self', 'read'))).toEqual(['q 32×32', 'k 32×32', 'v 32×32', 'o 32×32']);
+    expect(shape(kinds('cross', 'write'))).toEqual(['q 32×32', 'k 32×32', 'v 32×32', 'o 32×32']);
+    expect(shape(kinds('think', 'write'))).toEqual(['up 32×64', 'down 64×32']);
+    expect(shape(kinds('knobs', 'read'))).toEqual(['gamma 1×32', 'beta 1×32']);
+    expect(kinds('letters', 'read')).toEqual([]);
+    const q = a.weights.find((w) => w.name === 'dec0.cross.q.W')!;
+    expect(kinds('cross', 'write')[0].data).toBe(q.data);
+  });
 });

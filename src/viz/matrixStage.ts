@@ -10,7 +10,7 @@
  * colour from their old to their new value, and the biggest changes are
  * outlined. Only "how" the numbers move, never "why".
  */
-import type { Station } from '../ui/matrixModel';
+import type { MachineKey, MachinePart, Station } from '../ui/matrixModel';
 import { meanAttention } from '../ui/matrixModel';
 import { prepare } from './canvas';
 import { ACCENT, diverging, INK, MUTED } from './colors';
@@ -43,6 +43,19 @@ export interface StageFrame {
   focus: number;
   /** The comment being told now: a speech bubble below the matrix, pointing at what it talks about. */
   callout?: Callout | null;
+  /** The learned numbers panel (right): its texts, and which parts the current comment uses. */
+  machine: MachineText;
+  uses?: MachineKey[];
+  /** The current comment's part of the animation (for the scan across the grids it uses). */
+  beatFrom: number;
+  beatTo: number;
+}
+
+export interface MachineText {
+  title: string;
+  /** Under the title: "fixed while it answers" or "the letter table on the left". */
+  note: string;
+  labels: Record<MachineKey, string>;
 }
 
 /** What a comment points at: one number of the matrix, a row of the matrix, or a row of the side panel. */
@@ -55,6 +68,9 @@ export interface Callout {
 
 /** Room kept below the matrix for the speech bubble. */
 const BUBBLE_ROOM = 120;
+/** The learned numbers panel, right of the matrix. */
+const MACHINE_GAP = 44;
+const MACHINE_W = 216;
 const BUBBLE_W = 560;
 
 export interface StageLayout {
@@ -100,11 +116,34 @@ export function stageLayout(f: Pick<StageFrame, 'station' | 'tableLabels' | 'mem
   const sideX = 8 + SIDE_LABEL_W;
   const labelX = sideX + st.d * SIDE_CELL_W + GAP;
   const gridX = labelX + LABEL_W;
-  const width = gridX + st.d * CELL_W + 12;
+  const width = gridX + st.d * CELL_W + MACHINE_GAP + MACHINE_W + 8;
   // Height: never shrink below the letter table, so the picture does not jump between stations.
   const tableH = f.tableLabels.length * TABLE_ROW_H;
   const height = TOP + Math.max(rows * ROW_H + BUBBLE_ROOM, sideRows * sideRowH, tableH) + 14;
   return { width, height, rows, d: st.d, top: TOP, sideX, sideCellW: SIDE_CELL_W, sideRowH, sideRows, labelX, gridX, cellW: CELL_W, rowH: ROW_H };
+}
+
+/** Where each grid of learned numbers goes in the panel, and its cell size. */
+function machineBoxes(parts: MachinePart[], x0: number, y0: number): { part: MachinePart; x: number; y: number; cell: number; w: number; h: number }[] {
+  const out: { part: MachinePart; x: number; y: number; cell: number; w: number; h: number }[] = [];
+  const square = parts.filter((p) => p.rows > 1 && p.rows === p.cols);
+  if (square.length) {
+    // Attention: 2 × 2 grids of 32 × 32.
+    const cell = 3;
+    square.forEach((part, i) => out.push({ part, x: x0 + (i % 2) * (part.cols * cell + 16), y: y0 + Math.floor(i / 2) * (part.rows * cell + 22), cell, w: part.cols * cell, h: part.rows * cell }));
+    return out;
+  }
+  const up = parts.find((p) => p.key === 'up'), down = parts.find((p) => p.key === 'down');
+  if (up && down) {
+    const cell = 2;
+    out.push({ part: up, x: x0, y: y0, cell, w: up.cols * cell, h: up.rows * cell });
+    out.push({ part: down, x: x0 + up.cols * cell + 14, y: y0, cell, w: down.cols * cell, h: down.rows * cell });
+    return out;
+  }
+  // Volume knobs: lists of numbers, one strip each.
+  const cell = 6;
+  parts.forEach((part, i) => out.push({ part, x: x0, y: y0 + i * 34, cell, w: part.cols * cell, h: 12 }));
+  return out;
 }
 
 export type StageHit =
@@ -340,6 +379,9 @@ export function drawStage(canvas: HTMLCanvasElement, f: StageFrame): StageLayout
     }
   }
 
+  // --- the learned numbers this station passes the rows through ------------
+  drawMachine(ctx, L, f, cellT);
+
   // --- outlines: biggest changes, hover, pinned ------------------------------
   const outline = (r: number, c: number, color: string, w: number) => {
     ctx.strokeStyle = color;
@@ -356,6 +398,81 @@ export function drawStage(canvas: HTMLCanvasElement, f: StageFrame): StageLayout
   }
   if (f.callout) drawCallout(ctx, L, f.callout);
   return L;
+}
+
+/**
+ * The panel on the right: the station's own grids of learned numbers. They
+ * never change while it answers. The grids the current comment uses are lit,
+ * a line sweeps across them while the rows go through, and an arrow leads
+ * from the moving row to them.
+ */
+function drawMachine(ctx: CanvasRenderingContext2D, L: StageLayout, f: StageFrame, cellT: number): void {
+  const st = f.station;
+  const x0 = L.gridX + L.d * L.cellW + MACHINE_GAP;
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.fillStyle = MUTED;
+  ctx.fillText(f.machine.title, x0, L.top - 22);
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText(f.machine.note, x0, L.top - 8);
+  if (!st.machine.length) return;
+  const boxes = machineBoxes(st.machine, x0, L.top + 14);
+  const uses = new Set(f.uses ?? st.machine.map((p) => p.key));
+  const span = f.beatTo - f.beatFrom;
+  const scan = span > 0 ? Math.max(0, Math.min(1, (f.t - f.beatFrom) / span)) : -1;
+  const moving = scan > 0 && scan < 1;
+  for (const b of boxes) {
+    const on = uses.has(b.part.key);
+    const scale = robustScale(b.part.data);
+    for (let r = 0; r < b.part.rows; r++) {
+      for (let c = 0; c < b.part.cols; c++) {
+        ctx.fillStyle = colour(b.part.data[r * b.part.cols + c], scale, on ? 1 : 0.25);
+        if (b.part.rows === 1) ctx.fillRect(b.x + c * b.cell, b.y, b.cell - 1, b.h);
+        else ctx.fillRect(b.x + c * b.cell, b.y + r * b.cell, b.cell, b.cell);
+      }
+    }
+    ctx.strokeStyle = on ? ACCENT : '#d1d5db';
+    ctx.lineWidth = on ? 2 : 1;
+    ctx.strokeRect(b.x - 1, b.y - 1, b.w + 2, b.h + 2);
+    ctx.font = on ? 'bold 11px system-ui, sans-serif' : '11px system-ui, sans-serif';
+    ctx.fillStyle = on ? INK : MUTED;
+    ctx.fillText(f.machine.labels[b.part.key], b.x, b.y + b.h + 11);
+    if (on && moving) {
+      // The rows going through: a band sweeping across the grid.
+      const x = b.x + scan * b.w;
+      ctx.fillStyle = 'rgba(37,99,235,0.35)';
+      ctx.fillRect(x - 2, b.y - 3, 4, b.h + 6);
+    }
+  }
+  // From the moving row to the grids it goes through (and back).
+  if (uses.size && (moving || cellT < 1)) {
+    const lit = boxes.filter((b) => uses.has(b.part.key));
+    const target = lit[0] ?? boxes[0];
+    const alpha = moving ? 0.8 : 0.35;
+    for (const r of st.active.length > 3 ? [st.active[st.active.length - 1]] : st.active) {
+      const y = L.top + r * L.rowH + L.rowH / 2;
+      const xs = L.gridX + L.d * L.cellW + 4, xe = target.x - 6, ye = target.y + target.h / 2;
+      ctx.strokeStyle = `rgba(37,99,235,${alpha})`;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(xs, y);
+      ctx.bezierCurveTo(xs + 24, y, xe - 24, ye, xe, ye);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(xe, ye); ctx.lineTo(xe - 7, ye - 4); ctx.lineTo(xe - 7, ye + 4); ctx.closePath();
+      ctx.fillStyle = `rgba(37,99,235,${alpha})`;
+      ctx.fill();
+    }
+  }
+}
+
+/** 98th percentile of |values| (never 0): one scale per grid of learned numbers. */
+function robustScale(data: Float32Array): number {
+  const abs = Float32Array.from(data, Math.abs).sort();
+  const v = abs[Math.min(abs.length - 1, Math.floor(0.98 * (abs.length - 1)))];
+  return v > 0 ? v : 1;
 }
 
 /** How far active row `r` has flown in from the letter table (0..1): one after another. */

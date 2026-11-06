@@ -356,3 +356,12 @@ User: "Can we do it as animation with comments what is happening?"
 - **On the picture:** the current comment is a speech bubble under the matrix with a green pointer to its target (the number is outlined in green). Reading "letters" now flies the rows in one after another, one comment each; the guess first draws the comparison lines, then the chances.
 - **Controls:** Next / Back go comment by comment; ▶ Play runs all comments like a film (time per comment = the movement plus reading time, ~55 ms per character, at least 2.2 s), with speed slow / normal / fast. Station and pass pills start a station from its first comment. Below the picture, all comments of the station are listed (click one to play it again). The example number is the followed one when the user follows a number in a moving row, else the biggest change of the newest row.
 - New strings `mx.b.*`, `mx.speed*`, `mx.comments` (Czech needs the user's review). Screenshots `docs/screenshots/matrix/6-*.png` … `8-*.png`.
+
+### The matrix tab: the learned numbers each station uses (user)
+User: the animation should give an intuition of "tokens, some calculation, moving through the weights". What moves is the tokens' numbers; the weights stay fixed while it answers, and only the letter table was visible. Now every station shows its own learned numbers in a panel right of the matrix ("Learned numbers used here · N numbers, fixed while it answers"):
+- look at each other / look back / look at the animal: the 4 attention grids (32×32) Q "what to look for", K "what to offer", V "what to pass on", O "mix it back". The comment about the arrows lights Q and K; the comment about mixing lights V and O.
+- think: the 32×64 grid ("in: 32 → 64 detectors") then the 64×32 grid ("out"), one comment each.
+- volume knobs: the 2 lists of 32 (size and shift of each number; `encNorm` / `decNorm`).
+- letters, position, guess: the panel points to the letter table / position rows on the left (the guess comment says it is the same table as at the start).
+While a comment plays, a dashed arrow leads from the moving row to the lit grids and a band sweeps across them. Each grid has its own colour scale. The volume knobs inside each block (before attention and thinking) and the biases are left out to keep the picture simple. New comments say the grids never change while it answers (only while it learns) and, at the end of a lane, that they were the same for every row and pass.
+- Data: `AnswerMsg.weights` (~20,000 numbers per answer: the q/k/v/o and ffn matrices and the final norms).

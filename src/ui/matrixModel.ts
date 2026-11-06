@@ -19,6 +19,15 @@ import { EOS } from '../nn/vocab';
 
 export type StationKind = 'letters' | 'position' | 'self' | 'cross' | 'think' | 'knobs' | 'guess';
 
+/** One grid (or list) of learned numbers a station uses. */
+export type MachineKey = 'q' | 'k' | 'v' | 'o' | 'up' | 'down' | 'gamma' | 'beta';
+export interface MachinePart {
+  key: MachineKey;
+  rows: number;
+  cols: number;
+  data: Float32Array;
+}
+
 export interface StationAttention {
   /** Rows (queries) that look, and how many rows (keys) they look at. */
   heads: number;
@@ -50,6 +59,11 @@ export interface Station {
   guess?: { scores: Float32Array; probs: Float32Array; chosen: string; chosenId: number };
   /** Index of this station in its lane's list of station kinds (for the trail of one number). */
   laneIndex: number;
+  /**
+   * The learned numbers this station passes the rows through (fixed while it
+   * answers). Letters, position and guess use the table on the left instead.
+   */
+  machine: MachinePart[];
 }
 
 /** One lane's matrices at every station, all rows (writing passes take the first k+1). */
@@ -148,13 +162,25 @@ export function buildMatrixModel(a: AnswerMsg, tokens: readonly string[]): Matri
   write.push({ kind: 'knobs', layer: 0, grid: final ? cut(final) : y });
   write.push({ kind: 'guess', layer: 0, grid: write[write.length - 1].grid });
 
+  const w = (name: string) => a.weights.find((x) => x.name === name);
+  const parts = (prefix: string, keys: [MachineKey, string][]): MachinePart[] =>
+    keys.flatMap(([key, suffix]) => { const m = w(`${prefix}${suffix}`); return m ? [{ key, rows: m.rows, cols: m.cols, data: m.data }] : []; });
+  const machine = (lane: 'enc' | 'dec', g: LaneGrid): MachinePart[] => {
+    const att: [MachineKey, string][] = [['q', '.q.W'], ['k', '.k.W'], ['v', '.v.W'], ['o', '.o.W']];
+    if (g.kind === 'self') return parts(`${lane}${g.layer}.self`, att);
+    if (g.kind === 'cross') return parts(`${lane}${g.layer}.cross`, att);
+    if (g.kind === 'think') return parts(`${lane}${g.layer}.ffn`, [['up', '.up.W'], ['down', '.down.W']]);
+    if (g.kind === 'knobs') return parts(`${lane}Norm`, [['gamma', '.gamma'], ['beta', '.beta']]);
+    return [];
+  };
+
   const stations: Station[] = [];
   const passStart: number[] = [0];
   const T = a.input.length;
   const allRead = Array.from({ length: T }, (_, i) => i);
   read.forEach((g, i) => stations.push({
     lane: 'read', pass: -1, kind: g.kind, layer: g.layer, tokens: a.input, active: allRead, d,
-    grid: g.grid, before: i > 0 ? read[i - 1].grid : null, laneIndex: i,
+    grid: g.grid, before: i > 0 ? read[i - 1].grid : null, laneIndex: i, machine: machine('enc', g),
     attention: g.att ? attention(g.att, allRead, T, 'self') : undefined,
   }));
 
@@ -167,7 +193,7 @@ export function buildMatrixModel(a: AnswerMsg, tokens: readonly string[]): Matri
     write.forEach((g, i) => {
       const st: Station = {
         lane: 'write', pass: k, kind: g.kind, layer: g.layer, tokens: decIn.slice(0, rows), active: [k], d,
-        grid: sl(g.grid), before: i > 0 ? sl(write[i - 1].grid) : null, laneIndex: i,
+        grid: sl(g.grid), before: i > 0 ? sl(write[i - 1].grid) : null, laneIndex: i, machine: machine('dec', g),
       };
       if (g.att) st.attention = attention(g.att, [k], g.kind === 'cross' ? T : rows, g.kind === 'cross' ? 'memory' : 'self');
       if (g.kind === 'guess') {

@@ -16,7 +16,7 @@
 import type { AnswerMsg } from '../train/protocol';
 import { buildMatrixModel, meanAttention, MatrixModel, Station, StationKind } from './matrixModel';
 import { Beat, beatsFor } from './matrixScript';
-import { ColourMode, drawStage, sideKind, StageHit, stageHit, StageLayout } from '../viz/matrixStage';
+import { ColourMode, MachineText, drawStage, sideKind, StageHit, stageHit, StageLayout } from '../viz/matrixStage';
 import { DIVERGING_ENDS } from '../viz/colors';
 import { h, showTip } from './dom';
 import { t } from './i18n';
@@ -402,7 +402,24 @@ export class MatrixTab {
       letterTable: a.letterTable, posRows, memory: m.memory, memoryLabels: m.inputTokens.map(shortLabel),
       sideTitle: this.sideTitle(st), pinned: pin, hover: this.hover, focus: this.focusIndex(st),
       callout: this.beats[this.beat] ? { text: this.beats[this.beat].text, anchor: this.beats[this.beat].anchor } : null,
+      machine: this.machineText(st), uses: this.beats[this.beat]?.uses,
+      beatFrom: this.beats[this.beat]?.from ?? 0, beatTo: this.beats[this.beat]?.to ?? 1,
     });
+  }
+
+  /** Texts of the learned numbers panel (right of the matrix). */
+  private machineText(st: Station): MachineText {
+    const n = st.machine.reduce((x, p) => x + p.rows * p.cols, 0);
+    const side = sideKind(st);
+    return {
+      title: t('mx.machine.title'),
+      note: st.machine.length ? t('mx.machine.note', { n: n.toLocaleString() })
+        : side === 'table' ? t('mx.machine.table') : side === 'pos' ? t('mx.machine.pos') : '',
+      labels: {
+        q: t('mx.machine.q'), k: t('mx.machine.k'), v: t('mx.machine.v'), o: t('mx.machine.o'),
+        up: t('mx.machine.up'), down: t('mx.machine.down'), gamma: t('mx.machine.gamma'), beta: t('mx.machine.beta'),
+      },
+    };
   }
 
   private hit(e: MouseEvent): StageHit | null {

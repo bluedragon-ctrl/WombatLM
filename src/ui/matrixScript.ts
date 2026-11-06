@@ -7,7 +7,7 @@
  * answer, never why.
  */
 import type { Anchor } from '../viz/matrixStage';
-import type { MatrixModel, Station } from './matrixModel';
+import type { MachineKey, MatrixModel, Station } from './matrixModel';
 import { meanAttention } from './matrixModel';
 import { biggestChanges } from '../viz/matrixStage';
 import { t } from './i18n';
@@ -19,6 +19,8 @@ export interface Beat {
   from: number;
   to: number;
   anchor?: Anchor;
+  /** Grids of learned numbers (right panel) this comment is about; none = all of the station's. */
+  uses?: MachineKey[];
 }
 
 export interface ScriptContext {
@@ -99,18 +101,24 @@ export function beatsFor(st: Station, c: ScriptContext): Beat[] {
       const look: Beat = read
         ? { text: t('mx.b.read.look', { tok: tok(q), top: arrows(qi) }), from: 0, to: 0.45, anchor: { area: 'row', row: q } }
         : { text: t(st.pass === 0 ? 'mx.b.write.backFirst' : 'mx.b.write.back', { top: arrows(0) }), from: 0, to: 0.45, anchor: { area: 'row', row: q } };
-      const beats: Beat[] = [look, { text: t('mx.b.mix', exVars), from: 0.45, to: 1, anchor: exAnchor }];
+      look.uses = ['q', 'k'];
+      const beats: Beat[] = [];
+      // The grids of learned numbers: told the first time each lane comes here.
+      if (st.pass <= 0) beats.push({ text: t('mx.b.machine.att'), from: 0, to: 0 });
+      beats.push(look, { text: t('mx.b.mix', exVars), from: 0.45, to: 1, anchor: exAnchor, uses: ['v', 'o'] });
       if (read) beats.push({ text: t('mx.b.read.lookAll'), from: 1, to: 1 });
       return beats;
     }
     case 'cross':
       return [
-        { text: t('mx.b.write.cross', { top: arrows(0) }), from: 0, to: 0.45, anchor: { area: 'row', row: last } },
-        { text: t('mx.b.mix', exVars), from: 0.45, to: 1, anchor: exAnchor },
+        ...(st.pass === 0 ? [{ text: t('mx.b.machine.cross'), from: 0, to: 0 }] : []),
+        { text: t('mx.b.write.cross', { top: arrows(0) }), from: 0, to: 0.45, anchor: { area: 'row', row: last }, uses: ['q', 'k'] },
+        { text: t('mx.b.mix', exVars), from: 0.45, to: 1, anchor: exAnchor, uses: ['v', 'o'] },
       ];
     case 'think':
       return [
-        { text: t('mx.b.think'), from: 0, to: 1 },
+        { text: t('mx.b.think.up', { tok: tok(last) }), from: 0, to: 0.5, anchor: { area: 'row', row: last }, uses: ['up'] },
+        { text: t('mx.b.think.down'), from: 0.5, to: 1, uses: ['down'] },
         { text: t('mx.b.biggest', exVars), from: 1, to: 1, anchor: exAnchor },
       ];
     case 'knobs': {
@@ -123,6 +131,7 @@ export function beatsFor(st: Station, c: ScriptContext): Beat[] {
       return [
         { text: t('mx.b.knobs', { tok: tok(last), min, max, min2, max2 }), from: 0, to: 1, anchor: { area: 'row', row: last } },
         { text: t(read ? 'mx.b.read.done' : 'mx.b.write.final'), from: 1, to: 1 },
+        { text: t('mx.b.machine.fixed'), from: 1, to: 1 },
       ];
     }
     case 'guess': {
