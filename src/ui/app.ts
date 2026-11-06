@@ -6,7 +6,8 @@
  *   data and what it answered before learning from it), the loss chart and
  *   the letter map.
  * - Ask the model: everything that only reads the model: the question box
- *   with form and language pickers, the answer, guess bars, attention grids.
+ *   with form and language pickers, the answer with its Insights block (the word, kind of
+ *   answer, real answer, how sure, which model), guess bars, attention grids.
  * - The matrix: the answer as the matrix of numbers it is inside the model,
  *   station by station (see matrixTab.ts).
  * - Inside the model: the brain scan, one letter in detail, the detectors (see inside.ts).
@@ -60,6 +61,9 @@ const NUDGE_PHASE = 4;
 
 /** A "?" that opens a short explanation (keyboard accessible). */
 const help = (text: string) => h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), h('p', {}, text));
+/** One row of the Insights block under an answer: a label and its value. */
+const insightRow = (label: string, ...value: (Node | string)[]) =>
+  h('div', { class: 'insight' }, h('span', { class: 'insight-label' }, label), h('span', { class: 'insight-value' }, ...value));
 /** Restart a CSS animation class on an element. */
 function retrigger(el: HTMLElement, cls: string): void {
   el.classList.remove(cls);
@@ -638,18 +642,18 @@ export class App {
       h('label', {}, t('lr'), ' ', lr), h('label', {}, t('batch'), ' ', batch));
     const status = h('div', { class: 'status', 'data-test': 'status' });
     // On the Ask tab: which model answers, and whether it is learning (no training controls there).
-    const askStatusText = h('span');
+    // Shown in the Insights block until there is an answer (then the stamp says which model answered).
+    const askStatusText = h('span', { class: 'ask-status', 'data-test': 'ask-status' });
     const goLearn = h('button', { class: 'link small', 'data-test': 'go-learn' }, t('askStatus.go'));
     goLearn.onclick = () => this.setTab('learn');
-    const askStatus = h('div', { class: 'ask-status small', 'data-test': 'ask-status' }, askStatusText, ' ', goLearn);
 
     const input = h('input', { type: 'text', id: 'ask-word', class: 'ask', placeholder: t('askPlaceholder'), spellcheck: 'false', autocomplete: 'off', 'data-test': 'ask' });
     input.oninput = () => this.setQuestion({ text: input.value }, true);
     input.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing && !e.repeat) this.answerNow(false); };
     const langPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('language') });
     const formPick = h('div', { class: 'picker', role: 'group', 'aria-label': t('form') });
-    // Under the word: is it an animal from the data, in this language? (before answering)
-    const hint = h('div', { class: 'hint word-hint', 'data-test': 'word-hint', 'aria-live': 'polite' });
+    // In the Insights block: is the word an animal from the data, in this language? (before answering)
+    const hint = h('span', { class: 'hint word-hint', 'data-test': 'word-hint', 'aria-live': 'polite' });
     const answerNowBtn = h('button', { class: 'primary big', 'data-test': 'answer-now', title: t('ask.nowTip') }, t('ask.now'));
     answerNowBtn.onclick = () => this.answerNow(false);
     const slowBtn = h('button', { class: 'big', 'data-test': 'answer-slow', title: t('ask.slowTip') }, t('ask.slow'));
@@ -658,7 +662,7 @@ export class App {
       h('div', { class: 'ask-field' }, h('span', { class: 'ask-label' }, label), h('div', { class: 'ask-control' }, control, ...rest));
     const askForm = h('div', { class: 'ask-form' },
       field(t('ask.step.lang'), langPick),
-      field(t('ask.step.word'), input, hint),
+      field(t('ask.step.word'), input),
       field(t('ask.step.form'), formPick),
       h('div', { class: 'ask-buttons' }, answerNowBtn, slowBtn));
     const prompt = h('p', { class: 'ask-prompt', 'data-test': 'ask-prompt' }, t('ask.prompt'));
@@ -668,6 +672,16 @@ export class App {
     const askAgain = h('button', { class: 'small-btn', 'data-test': 'ask-again', hidden: true }, t('stamp.askAgain'));
     askAgain.onclick = () => this.ask();
     const stamp = h('div', { class: 'stamp', 'data-test': 'stamp', 'aria-live': 'polite' }, stampText, ' ', askAgain);
+    // Insights: everything said about the question and its answer (the word,
+    // what kind of answer, the real answer, how sure, which model), in one block.
+    const wordRow = insightRow(t('insights.word'), hint);
+    wordRow.hidden = true;
+    const insightRows = h('div', { class: 'insight-rows' });
+    const insights = h('section', { class: 'insights', 'data-test': 'insights' },
+      h('h3', {}, t('insights.title')),
+      wordRow,
+      insightRows,
+      insightRow(t('insights.model'), askStatusText, stamp, ' ', goLearn));
     const tokenRows = h('div', { class: 'token-rows', 'data-test': 'tokens' });
     const tokenNumbers = h('input', { type: 'checkbox', 'data-test': 'token-numbers' });
     tokenNumbers.onchange = () => { this.tokenNumbers = tokenNumbers.checked; this.invalidate('answer'); };
@@ -801,12 +815,11 @@ export class App {
     const askMain = h('main', { class: 'ask-main', hidden: this.tab !== 'ask' },
       h('section', { class: 'panel askbox phase ask' },
         h('div', { class: 'phase-head' }, h('h2', {}, t('ask.title')), help(t('ask.help'))),
-        askStatus,
         askForm,
         slowCaption,
         prompt,
         output,
-        h('div', { class: 'stamp-row' }, stamp),
+        insights,
         results),
       h('section', { class: 'panel attention' },
         h('h2', {}, t('att.title')),
@@ -843,7 +856,7 @@ export class App {
     return {
       play, speed, seed, status, goalBar, goalNote, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, tokenRows, tokenNote, attention, mapCanvas, mapNote, mapPick, tabs,
       dataMain, learnMain, askMain, matrixMain, insideMain, testMain, numbersMain, testLangPick, testWhen,
-      stamp, stampText, askAgain, slowBtn, answerNowBtn, slowCaption, prompt, results, attPrompt, practiceList, practiceHelp,
+      stamp, stampText, askAgain, insights, insightRows, wordRow, slowBtn, answerNowBtn, slowCaption, prompt, results, attPrompt, practiceList, practiceHelp,
       playButtons: [play], learnings: [learning], cycles: [cycleA],
       lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
     };
@@ -978,6 +991,7 @@ export class App {
     this.els.attention.hidden = !a;
     if (!a || !this.ready) {
       output.replaceChildren();
+      this.els.insightRows.replaceChildren();
       this.els.slowCaption.replaceChildren();
       this.els.slowCaption.classList.remove('active');
       return;
@@ -989,32 +1003,41 @@ export class App {
     const word = writing !== undefined
       ? h('span', { class: `word ${wordClass}` }, a.steps.slice(0, writing).map((s) => s.chosen).join(''), h('span', { class: 'cursor' }, '▌'))
       : h('span', { class: `word ${wordClass}` }, a.output || '∅');
-    const parts: (Node | string)[] = [h('span', { class: 'from' }, `${a.text} →`), word];
-    if (!a.finished) parts.push(h('span', { class: 'small' }, t('notFinished')));
-    const badge = h('div', { class: `badge ${a.badge}` }, t(`badge.${a.badge}`));
-    if (a.answer && a.badge === 'real') {
-      badge.append(' ', h('span', { class: 'small' }, `${STATUS_ICONS[a.answer.status]} ${t('realAnswer', { word: a.answer.word })}`));
-    }
-    if (a.answer && a.badge === 'hidden') {
-      if (this.revealed) {
-        badge.append(' ', h('span', { class: 'small' }, `${STATUS_ICONS[a.answer.status]} ${t('realAnswer', { word: a.answer.word })}`));
-      } else {
-        const reveal = h('button', { class: 'small' }, t('reveal'));
-        reveal.onclick = () => { this.revealed = true; this.invalidate('answer'); };
-        badge.append(' ', reveal);
-      }
-    }
-    const meter = h('div', { class: 'meter', title: t('confidenceHelp') },
-      h('span', {}, t('confidence')),
-      h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${Math.round(a.confidence * 100)}%` })),
-      h('span', {}, `${Math.round(a.confidence * 100)}`));
-    output.replaceChildren(h('div', { class: 'answer-line' }, ...parts), badge, meter);
+    output.replaceChildren(h('div', { class: 'answer-line' }, h('span', { class: 'from' }, `${a.text} →`), word));
+    this.renderInsights(a, writing);
     if (this.hoverStep !== null && this.hoverStep >= a.steps.length) this.hoverStep = null;
     drawGuessBars(bars, a.steps, this.hoverStep, writing, shortLabel);
     this.journey.follow(this.slow && a === this.slow.answer ? (writing ?? null) : null);
     this.renderTokens(a, writing);
     this.renderSlowCaption(a);
     this.renderAttention();
+  }
+
+  /**
+   * Insights under the answer: what kind of word it is, the real answer and
+   * whether the model got it, how sure it is and whether it finished. The
+   * model row (the stamp) is built once and stays below these rows.
+   */
+  private renderInsights(a: AnswerMsg, writing: number | undefined): void {
+    const rows: HTMLElement[] = [insightRow(t('insights.kind'), h('span', { class: `kind ${a.badge}` }, t(`badge.${a.badge}`)))];
+    if (a.answer) {
+      if (a.badge === 'hidden' && !this.revealed) {
+        const reveal = h('button', { class: 'small-btn', 'data-test': 'reveal' }, t('reveal'));
+        reveal.onclick = () => { this.revealed = true; this.invalidate('answer'); };
+        rows.push(insightRow(t('insights.answer'), h('span', { class: 'muted' }, t('insights.hiddenAnswer')), ' ', reveal));
+      } else {
+        // While the model is still writing, the verdict would give the end away.
+        const { status, word } = a.answer;
+        const verdict = writing !== undefined ? [] : [' ', h('span', { class: `verdict ${status}` }, `${STATUS_ICONS[status]} ${t(`status.${status}`)}`)];
+        rows.push(insightRow(t('insights.answer'), h('strong', { class: 'real-word' }, word), ...verdict));
+      }
+    }
+    const sure = Math.round(a.confidence * 100);
+    rows.push(insightRow(t('confidence'), h('span', { class: 'meter', title: t('confidenceHelp') },
+      h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${sure}%` })),
+      h('span', {}, `${sure}`))));
+    if (!a.finished && writing === undefined) rows.push(insightRow(t('insights.end'), t('notFinished')));
+    this.els.insightRows.replaceChildren(...rows);
   }
 
   /**
@@ -1140,6 +1163,7 @@ export class App {
     if (key === this.hintKey) return;
     this.hintKey = key;
     hint.className = `hint word-hint ${w.kind}`;
+    this.els.wordRow.hidden = w.kind === 'empty';
     if (w.kind === 'empty') { hint.replaceChildren(); return; }
     if (w.kind === 'known') { hint.replaceChildren(t('ask.word.known', { lang: this.langName(this.question.lang) })); return; }
     if (w.kind === 'free') { hint.replaceChildren(t('ask.word.free')); return; }
@@ -1183,10 +1207,11 @@ export class App {
    * changes it. While the model learns, the answer is marked as out of date.
    */
   private renderStamp(): void {
-    const { stamp, stampText, askAgain, output, barsWrap, attention } = this.els;
+    const { stamp, stampText, askAgain, output, insights, barsWrap, attention } = this.els;
     const a = this.shown();
     const tk = this.tick;
     stamp.hidden = !a;
+    this.els.askStatusText.hidden = !!a;
     if (!a) return;
     const behind = tk ? tk.step - a.step : 0;
     const stale = !this.slow && behind > 0 && !!tk?.running;
@@ -1195,7 +1220,7 @@ export class App {
       : t('stamp.fresh', { step: a.step.toLocaleString(uiLang()) });
     askAgain.hidden = !stale;
     stamp.classList.toggle('stale', stale);
-    for (const el of [output, barsWrap, attention]) el.classList.toggle('stale', stale);
+    for (const el of [output, insights, barsWrap, attention]) el.classList.toggle('stale', stale);
     if (this.stampFlash) {
       this.stampFlash = false;
       retrigger(stamp, 'flash');

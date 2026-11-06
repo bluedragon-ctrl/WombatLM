@@ -84,7 +84,8 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-test=tab-ask]');
   await expect(page.locator('[data-test=output] .word')).toBeVisible();
   await expect(page.locator('[data-test=stamp]')).toContainText(/step 1\b/);
-  await expect(page.locator('[data-test=ask-status]')).toContainText(/step 1\b.*paused/);
+  // Once answered, the stamp says which model answered (instead of the model's state).
+  await expect(page.locator('[data-test=ask-status]')).toBeHidden();
   await expect(page.locator('[data-test=play]')).toBeHidden();
 
   await page.click('[data-test=go-learn]');
@@ -93,7 +94,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=learning]')).toContainText(/numbers nudged/);
   // While it learns, the answer waits and says it is out of date.
   await page.click('[data-test=tab-ask]');
-  await expect(page.locator('[data-test=ask-status]')).toContainText(/learning right now/);
+  await expect(page.locator('[data-test=stamp]')).toContainText(/more steps since this answer/, { timeout: 5_000 });
   await expect(page.locator('[data-test=ask-again]')).toBeVisible({ timeout: 5_000 });
   await page.waitForTimeout(4_000);
   await page.click('[data-test=tab-learn]');
@@ -113,6 +114,10 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=ask-prompt]')).toBeVisible();
   await expect(page.locator('[data-test=output] .word')).toHaveCount(0);
   await expect(page.locator('[data-test=word-hint]')).toContainText(/Not an animal/);
+  // No answer yet: the Insights block says what the word is and where the model is.
+  await expect(page.locator('[data-test=insights]')).toContainText(/Your word/);
+  await expect(page.locator('[data-test=ask-status]')).toBeVisible();
+  await expect(page.locator('[data-test=ask-status]')).toContainText(/paused/);
   await page.locator('[data-test=ask]').press('Enter');
   await expect(page.locator('[data-test=tokens-unk]')).toContainText('ø');
   await expect(page.locator('[data-test=tokens-in] .tok-unk')).toHaveCount(1);
@@ -129,6 +134,10 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.locator('[data-form=young]').click();
   await page.click('[data-test=answer-now]');
   await expect(page.locator('[data-test=output] .from')).toContainText('kočka');
+  // The details of the answer are gathered in the Insights block under it.
+  await expect(page.locator('[data-test=insights]')).toContainText(/real word/);
+  await expect(page.locator('[data-test=insights]')).toContainText(/Real answer\s*kotě/);
+  await expect(page.locator('[data-test=insights] [data-test=stamp]')).toBeVisible();
   await expect(page.locator('canvas.bars')).toBeVisible();
   // Follow the tokens: tokens, letter table, reading once, then one writing pass per token.
   await expect(page.locator('[data-test=journey-caption]')).toContainText(/becomes tokens/);
