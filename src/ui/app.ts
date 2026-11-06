@@ -1,5 +1,5 @@
 /**
- * The app: five tabs, in the order of the story.
+ * The app: six tabs, in the order of the story.
  * - Learning data: everything the model learns from (see dataTab.ts).
  * - Model learning: everything that changes the model: Play / Step / speed /
  *   seed, the learning badge, the one-step cycle, the latest batch (learning
@@ -7,6 +7,8 @@
  *   the letter map.
  * - Ask the model: everything that only reads the model: the question box
  *   with form and language pickers, the answer, guess bars, attention grids.
+ * - The matrix: the answer as the matrix of numbers it is inside the model,
+ *   station by station (see matrixTab.ts).
  * - Inside the model: weight heatmaps (see inside.ts).
  * - Test: every animal tested, scoreboard. The model is tested only while
  *   this tab is open (or on request).
@@ -17,6 +19,7 @@
 import type { AnimalInfo, AnswerMsg, EvalMsg, FromWorker, LetterMapMsg, LossPoint, ReadyMsg, Speed, TickMsg, ToWorker } from '../train/protocol';
 import { StepView } from './stepView';
 import { JourneyView } from './journey';
+import { MatrixTab } from './matrixTab';
 import type { PracticeBatch, PracticeExample, Scores, TaskResult } from '../train/trainer';
 import { LETTER_KINDS, LetterKind, STATUS_COLORS, STATUS_ICONS, SCORE_STYLE } from '../viz/colors';
 import { attentionCellAt, drawAttentionGrid, GridSpec } from '../viz/attentionGrid';
@@ -32,8 +35,8 @@ import { shortLabel, tokenChip, tokenIndex, tokenName, toTok } from './tokens';
 import { EOS, Vocab } from '../nn/vocab';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
-type Tab = 'data' | 'learn' | 'ask' | 'inside' | 'test';
-const TABS: Tab[] = ['data', 'learn', 'ask', 'inside', 'test'];
+type Tab = 'data' | 'learn' | 'ask' | 'matrix' | 'inside' | 'test';
+const TABS: Tab[] = ['data', 'learn', 'ask', 'matrix', 'inside', 'test'];
 /** Look-inside requests: at most one in flight, at most this often. */
 const INSPECT_MS = 250;
 /** "Write it slowly": time per letter, and the "reading the animal" pause before the first one. */
@@ -204,6 +207,8 @@ export class App {
   private whyId = 0;
   /** "Follow the tokens through the model" (Ask tab). */
   private journey: JourneyView;
+  /** The answer as a matrix, station by station (Matrix tab). */
+  private matrix: MatrixTab;
 
   constructor(private root: HTMLElement) {
     this.worker = new Worker(new URL('../train/worker.ts', import.meta.url), { type: 'module' });
@@ -219,6 +224,7 @@ export class App {
       this.setTab('inside');
       this.inside.scrollToExplain();
     });
+    this.matrix = new MatrixTab((c) => this.langName(c), () => this.setTab('ask'));
     this.inside.requestUnits = () => this.send({ type: 'units', id: ++this.unitsId });
     // A click on a number in the heatmaps (after Step ×1): why did it change?
     this.inside.onPickNumber = (name, index) => {
@@ -263,6 +269,7 @@ export class App {
         this.dataTab.setReady(msg);
         this.stepView.setReady(msg);
         this.journey.setTokens(msg.tokens);
+        this.matrix.setTokens(msg.tokens);
         this.renderPickers();
         this.ask();
         this.requestInspect(true);
@@ -314,6 +321,7 @@ export class App {
           this.invalidate('answer', 'stamp');
           this.inside.setAnswer(msg);
           this.journey.setAnswer(msg);
+          this.matrix.setAnswer(msg);
           if (this.tab === 'inside') this.inside.shown();
         }
         if (this.askDirty) this.ask();
@@ -527,7 +535,9 @@ export class App {
     this.els.dataMain.hidden = tab !== 'data';
     this.els.learnMain.hidden = tab !== 'learn';
     this.els.askMain.hidden = tab !== 'ask';
+    this.els.matrixMain.hidden = tab !== 'matrix';
     this.els.insideMain.hidden = tab !== 'inside';
+    this.matrix.setVisible(tab === 'matrix');
     this.els.testMain.hidden = tab !== 'test';
     this.send({ type: 'watchTests', on: tab === 'test' });
     this.send({ type: 'watchPractice', on: tab === 'learn' });
@@ -583,6 +593,7 @@ export class App {
       this.inside.setExpert(this.expert);
       this.dataTab.setExpert(this.expert);
       this.journey.setExpert(this.expert);
+      this.matrix.setExpert(this.expert);
       this.invalidate('loss', 'answer');
       this.requestInspect(true);
     };
@@ -765,6 +776,7 @@ export class App {
         attPrompt,
         attention),
       this.journey.el);
+    const matrixMain = h('main', { class: 'matrix-main', hidden: this.tab !== 'matrix' }, this.matrix.el);
     const insideMain = h('main', { class: 'inside-main', hidden: this.tab !== 'inside' }, this.inside.el);
     const dataMain = h('main', { class: 'data-main', hidden: this.tab !== 'data' }, this.dataTab.el);
     const testMain = h('main', { class: 'test-main', hidden: this.tab !== 'test' },
@@ -784,12 +796,13 @@ export class App {
       dataMain,
       learnMain,
       askMain,
+      matrixMain,
       insideMain,
       testMain,
     );
     return {
       play, speed, seed, status, goalBar, goalNote, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, tokenRows, tokenNote, attention, mapCanvas, mapNote, mapPick, tabs,
-      dataMain, learnMain, askMain, insideMain, testMain, testLangPick, testWhen,
+      dataMain, learnMain, askMain, matrixMain, insideMain, testMain, testLangPick, testWhen,
       stamp, stampText, askAgain, slowBtn, answerNowBtn, slowCaption, prompt, results, attPrompt, practiceList, practiceHelp,
       playButtons: [play], learnings: [learning], cycles: [cycleA],
       lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
@@ -839,6 +852,7 @@ export class App {
       this.answer = undefined;
       this.inside.setAnswer(undefined);
       this.journey.setAnswer(undefined);
+      this.matrix.setAnswer(undefined);
     }
     this.invalidate('answer', 'stamp', 'animals');
   }

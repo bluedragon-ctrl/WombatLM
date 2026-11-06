@@ -135,6 +135,14 @@ export interface TranslationTrace {
    * signal"): `enc.in` (letters + positions), `enc0.out`, …, `dec.in`, `dec0.out`, ….
    */
   activations: Record<string, { T: number; d: number; data: Float32Array }>;
+  /**
+   * What each part of a block adds to the numbers, [T, d] each (for the
+   * matrix view): `enc0.self.add`, `enc0.ffn.add`, `dec0.self.add`,
+   * `dec0.cross.add`, `dec0.ffn.add`. A block's input plus its adds is its output.
+   */
+  adds: Record<string, { T: number; d: number; data: Float32Array }>;
+  /** Scores for every token, [steps × vocabulary] (before softmax). */
+  logits: Float32Array;
 }
 
 export class Translator {
@@ -334,11 +342,13 @@ export class Translator {
     const probs = Array.from({ length: nSteps }, (_, t) => rowSoftmax(logits.data, t, V));
     const attention: TranslationTrace['attention'] = {};
     const activations: TranslationTrace['activations'] = {};
+    const adds: TranslationTrace['adds'] = {};
     for (const [name, t] of trace) {
       if (t.shape.length === 3) attention[name] = { heads: t.shape[0], Tq: t.shape[1], Tk: t.shape[2], data: t.data.slice() };
       else if (SIGNAL.test(name)) activations[name] = { T: t.shape[0], d: t.shape[1], data: t.data.slice() };
+      else if (ADDS.test(name)) adds[name] = { T: t.shape[0], d: t.shape[1], data: t.data.slice() };
     }
-    return { input: [target, ...src], output, finished, probs, attention, activations };
+    return { input: [target, ...src], output, finished, probs, attention, activations, adds, logits: logits.data.slice(0, nSteps * V) };
   }
 
   /**
@@ -381,3 +391,6 @@ function keepMaskRows(mask: Float32Array, keep: readonly number[], Tk: number): 
  * knobs ("dec.final", which make the guess).
  */
 const SIGNAL = /^((enc|dec)\d*\.(in|out)|memory|dec\.final)$/;
+
+/** Trace entries with what each part of a block adds (the matrix view). */
+const ADDS = /^(enc|dec)\d+\.(self|cross|ffn)\.add$/;

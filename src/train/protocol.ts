@@ -243,6 +243,22 @@ export interface AnswerMsg {
    * token, then the answer so far). Their sums are `enc.in` and `dec.in`.
    */
   lookup: { encTok: Float32Array; encPos: Float32Array; decTok: Float32Array; decPos: Float32Array };
+  /**
+   * What each part of a block adds, [T × d] each (matrix view):
+   * enc0.self.add, enc0.ffn.add, dec0.self.add, dec0.cross.add, dec0.ffn.add.
+   */
+  adds: Activation[];
+  /** The whole letter table, [vocabSize × d] (matrix view). */
+  letterTable: Float32Array;
+  /** Every pass's score for every token, [steps × vocabSize], before they become chances. */
+  logits: Float32Array;
+  /**
+   * The learned numbers each station uses (matrix view): the attention grids
+   * (`enc0.self.q.W`, … `.o.W`, `dec0.cross.*`), the thinking grids
+   * (`*.ffn.up.W`, `*.ffn.down.W`) and the final volume knobs
+   * (`encNorm.gamma`/`beta`, `decNorm.*`). Vectors have rows = 1.
+   */
+  weights: { name: string; rows: number; cols: number; data: Float32Array }[];
   /** How many tokens the model can choose from (every guess is a score for each of them). */
   vocabSize: number;
   badge: Badge;

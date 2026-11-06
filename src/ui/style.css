@@ -590,3 +590,32 @@ main.ask-main > .journey { grid-column: 1 / -1; }
 .uhelp b { color: var(--ink); font-size: 14px; margin-right: 1px; }
 .units-team { margin: 4px 0 0; font-weight: 600; }
 .units-team:empty { display: none; }
+
+/* The matrix tab */
+main.matrix-main { padding: 14px 20px; }
+.matrix .mx-empty { display: flex; align-items: center; gap: 12px; }
+.matrix .mx-body[hidden], .matrix .mx-empty[hidden] { display: none; }
+.mx-question { display: flex; align-items: baseline; gap: 8px; font-size: 16px; margin-bottom: 4px; }
+.mx-mode { display: inline-flex; align-items: center; gap: 4px; margin-left: 16px; }
+.mx-mode button { font-size: 12px; padding: 3px 8px; }
+.mx-pillrow { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.mx-pillrow > .small { min-width: 64px; }
+.mx-caption { margin-top: 8px; }
+.mx-canvas-wrap { overflow-x: auto; padding: 4px 0; }
+.mx-canvas { display: block; cursor: pointer; }
+.mx-legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.mx-swatch { display: inline-block; width: 14px; height: 14px; border: 1px solid var(--line); margin-left: 8px; }
+.mx-swatch.mark { border: 2px solid #f59e0b; }
+.mx-swatch.pin { border: 3px solid #111827; }
+.mx-trail { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 6px; }
+.mx-trail-steps { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.mx-trail-step { display: inline-flex; flex-direction: column; align-items: center; padding: 3px 8px; font-size: 13px; }
+.mx-trail-step small { color: var(--muted); font-size: 11px; }
+.mx-trail-step.on { background: #dbeafe; border-color: var(--accent); }
+.mx-speed select { font-size: 13px; }
+.mx-comments-head { margin-top: 4px; }
+.mx-comments { margin: 4px 0 4px; padding-left: 22px; font-size: 14px; }
+.mx-comments li { padding: 2px 6px; border-radius: 6px; cursor: pointer; }
+.mx-comments li.done { color: var(--muted); }
+.mx-comments li.later { color: #b8bec8; }
+.mx-comments li.on { background: #f0fdf4; color: #14532d; font-weight: 600; outline: 1px solid #86efac; }

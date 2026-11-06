@@ -443,6 +443,7 @@ export class Engine {
     });
     const attention: AttentionMap[] = Object.entries(trace.attention).map(([name, a]) => ({ name, ...a }));
     const activations: Activation[] = Object.entries(trace.activations).map(([name, a]) => ({ name, ...a }));
+    const adds: Activation[] = Object.entries(trace.adds).map(([name, a]) => ({ name, ...a }));
     const output = vocab.decode(trace.output);
     // The rows each token looks up: letter table + position (their sums are enc.in / dec.in).
     const model = this.trainer.model;
@@ -461,10 +462,11 @@ export class Engine {
     const msg: AnswerMsg = {
       type: 'answer', id, step: this.trainer.step, text: word, lang, form, output, finished: trace.finished,
       input: trace.input.map((i) => tokens[i]), inputIds: trace.input, steps, confidence: confidence(trace, vocab.eos), attention, activations,
-      lookup, vocabSize: vocab.size,
+      lookup, adds, letterTable: model.tokEmb.data.slice(), logits: trace.logits, weights: stationWeights(model.params.list), vocabSize: vocab.size,
       ...this.badge(word, lang, form, output),
     };
-    this.host.post(msg, [...attention, ...activations, ...Object.values(lookup)].map((a) => ('data' in a ? a.data : a).buffer as ArrayBuffer));
+    const buffers = [...attention, ...activations, ...adds, ...Object.values(lookup), msg.letterTable, msg.logits, ...msg.weights];
+    this.host.post(msg, buffers.map((a) => ('data' in a ? a.data : a).buffer as ArrayBuffer));
   }
 
   /** A number of the model as the UI names it, with its change in the recorded step. */
@@ -675,4 +677,13 @@ export class Engine {
 
 function animalInfo(a: Animal): AnimalInfo {
   return { id: a.id, unseen: a.unseen, pack: a.pack, names: { ...a.names }, forms: structuredClone(a.forms) };
+}
+
+/** Learned numbers the matrix view shows at its stations (see `AnswerMsg.weights`). */
+const STATION_WEIGHTS = /^((enc|dec)\d+\.(self|cross)\.[qkvo]\.W|(enc|dec)\d+\.ffn\.(up|down)\.W|(enc|dec)Norm\.(gamma|beta))$/;
+
+export function stationWeights(params: readonly { name: string; shape: number[]; data: Float32Array }[]): AnswerMsg['weights'] {
+  return params.filter((p) => STATION_WEIGHTS.test(p.name)).map((p) => ({
+    name: p.name, rows: p.shape.length === 2 ? p.shape[0] : 1, cols: p.shape.length === 2 ? p.shape[1] : p.shape[0], data: p.data.slice(),
+  }));
 }
