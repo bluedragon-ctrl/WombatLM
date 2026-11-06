@@ -392,3 +392,9 @@ Three rows: Answering | Insights; Tokens | "Where it looks" (spans rows 2–3); 
 
 ### Screenshots no longer kept in the repo (user)
 `docs/screenshots/` was removed and is git-ignored. `npm run screenshots` still writes there for local review. Older entries above still name screenshot paths as they were at the time.
+
+### Tabs reordered and renamed (user)
+User: "Learning Data / Learn / Ask / Test / Letter selection / Where it Learns (Expert mode) / The Matrix / Numbers (Expert mode)".
+- Order: Learning data · Learn · Ask · Test · Letter selection · Where it learns (expert) · The matrix · Numbers (expert). Shorter names: Model learning → **Learn** (cs „Učení“), Ask the model → **Ask** („Ptej se“), How it picks a letter → **Letter selection** („Výběr písmena“), The numbers → **Numbers** (cs stays „Čísla“). Texts that name a tab use the new names.
+- **Where it learns is now expert only** (`EXPERT_TABS` = scan, numbers), marked 🔢 like Numbers, with a tooltip `tab.scanTip`. Its "see the change →" link in the Learn cycle shows only in Expert. Turning Expert off on either expert tab goes to Learn. The letter tab's intro no longer points to "Where it learns".
+- Czech strings `tab.learn`, `tab.ask`, `tab.letter`, `tab.scanTip`, `askStatus.go`, `mx.goAsk`, `letter.guide`, `inside.guide` and the texts naming tabs need the user's review.

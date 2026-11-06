@@ -2,7 +2,7 @@
  * Screenshots for reviewing the visuals in a pull request (seed 1). Opt-in,
  * because it trains for a while: `npm run screenshots`.
  * - M3: every panel at step 0 and after training (docs/screenshots/m3/).
- * - Learning vs answering: the Learning data tab, the Model learning tab
+ * - Learning vs answering: the Learning data tab, the Learn tab
  *   (one-step cycle, the batch), the out-of-date answer on the Ask tab while
  *   training, "write it slowly" and the Test tab
  *   (docs/screenshots/learn-vs-answer/).
@@ -32,16 +32,16 @@ async function shoot(page: Page, when: string) {
   await page.click('[data-test=tab-learn]');
   await page.waitForTimeout(1200); // letter map glides into place
   await page.locator('.panel.map').screenshot({ path: `${DIR}/${when}-letter-map.png` });
-  await page.click('[data-test=tab-scan]');
-  await page.waitForTimeout(800);
-  await page.locator('[data-test=scan]').screenshot({ path: `${DIR}/${when}-inside-scan.png` });
   await page.click('[data-test=tab-letter]');
   await page.waitForTimeout(800);
   await page.locator('[data-test=explain]').screenshot({ path: `${DIR}/${when}-inside-explain.png` });
-  // The heatmaps are on the expert-only "The numbers" tab.
+  // The scan and the heatmaps are on expert-only tabs.
   const expert = page.locator('[data-test=expert]');
   const wasExpert = await expert.isChecked();
   await expert.check();
+  await page.click('[data-test=tab-scan]');
+  await page.waitForTimeout(800);
+  await page.locator('[data-test=scan]').screenshot({ path: `${DIR}/${when}-inside-scan.png` });
   await page.click('[data-test=tab-numbers]');
   await page.click('.numbers [data-mode=delta]');
   await page.waitForTimeout(800);
