@@ -12,6 +12,7 @@
 import type { AnswerMsg, ExplainMsg, ReadyMsg, UnitsMsg } from '../train/protocol';
 import type { HeatmapMarks } from '../viz/weightHeatmap';
 import { clearestFirst, matters, unitCard } from './unitCard';
+import { boardLegend, detectorBoard, detectorFlow } from './detectorBoard';
 import { h } from './dom';
 import { ExplainView, Question } from './explainView';
 import { t, uiLang } from './i18n';
@@ -31,6 +32,10 @@ export class LetterTab {
   private unitsNote: HTMLElement;
   private unitsTeam: HTMLElement;
   private unitsButton: HTMLButtonElement;
+  private boardEl: HTMLElement;
+  private pickedEl: HTMLElement;
+  /** The detector clicked on the board (its card is shown first). */
+  private picked: number | null = null;
   private units?: UnitsMsg;
   private unitsAll = false;
   private unitsAsked = 0;
@@ -44,20 +49,28 @@ export class LetterTab {
     this.explain = new ExplainView(requestExplain, (marks) => this.onMarks?.(marks), (code) => this.langName(code));
     this.unitsBody = h('div', { class: 'ucards', 'data-test': 'unit-cards' });
     this.unitsNote = h('p', { class: 'small', 'data-test': 'units-note' }, t('units.wait'));
-    this.unitsTeam = h('p', { class: 'units-team', 'data-test': 'units-team' });
+    this.unitsTeam = h('p', { class: 'units-team small', 'data-test': 'units-team' });
     this.unitsButton = h('button', { class: 'units-toggle', 'data-test': 'units-toggle' });
     this.unitsButton.onclick = () => { this.unitsAll = !this.unitsAll; this.renderUnits(); };
+    this.boardEl = h('div', { class: 'dboard-wrap' });
+    this.pickedEl = h('div', { class: 'upicked', 'data-test': 'unit-picked' });
     this.unitsEl = h('section', { class: 'panel units', 'data-test': 'units' },
       h('h2', {}, t('units.title')),
       h('p', { class: 'small' }, h('span', { class: 'units-help' }), ' ', help(t('units.help'))),
+      detectorFlow(),
+      h('p', { class: 'small' }, t('units.how')),
+      h('h3', { class: 'units-sub' }, t('units.boardTitle')),
       this.unitsNote,
+      this.boardEl,
       this.unitsTeam,
+      this.pickedEl,
+      h('h3', { class: 'units-sub' }, t('units.cardsTitle')),
       this.unitsBody,
       this.unitsButton);
     this.el = h('div', { class: 'inside letter-tab plain' },
       h('section', { class: 'panel inside-head' },
         h('p', { class: 'intro', 'data-test': 'letter-intro' }, t('letter.intro')),
-        h('p', { class: 'small' }, t('letter.guide'))),
+        h('ol', { class: 'small letter-guide' }, h('li', {}, t('letter.guide1')), h('li', {}, t('letter.guide2')))),
       this.explain.el,
       this.unitsEl);
   }
@@ -65,6 +78,7 @@ export class LetterTab {
   setReady(ready: ReadyMsg): void {
     this.ready = ready;
     this.units = undefined;
+    this.picked = null;
     this.explain.setUnits(undefined);
     this.renderUnits();
   }
@@ -106,17 +120,34 @@ export class LetterTab {
   private renderUnits(): void {
     const u = this.units;
     this.el.querySelector('.units-help')!.textContent = t('units.helpShort', { n: u?.units.length ?? 64 });
-    if (!u) { this.unitsNote.textContent = t('units.wait'); this.unitsBody.replaceChildren(); this.unitsButton.hidden = true; return; }
+    if (!u) {
+      this.unitsNote.textContent = t('units.wait');
+      this.unitsBody.replaceChildren(); this.boardEl.replaceChildren(); this.pickedEl.replaceChildren(); this.unitsTeam.textContent = '';
+      this.unitsButton.hidden = true;
+      return;
+    }
     const sorted = clearestFirst(u.units);
     const clear = sorted.filter((x) => x.theme);
     const all = this.expert || this.unitsAll || clear.length === 0;
     const shown = all ? sorted : clear.slice(0, UNITS_CLEAR);
     const alone = u.units.filter(matters).length;
-    this.unitsNote.textContent = `${t(all ? 'units.countAll' : 'units.count', { k: shown.length, clear: clear.length, n: u.units.length, m: u.moments.toLocaleString(uiLang()) })} ${t('units.step', { step: u.step })}`;
+    const card = (x: (typeof u.units)[number], picked = false) => unitCard(x, (c) => this.langName(c), { expert: this.expert, picked });
+    this.unitsNote.textContent = `${t('units.note', { n: u.units.length, m: u.moments.toLocaleString(uiLang()) })} ${t('units.step', { step: u.step })}`;
+    this.boardEl.replaceChildren(
+      detectorBoard(u.units, { selected: this.picked, langName: (c) => this.langName(c), onPick: (k) => this.pick(k) }),
+      boardLegend(u.units));
     this.unitsTeam.textContent = u.units.some((x) => x.off) ? t('units.team', { k: alone, n: u.units.length }) : '';
-    this.unitsBody.replaceChildren(...shown.map((x) => unitCard(x, (c) => this.langName(c), { expert: this.expert })));
+    const picked = this.picked !== null ? u.units[this.picked] : undefined;
+    this.pickedEl.replaceChildren(...(picked ? [h('div', { class: 'ucards' }, card(picked, true))] : [h('p', { class: 'small muted' }, t('units.pickHint'))]));
+    this.unitsBody.replaceChildren(...shown.map((x) => card(x)));
     this.unitsButton.hidden = this.expert || clear.length === 0;
     this.unitsButton.textContent = this.unitsAll ? t('units.showClear') : t('units.showAll', { n: u.units.length });
+  }
+
+  /** A square on the board was clicked: show that detector's card (click again to close it). */
+  private pick(unit: number): void {
+    this.picked = this.picked === unit ? null : unit;
+    this.renderUnits();
   }
 
   /** Look inside letter `position` of the current answer (from a click on the guess bars). */

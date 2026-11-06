@@ -631,7 +631,7 @@ main.ask-main > .journey { grid-column: 1 / -1; }
 .uhelps { margin-top: 3px; color: var(--muted); }
 .uhelp { margin-left: 6px; color: var(--muted); }
 .uhelp b { color: var(--ink); font-size: 14px; margin-right: 1px; }
-.units-team { margin: 4px 0 0; font-weight: 600; }
+.units-team { margin: 6px 0 0; }
 .units-team:empty { display: none; }
 
 /* The matrix tab */
@@ -683,3 +683,59 @@ main.matrix-main { padding: 14px 20px; }
 .nums-matrices { margin-top: 10px; }
 .nums-matrices summary { cursor: pointer; font-weight: 600; }
 .nums-table code { font-size: 12px; }
+
+/* Letter selection: the detector board, the "how a detector works" picture, the card parts */
+.letter-guide { margin: 4px 0 0; padding-left: 20px; }
+.units-sub { margin: 16px 0 4px; font-size: 15px; }
+.dflow { display: flex; align-items: stretch; gap: 8px; margin: 10px 0 6px; max-width: 760px; }
+.dflow-box { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; }
+.dflow-box .small { color: var(--muted); }
+.dflow-box.det { background: #eff6ff; border-color: #bfdbfe; }
+.dflow-box.on { background: #fff7ed; border-color: #fed7aa; }
+.dflow-arrow { align-self: center; color: var(--muted); font-size: 18px; }
+.dboard { display: grid; grid-template-columns: repeat(16, 34px); gap: 3px; margin: 6px 0; }
+.dcell { position: relative; width: 34px; height: 30px; padding: 0; border: 1px solid; border-radius: 5px; font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; }
+.dcell.k-next { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+.dcell.k-prev { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
+.dcell.k-word { background: #dcfce7; border-color: #86efac; color: #166534; }
+.dcell.k-none { background: #f3f4f6; border-color: #e5e7eb; color: #9ca3af; }
+.dcell.alone::after { content: ''; position: absolute; top: 2px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: #1f2430; }
+.dcell.now { background: #fff; border-color: var(--line); color: var(--ink); }
+.dcell.now.off { background: #f8fafc; color: #cbd5e1; }
+.dcell.now.needed { box-shadow: 0 0 0 2px #9a3412; }
+.dcell.sel { outline: 3px solid var(--accent); outline-offset: 1px; z-index: 1; }
+.dcell:hover { filter: brightness(0.95); }
+.dcell.mini { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; cursor: default; }
+.dcell.mini.alone { background: #fff; border-color: var(--line); }
+.dcell.mini.alone::after { top: 3px; right: 3px; }
+.dlegend { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); }
+.xunitcards .dboard { margin: 4px 0 2px; }
+.dboard-key { margin: 0 0 6px; }
+.upicked { margin: 8px 0 0; }
+.ucard { border-left-width: 4px; }
+.ucard.k-next { border-left-color: #93c5fd; }
+.ucard.k-prev { border-left-color: #c4b5fd; }
+.ucard.k-word { border-left-color: #86efac; }
+.ucard.picked { box-shadow: 0 0 0 2px var(--accent); }
+.ulabel { margin: 6px 0 3px; color: var(--muted); }
+.udots { display: inline-flex; gap: 2px; vertical-align: 1px; margin-left: 4px; }
+.udots span { width: 6px; height: 6px; border-radius: 50%; background: #e5e7eb; }
+.udots span.on { background: #475569; }
+.umoment { background-image: linear-gradient(#f97316, #f97316); background-repeat: no-repeat; background-position: left bottom; background-size: calc(var(--s, 1) * 100%) 3px; }
+.ubars { display: grid; gap: 2px; }
+.ubar { display: grid; grid-template-columns: 52px 1fr 46px; align-items: center; gap: 6px; }
+.ubar .track { display: block; height: 8px; background: #eef2f7; border-radius: 4px; overflow: hidden; }
+.ubar .fill { display: block; height: 100%; background: #94a3b8; }
+.ubar.without.fall .fill { background: #dc2626; }
+.ubar.without.rise .fill { background: #16a34a; }
+.ubar b { text-align: right; font-weight: 600; white-space: nowrap; }
+.uverdict { margin: 3px 0 0; font-weight: 600; }
+.uverdict.fall { color: #b91c1c; }
+.uverdict.rise { color: #15803d; }
+.uverdict.none { color: var(--muted); }
+.ufoot { margin: 6px 0 0; color: var(--muted); }
+.units .muted, .xunitcards .muted { color: var(--muted); }
+.dcell.long { font-size: 11px; letter-spacing: -0.03em; }
+.dcell.sym { font-size: 17px; }
+.ucard.compact .umoments { margin-top: 2px; }
+.ucard.compact .uoffbox .ulabel { margin-top: 6px; }
