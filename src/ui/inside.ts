@@ -1,30 +1,23 @@
 /**
- * "Inside the model" tab:
- * - "Where is it learning?": a "brain scan" of all the model's numbers, one
- *   dot each, grouped by part in the order the signal flows, glowing where
- *   they change (or are pushed, or are big); in expert mode a click on a part
- *   opens its heatmaps on "The numbers" tab;
- * - "Look inside one letter" (see explainView.ts);
- * - "What have the detectors learned?": the writer's thinking units, each
- *   with the moments of the learning data that switch it on most (see
- *   train/units.ts and unitCard.ts).
- * The heatmaps of every matrix, "how fast each part changes" and "follow the
+ * "Where it learns" tab: "Where is it learning?", a "brain scan" of all the
+ * model's numbers, one dot each, grouped by part in the order the signal
+ * flows, glowing where they change (or are pushed, or are big); in expert
+ * mode a click on a part opens its heatmaps on "The numbers" tab.
+ * One answer letter in detail and the detectors are on the "How it picks a
+ * letter" tab (letterTab.ts). The heatmaps of every matrix, "how fast each part changes" and "follow the
  * signal" are on the expert-only "The numbers" tab (numbersTab.ts).
  */
 import type { AxisKind } from '../nn/transformer';
-import type { AnswerMsg, ExplainMsg, InspectMode, MatrixInfo, ReadyMsg, UnitsMsg, WeightsMsg } from '../train/protocol';
-import { clearestFirst, matters, unitCard } from './unitCard';
+import type { InspectMode, MatrixInfo, ReadyMsg, WeightsMsg } from '../train/protocol';
 import { symmetricScale } from '../viz/colors';
-import type { HeatmapMarks } from '../viz/weightHeatmap';
 import { drawScan, GLOW_GRADIENT, scanCellAt, scanLayout, ScanLayout, ScanPiece } from '../viz/brainScan';
 import { h, showTip } from './dom';
-import { ExplainView, Question } from './explainView';
 import { t, uiLang } from './i18n';
 
 const MODES: InspectMode[] = ['weights', 'delta', 'grad'];
 
 /** A "?" that opens the full explanation (the panel itself keeps one short sentence). */
-const help = (text: string) => h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), h('p', {}, text));
+export const help = (text: string) => h('details', { class: 'help' }, h('summary', { 'aria-label': '?' }, '?'), h('p', {}, text));
 
 /**
  * Boxes of the "where is it learning" diagram, in the order the signal flows.
@@ -43,9 +36,6 @@ export const BOXES: { id: string; column: string; match: RegExp; target: string 
 /** The scan calls a part busiest / quietest only if its numbers move at least this much more / less than average. */
 const BUSY = 1.3;
 const QUIET = 0.7;
-/** "What have the detectors learned?": at most one request per this many ms while learning; clear ones shown in plain mode. */
-const UNITS_EVERY = 15000;
-const UNITS_CLEAR = 12;
 
 interface ScanTile {
   def: (typeof BOXES)[number];
@@ -58,7 +48,7 @@ interface ScanTile {
   hover: { piece: ScanPiece } | null;
 }
 
-export class InsideTab {
+export class ScanTab {
   readonly el: HTMLElement;
   mode: InspectMode = 'delta';
   private ready?: ReadyMsg;
@@ -73,25 +63,9 @@ export class InsideTab {
   /** The latest numbers of every matrix (in the current mode), for the scan. */
   private all = new Map<string, Float32Array>();
   private scanScale = 1;
-  private explain: ExplainView;
-  /** "What have the detectors learned?" */
-  private unitsEl: HTMLElement;
-  private unitsBody: HTMLElement;
-  private unitsNote: HTMLElement;
-  private unitsTeam: HTMLElement;
-  private unitsButton: HTMLButtonElement;
-  private units?: UnitsMsg;
-  private unitsAll = false;
-  private unitsAsked = 0;
-  private unitsInFlight = false;
-  /** Ask the worker what the thinking units have learned (set by the app). */
-  requestUnits?: () => void;
   /** Expert: a click on a part of the scan opens its numbers on "The numbers" tab (set by the app). */
   onOpenPart?: (selector: string) => void;
-  /** The numbers used by the letter in "look inside one letter", for the heatmaps on "The numbers" tab (set by the app). */
-  onMarks?: (marks: Map<string, HeatmapMarks>) => void;
-
-  constructor(private onModeChange: () => void, requestExplain: (q: Question, position: number) => void) {
+  constructor(private onModeChange: () => void) {
     this.scanNote = h('span', { class: 'small', 'data-test': 'scan-note' });
     const modes = h('div', { class: 'picker', role: 'group', 'aria-label': t('inside.mode') });
     for (const m of MODES) {
@@ -111,26 +85,11 @@ export class InsideTab {
       this.scanLegend,
       this.scanVerdict,
       h('p', { class: 'small expert-only scan-expert' }, t('scan.expertNote')));
-    this.explain = new ExplainView(requestExplain, (marks) => this.onMarks?.(marks), (code) => this.langName(code));
-    this.unitsBody = h('div', { class: 'ucards', 'data-test': 'unit-cards' });
-    this.unitsNote = h('p', { class: 'small', 'data-test': 'units-note' }, t('units.wait'));
-    this.unitsTeam = h('p', { class: 'units-team', 'data-test': 'units-team' });
-    this.unitsButton = h('button', { class: 'units-toggle', 'data-test': 'units-toggle' });
-    this.unitsButton.onclick = () => { this.unitsAll = !this.unitsAll; this.renderUnits(); };
-    this.unitsEl = h('section', { class: 'panel units', 'data-test': 'units' },
-      h('h2', {}, t('units.title')),
-      h('p', { class: 'small' }, h('span', { class: 'units-help' }), ' ', help(t('units.help'))),
-      this.unitsNote,
-      this.unitsTeam,
-      this.unitsBody,
-      this.unitsButton);
-    this.el = h('div', { class: 'inside plain' },
+    this.el = h('div', { class: 'inside scan-tab plain' },
       h('section', { class: 'panel inside-head' },
         h('p', { class: 'intro', 'data-test': 'inside-intro' }),
         h('p', { class: 'small' }, t('inside.guide'))),
-      this.scanEl,
-      this.explain.el,
-      this.unitsEl);
+      this.scanEl);
     this.renderModeButtons();
   }
 
@@ -144,9 +103,6 @@ export class InsideTab {
     this.ready = ready;
     this.el.querySelector('.intro')!.textContent = t('inside.intro', { n: ready.params.toLocaleString(uiLang()) });
     this.all.clear();
-    this.units = undefined;
-    this.explain.setUnits(undefined);
-    this.renderUnits();
     this.buildScan();
   }
 
@@ -155,68 +111,11 @@ export class InsideTab {
     // Plain mode hides the engineering details: see style.css.
     this.el.classList.toggle('plain', !on);
     for (const tile of this.tiles) tile.el.title = on ? t('scan.click') : '';
-    this.explain.setExpert(on);
-    this.renderUnits();
   }
 
   /** Matrix names to request: all of them (the scan shows every number). */
   wanted(): string[] {
     return this.ready ? this.ready.matrices.map((m) => m.name) : [];
-  }
-
-  /** The tab became visible (or its answer changed while visible): bring "look inside one letter" up to date. */
-  shown(): void {
-    this.explain.refresh();
-    this.askUnits(true);
-  }
-
-  /** Ask for the units again: when the tab is shown, or (while learning) every few seconds at most. */
-  private askUnits(now = false): void {
-    if (!this.requestUnits || this.unitsInFlight) return;
-    if (!now && Date.now() - this.unitsAsked < UNITS_EVERY) return;
-    this.unitsInFlight = true;
-    this.unitsAsked = Date.now();
-    this.requestUnits();
-  }
-
-  onUnits(msg: UnitsMsg): void {
-    this.unitsInFlight = false;
-    this.units = msg;
-    this.explain.setUnits(msg);
-    this.renderUnits();
-  }
-
-  private renderUnits(): void {
-    const u = this.units;
-    this.el.querySelector('.units-help')!.textContent = t('units.helpShort', { n: u?.units.length ?? 64 });
-    if (!u) { this.unitsNote.textContent = t('units.wait'); this.unitsBody.replaceChildren(); this.unitsButton.hidden = true; return; }
-    const sorted = clearestFirst(u.units);
-    const clear = sorted.filter((x) => x.theme);
-    const all = this.expert || this.unitsAll || clear.length === 0;
-    const shown = all ? sorted : clear.slice(0, UNITS_CLEAR);
-    const alone = u.units.filter(matters).length;
-    this.unitsNote.textContent = `${t(all ? 'units.countAll' : 'units.count', { k: shown.length, clear: clear.length, n: u.units.length, m: u.moments.toLocaleString(uiLang()) })} ${t('units.step', { step: u.step })}`;
-    this.unitsTeam.textContent = u.units.some((x) => x.off) ? t('units.team', { k: alone, n: u.units.length }) : '';
-    this.unitsBody.replaceChildren(...shown.map((x) => unitCard(x, (c) => this.langName(c), { expert: this.expert })));
-    this.unitsButton.hidden = this.expert || clear.length === 0;
-    this.unitsButton.textContent = this.unitsAll ? t('units.showClear') : t('units.showAll', { n: u.units.length });
-  }
-
-  /** Look inside letter `position` of the current answer (from a click on the guess bars). */
-  explainAt(position: number): void {
-    this.explain.select(position);
-  }
-
-  scrollToExplain(): void {
-    this.explain.el.scrollIntoView?.({ block: 'start' });
-  }
-
-  onExplain(msg: ExplainMsg): void {
-    this.explain.onExplain(msg);
-  }
-
-  private langName(code: string): string {
-    return this.ready?.languages.find((l) => l.code === code)?.name[uiLang()] ?? code;
   }
 
   // -------------------------------------------------------------------------
@@ -324,15 +223,10 @@ export class InsideTab {
   }
 
   onWeights(msg: WeightsMsg): void {
-    if (this.units && msg.step !== this.units.step) this.askUnits();
     if (msg.mode !== this.mode) return;
     this.all = new Map(msg.matrices.map((m) => [m.name, m.data]));
     this.renderScan();
     this.scanNote.textContent = modeNote(msg);
-  }
-
-  setAnswer(a: AnswerMsg | undefined): void {
-    this.explain.setAnswer(a);
   }
 
   private renderModeButtons(): void {

@@ -62,7 +62,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   // Leaving expert mode on this tab goes back to a plain tab.
   await page.locator('[data-test=expert]').uncheck();
   await expect(page.locator('[data-test=tab-numbers]')).toBeHidden();
-  await expect(page.locator('[data-test=tab-inside]')).toHaveClass(/on/);
+  await expect(page.locator('[data-test=tab-scan]')).toHaveClass(/on/);
   await page.click('[data-test=tab-learn]');
   // The whole batch: learning data with the right answers, and what it answered before learning from them.
   await expect(page.locator('[data-test=practice] tr.ex')).toHaveCount(16);
@@ -162,15 +162,16 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=slow-caption]')).toHaveText('');
   await expect(page.locator('[data-test=attention] canvas')).toHaveCount(2);
 
-  // Inside the model: the brain scan, one tile per part of the model.
-  await page.click('[data-test=tab-inside]');
+  // Where it learns: the brain scan, one tile per part of the model.
+  await page.click('[data-test=tab-scan]');
+  await expect(page.locator('[data-test=explain]')).toBeHidden();
   await expect(page.locator('[data-test=scan] .scan-tile')).toHaveCount(7);
   await expect(page.locator('[data-test=scan] .scan-tile').first()).toContainText(/2,343 numbers/);
   await expect(page.locator('[data-test=scan-verdict]')).not.toBeEmpty();
   // Plain mode: no heatmaps; a click on the scan stays here.
   await expect(page.locator('[data-test=heatmaps]')).toBeHidden();
   await page.locator('[data-test=scan] .scan-tile[data-box=letters]').click();
-  await expect(page.locator('[data-test=tab-inside]')).toHaveClass(/on/);
+  await expect(page.locator('[data-test=tab-scan]')).toHaveClass(/on/);
   await expect(page.locator('[data-test=scan-note]')).toContainText(/moved/);
   await page.click('.scan [data-mode=grad]');
   await expect(page.locator('[data-test=scan-note]')).toContainText(/batch/);
@@ -181,7 +182,8 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-test=tab-ask]');
   const bars = (await page.locator('[data-test=bars]').boundingBox())!;
   await page.mouse.click(bars.x + 78 + 30, bars.y + 60);
-  await expect(page.locator('[data-test=tab-inside]')).toHaveClass(/on/);
+  await expect(page.locator('[data-test=tab-letter]')).toHaveClass(/on/);
+  await expect(page.locator('[data-test=scan]')).toBeHidden();
   await expect(page.locator('[data-test=explain-caption]')).toContainText(/Letter 2 of/);
   await expect(page.locator('.xletter[data-pos="1"]')).toHaveClass(/on/);
   await expect(page.locator('[data-test=explain-guesses] button')).toHaveCount(5);
@@ -203,6 +205,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.locator('[data-test=explain-guesses] button').first().click();
   await expect(page.locator('[data-test=explain-detail]')).toContainText(/favourite-letter bonus/);
   // Expert: a part of the scan opens its heatmaps on "The numbers"; how fast each part changes; follow the signal.
+  await page.click('[data-test=tab-scan]');
   await page.locator('[data-test=scan] .scan-tile[data-box=letters]').click();
   await expect(page.locator('[data-test=tab-numbers]')).toHaveClass(/on/);
   await expect(page.locator('[data-test=heatmaps] canvas[data-matrix=tokEmb]')).toBeVisible();

@@ -378,3 +378,17 @@ User: "separate tab, visible in expert mode, focused on the real numbers — mod
 - The scan (Inside) and the heatmaps (The numbers) now have their own mode each; a look-inside request uses the visible tab's mode.
 - Kept where they are: Expert details inside "Look inside one letter" and the detector cards (they belong to one letter / one detector), the Matrix tab (asked for as a picture of the numbers), learning rate / batch inputs (they are controls).
 - Screenshots: `docs/screenshots/numbers/`. New Czech strings `tab.numbers*`, `nums.*`, `signal.wait`, `scan.expertNote`, and reworded `inside.guide`, `scan.help`, `scan.click`, `explain.marks`, `sd.empty`, `sd.running`, `sd.pickHint` need the user's review.
+
+### Inside the model split into two tabs (user)
+User: split "Inside the model" into one tab for where it is learning (the model's numbers) and one for how a letter is picked plus the detectors: "different approaches to the data and visualization". Accepted counterproposal on the order and names:
+- **Where it learns** (cs „Kde se učí“, `src/ui/inside.ts`, class `ScanTab`): the brain scan, with the "nothing but N numbers" intro. Placed right after Model learning: it moves only while the model learns, and the "see the change →" link of the learning cycle opens it. Turning Expert off on The numbers lands here (its plain version).
+- **How it picks a letter** (cs „Jak volí písmeno“, `src/ui/letterTab.ts`, class `LetterTab`): "How the model picks one letter" and "What have the detectors learned?" together, since the letter's think stage uses the detectors. Placed after The matrix: a click on a guess column (Ask) or the journey link opens it. The detectors are asked for again while learning (on new steps, at most every 15 s) only while this tab is open.
+- Tab order: Learning data · Model learning · Where it learns · Ask the model · The matrix · How it picks a letter · Test · (The numbers).
+- **Header:** with eight tabs, the tabs got a row of their own under the title, so the subtitle is no longer squeezed.
+- New / reworded strings `tab.scan`, `tab.letter`, `letter.intro`, `letter.guide`, `inside.guide`, `jr.d.inside`, `mx.help` (Czech needs the user's review).
+
+### Ask tab: Tokens and Guesses as separate blocks (user)
+Three rows: Answering | Insights; Tokens | "Where it looks" (spans rows 2–3); Guesses, letter by letter | the rest of "Where it looks".
+
+### Screenshots no longer kept in the repo (user)
+`docs/screenshots/` was removed and is git-ignored. `npm run screenshots` still writes there for local review. Older entries above still name screenshot paths as they were at the time.

@@ -17,7 +17,7 @@ header .sub { color: var(--muted); }
 header .params { margin-left: auto; color: var(--muted); font-size: 13px; }
 h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
 main.learn-main { display: grid; grid-template-columns: 430px minmax(0, 1fr) 340px; gap: 14px; padding: 14px 20px; align-items: start; }
-main.ask-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding: 14px 20px; align-items: start; max-width: 1500px; }
+main.ask-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 14px; padding: 14px 20px; align-items: start; max-width: 1500px; }
 header .expert-toggle { white-space: nowrap; }
 main[hidden] { display: none !important; }
 main.inside-main { padding: 14px 20px; }
@@ -274,6 +274,10 @@ main.test-main { padding: 14px 20px; max-width: 1240px; }
 /* Five tabs in the header: keep each name on one line; the subtitle and the parameter count give way. */
 .tabs { flex-shrink: 0; }
 .tabs button { white-space: nowrap; }
+/* Eight tabs: they get a row of their own under the title, so the subtitle
+   is never squeezed; on a narrow window the tabs wrap. */
+header { flex-wrap: wrap; row-gap: 6px; padding-bottom: 0; }
+header .tabs { order: 1; flex: 1 1 100%; flex-wrap: wrap; margin-left: -10px; }
 header .sub, header .params { min-width: 0; }
 header .params { text-align: right; }
 
@@ -288,7 +292,6 @@ header .params { text-align: right; }
 .tok-special b { font-size: 13px; }
 .tok-unk { border-color: var(--wrong, #dc2626); background: #fef2f2; color: var(--wrong, #dc2626); }
 .tok.hover { outline: 2px solid var(--accent); outline-offset: 1px; }
-.tokens-panel { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
 .token-rows { display: flex; flex-direction: column; gap: 6px; }
 .token-row { display: flex; align-items: center; gap: 10px; }
 .token-label { width: 110px; flex-shrink: 0; }
@@ -382,8 +385,15 @@ header .params { text-align: right; }
 /* The example panel stays in view while the data scrolls. */
 .data-side { align-self: stretch; }
 .data-side > .example { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow-y: auto; margin-bottom: 0; }
-/* Ask tab: the Insights block above "Where it looks" on the right. */
-.ask-side > .insights { padding: 12px 14px; background: var(--panel); border-radius: 10px; }
+/* Ask tab, three rows: asking | Insights; tokens | "Where it looks" (over two
+   rows); guesses by letter | the rest of "Where it looks". */
+main.ask-main > .askbox { grid-column: 1; grid-row: 1; }
+main.ask-main > .insights { grid-column: 2; grid-row: 1; padding: 12px 14px; background: var(--panel); border-radius: 10px; }
+main.ask-main > .tokens-panel { grid-column: 1; grid-row: 2; }
+main.ask-main > .attention { grid-column: 2; grid-row: 2 / span 2; }
+main.ask-main > .guess-panel { grid-column: 1; grid-row: 3; }
+main.ask-main > .journey { grid-row: 4; }
+.tokens-panel[hidden], .guess-panel[hidden] { display: none; }
 
 /* Inside the model: "where is it learning?" */
 .legend .shared { margin-left: 18px; color: var(--ink); }
