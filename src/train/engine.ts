@@ -18,7 +18,7 @@ import { nearestRows, pca2 } from '../nn/pca';
 import { FormTrainer, PracticeBatch, TRAINER_DEFAULTS, confidence, judge } from './trainer';
 import { Translator } from '../nn/translator';
 import type {
-  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, ExplainGuess, ExplainLens, ExplainMsg, FromWorker, InspectMode, LossPoint, MatrixChange, MatrixInfo, NumberRef, Speed,
+  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, ExplainGuess, ExplainLens, ExplainMsg, FromWorker, InspectMode, LossPoint, MatrixChange, MatrixInfo, ModelConfig, NumberRef, Speed,
   StepGuess, ToWorker, UnitInfo,
 } from './protocol';
 import { changeStats, explainNumber, topNumbers } from './stepDetail';
@@ -138,6 +138,7 @@ export class Engine {
           animals: this.dataset.animals.map(animalInfo),
           tokens: this.dataset.vocab.tokens.slice(),
           matrices: this.matrices(),
+          config: this.config(),
         });
         if (this.watchTests) this.startEval(true);
         this.tick(true);
@@ -515,6 +516,16 @@ export class Engine {
   }
 
   /** Every parameter as a matrix (vectors are one row). */
+  private config(): ModelConfig {
+    const c = this.trainer.model.config, o = this.trainer.opt.opts;
+    return {
+      vocabSize: c.vocabSize, dModel: c.dModel, heads: c.heads, ffn: c.ffn, encLayers: c.encLayers, decLayers: c.decLayers,
+      maxLen: c.maxLen, dropout: c.dropout ?? 0,
+      beta1: o.beta1, beta2: o.beta2, eps: o.eps, clipNorm: o.clipNorm, warmupSteps: o.warmupSteps, weightDecay: o.weightDecay,
+      copyWeight: this.trainer.copyWeight,
+    };
+  }
+
   private matrices(): MatrixInfo[] {
     const ps = this.trainer.model.params;
     return ps.list.map((t) => {

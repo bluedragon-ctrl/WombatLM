@@ -117,6 +117,31 @@ export interface ReadyMsg {
   tokens: string[];
   /** Every trainable matrix/vector of the model, in model order. */
   matrices: MatrixInfo[];
+  /** The model's sizes and learning settings (the expert "numbers" tab lists them). */
+  config: ModelConfig;
+}
+
+/** Sizes of the model and the fixed settings of its learning rule. */
+export interface ModelConfig {
+  vocabSize: number;
+  dModel: number;
+  heads: number;
+  ffn: number;
+  encLayers: number;
+  decLayers: number;
+  maxLen: number;
+  dropout: number;
+  /** Adam: memory of the push (beta1) and of its size (beta2), the tiny number that avoids dividing by 0. */
+  beta1: number;
+  beta2: number;
+  eps: number;
+  /** Gradient clipping: all gradients together are shrunk to at most this length. */
+  clipNorm: number;
+  /** The learning rate grows from 0 to its full value over this many steps. */
+  warmupSteps: number;
+  weightDecay: number;
+  /** Share of "same name" practice relative to word forms. */
+  copyWeight: number;
 }
 
 /** Describes one weight matrix (vectors have rows = 1). */

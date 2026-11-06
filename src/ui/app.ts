@@ -9,9 +9,12 @@
  *   with form and language pickers, the answer, guess bars, attention grids.
  * - The matrix: the answer as the matrix of numbers it is inside the model,
  *   station by station (see matrixTab.ts).
- * - Inside the model: weight heatmaps (see inside.ts).
+ * - Inside the model: the brain scan, one letter in detail, the detectors (see inside.ts).
  * - Test: every animal tested, scoreboard. The model is tested only while
  *   this tab is open (or on request).
+ * - The numbers (expert only): the real numbers behind the other tabs:
+ *   sizes, every weight matrix, gradients, the hidden numbers of an answer
+ *   and the full calculation of one learning step (see numbersTab.ts).
  *
  * All training happens in the worker; this file only sends messages and
  * draws what comes back.
@@ -30,13 +33,16 @@ import { parentWidth, prepare } from '../viz/canvas';
 import { setUiLang, t, uiLang, UI_LANGUAGES } from './i18n';
 import { h } from './dom';
 import { InsideTab } from './inside';
+import { NumbersTab } from './numbersTab';
 import { DataTab } from './dataTab';
 import { shortLabel, tokenChip, tokenIndex, tokenName, toTok } from './tokens';
 import { EOS, Vocab } from '../nn/vocab';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
-type Tab = 'data' | 'learn' | 'ask' | 'matrix' | 'inside' | 'test';
-const TABS: Tab[] = ['data', 'learn', 'ask', 'matrix', 'inside', 'test'];
+type Tab = 'data' | 'learn' | 'ask' | 'matrix' | 'inside' | 'test' | 'numbers';
+const TABS: Tab[] = ['data', 'learn', 'ask', 'matrix', 'inside', 'test', 'numbers'];
+/** Tabs shown only in expert mode. */
+const EXPERT_TABS: Tab[] = ['numbers'];
 /** Look-inside requests: at most one in flight, at most this often. */
 const INSPECT_MS = 250;
 /** "Write it slowly": time per letter, and the "reading the animal" pause before the first one. */
@@ -190,6 +196,8 @@ export class App {
   private attGrids: AttGrid[] = [];
   private attKeys = '';
   private inside: InsideTab;
+  /** The real numbers (expert only). */
+  private numbers: NumbersTab;
   private dataTab: DataTab;
   private letterMap!: LetterMapView;
   private inspectId = 0;
@@ -226,12 +234,19 @@ export class App {
     });
     this.matrix = new MatrixTab((c) => this.langName(c), () => this.setTab('ask'));
     this.inside.requestUnits = () => this.send({ type: 'units', id: ++this.unitsId });
+    this.numbers = new NumbersTab(() => this.requestInspect(true), this.stepView);
+    this.inside.onMarks = (marks) => this.numbers.setMarks(marks);
+    // Expert: a part of the brain scan opens its heatmaps on "The numbers".
+    this.inside.onOpenPart = (selector) => {
+      if (!this.expert) return;
+      this.setTab('numbers');
+      this.numbers.scrollTo(selector);
+    };
     // A click on a number in the heatmaps (after Step ×1): why did it change?
-    this.inside.onPickNumber = (name, index) => {
+    this.numbers.onPickNumber = (name, index) => {
       if (!this.stepView.current()) return;
       this.stepView.pick(name, index);
-      this.setTab('learn');
-      this.stepView.el.scrollIntoView?.({ block: 'start' });
+      this.numbers.scrollToStep();
     };
     this.els = this.build();
     this.letterMap = new LetterMapView(this.els.mapCanvas, () => Math.min(360, parentWidth(this.els.mapCanvas, 320)));
@@ -266,6 +281,7 @@ export class App {
         this.els.seed.value = String(msg.seed);
         this.letterMap.reset();
         this.inside.setReady(msg);
+        this.numbers.setReady(msg);
         this.dataTab.setReady(msg);
         this.stepView.setReady(msg);
         this.journey.setTokens(msg.tokens);
@@ -291,7 +307,8 @@ export class App {
         if (this.losses.length > 40000) this.losses = this.losses.filter((_, i) => i % 2 === 0);
         if (msg.practice) this.onPractice(msg.practice, msg);
         this.stepView.setStep(msg.step, msg.running, this.practice);
-        this.inside.canWhy = this.stepView.current();
+        this.numbers.canWhy = this.stepView.current();
+        if (this.tab === 'numbers') this.numbers.setTick(msg);
         {
           // Quiet learning: no pictures while it learns; catch up when it pauses.
           const quietNow = msg.quiet && msg.running;
@@ -320,6 +337,7 @@ export class App {
           if (this.slowWanted) { this.slowWanted = false; this.startSlow(msg); }
           this.invalidate('answer', 'stamp');
           this.inside.setAnswer(msg);
+          this.numbers.setAnswer(msg);
           this.journey.setAnswer(msg);
           this.matrix.setAnswer(msg);
           if (this.tab === 'inside') this.inside.shown();
@@ -329,6 +347,7 @@ export class App {
       case 'weights':
         this.inspectDone(msg.id);
         this.inside.onWeights(msg);
+        this.numbers.onWeights(msg);
         break;
       case 'explain':
         if (msg.id === this.explainId) this.inside.onExplain(msg);
@@ -342,7 +361,7 @@ export class App {
         break;
       case 'stepDetail':
         this.stepView.onDetail(msg);
-        this.inside.canWhy = this.stepView.current();
+        this.numbers.canWhy = this.stepView.current();
         break;
       case 'why':
         if (msg.id === this.whyId) this.stepView.onWhy(msg);
@@ -486,12 +505,12 @@ export class App {
     }
     this.inspectDirty = false;
     this.lastInspect = performance.now();
-    if (this.tab !== 'learn' && this.tab !== 'inside') return; // nothing inside the model to show there
-    const inside = this.tab === 'inside';
-    const matrixIds = inside ? this.inside.wanted() : [];
-    if (inside && !matrixIds.length) return;
+    if (this.tab !== 'learn' && this.tab !== 'inside' && this.tab !== 'numbers') return; // nothing inside the model to show there
+    const view = this.tab === 'inside' ? this.inside : this.tab === 'numbers' ? this.numbers : null;
+    const matrixIds = view ? view.wanted() : [];
+    if (view && !matrixIds.length) return;
     this.inspectPending = ++this.inspectId;
-    this.send({ type: 'inspect', id: this.inspectId, matrixIds, mode: this.inside.mode, letterMap: !inside });
+    this.send({ type: 'inspect', id: this.inspectId, matrixIds, mode: view?.mode ?? this.inside.mode, letterMap: !view });
   }
 
   private inspectDone(id: number): void {
@@ -527,6 +546,7 @@ export class App {
   }
 
   private setTab(tab: Tab): void {
+    if (EXPERT_TABS.includes(tab) && !this.expert) tab = 'inside';
     this.tab = tab;
     for (const b of this.els.tabs.querySelectorAll('button')) {
       b.classList.toggle('on', b.dataset.tab === tab);
@@ -539,6 +559,8 @@ export class App {
     this.els.insideMain.hidden = tab !== 'inside';
     this.matrix.setVisible(tab === 'matrix');
     this.els.testMain.hidden = tab !== 'test';
+    this.els.numbersMain.hidden = tab !== 'numbers';
+    if (tab === 'numbers' && this.tick) this.numbers.setTick(this.tick);
     this.send({ type: 'watchTests', on: tab === 'test' });
     this.send({ type: 'watchPractice', on: tab === 'learn' });
     if (tab === 'test') this.invalidate('scores', 'animals');
@@ -590,6 +612,12 @@ export class App {
     expertBox.onchange = () => {
       this.expert = expertBox.checked;
       expertPanel.hidden = !this.expert;
+      stepLink.hidden = !this.expert;
+      for (const b of this.els.tabs.querySelectorAll<HTMLElement>('button')) {
+        if (EXPERT_TABS.includes(b.dataset.tab as Tab)) b.hidden = !this.expert;
+      }
+      // Leaving expert mode on an expert tab: go to the nearest plain one.
+      if (!this.expert && EXPERT_TABS.includes(this.tab)) this.setTab('inside');
       this.inside.setExpert(this.expert);
       this.dataTab.setExpert(this.expert);
       this.journey.setExpert(this.expert);
@@ -601,6 +629,11 @@ export class App {
     lr.onchange = () => this.send({ type: 'setHyper', lr: Number(lr.value) });
     const batch = h('input', { type: 'number', step: 1, min: 1, max: 128, value: 16 });
     batch.onchange = () => this.send({ type: 'setHyper', batchSize: Number(batch.value) });
+    // Expert: the whole calculation of one step is on "The numbers" tab.
+    const stepLinkBtn = h('button', { class: 'link', 'data-test': 'step-link' }, t('nums.stepLink'));
+    stepLinkBtn.onclick = () => { this.setTab('numbers'); this.numbers.scrollToStep(); };
+    const stepLink = h('section', { class: 'panel phase build step-link', hidden: true },
+      h('p', { class: 'small' }, t('nums.stepLinkHelp'), ' ', stepLinkBtn));
     const expertPanel = h('div', { class: 'expert', hidden: true },
       h('label', {}, t('lr'), ' ', lr), h('label', {}, t('batch'), ' ', batch));
     const status = h('div', { class: 'status', 'data-test': 'status' });
@@ -700,7 +733,12 @@ export class App {
       return h('span', {}, c, t(`map.kind.${k}`));
     }));
     const tabs = h('nav', { class: 'tabs', role: 'tablist' }, ...TABS.map((tab) => {
-      const b = h('button', { role: 'tab', 'data-tab': tab, 'data-test': `tab-${tab}`, class: tab === this.tab ? 'on' : '' }, t(`tab.${tab}`));
+      const expertTab = EXPERT_TABS.includes(tab);
+      const b = h('button', {
+        role: 'tab', 'data-tab': tab, 'data-test': `tab-${tab}`, hidden: expertTab && !this.expert,
+        class: [tab === this.tab ? 'on' : '', expertTab ? 'expert-tab' : ''].filter(Boolean).join(' '),
+        title: expertTab ? t(`tab.${tab}Tip`) : '',
+      }, t(`tab.${tab}`));
       b.onclick = () => this.setTab(tab);
       return b;
     }));
@@ -751,7 +789,7 @@ export class App {
           h('p', { class: 'practice-explain' }, t('practice.explain')),
           quietNote,
           practiceList),
-        this.stepView.el),
+        stepLink),
       h('aside', { class: 'right' },
         h('section', { class: 'panel map' },
           h('div', { class: 'phase-head' }, h('h2', {}, t('map.title')), help(t('map.how'))),
@@ -779,6 +817,7 @@ export class App {
     const matrixMain = h('main', { class: 'matrix-main', hidden: this.tab !== 'matrix' }, this.matrix.el);
     const insideMain = h('main', { class: 'inside-main', hidden: this.tab !== 'inside' }, this.inside.el);
     const dataMain = h('main', { class: 'data-main', hidden: this.tab !== 'data' }, this.dataTab.el);
+    const numbersMain = h('main', { class: 'inside-main numbers-main', hidden: this.tab !== 'numbers' }, this.numbers.el);
     const testMain = h('main', { class: 'test-main', hidden: this.tab !== 'test' },
       h('section', { class: 'panel test-intro' },
         h('div', { class: 'phase-head' }, h('h2', {}, t('test.title')), help(t('test.help'))),
@@ -799,10 +838,11 @@ export class App {
       matrixMain,
       insideMain,
       testMain,
+      numbersMain,
     );
     return {
       play, speed, seed, status, goalBar, goalNote, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, tokenRows, tokenNote, attention, mapCanvas, mapNote, mapPick, tabs,
-      dataMain, learnMain, askMain, matrixMain, insideMain, testMain, testLangPick, testWhen,
+      dataMain, learnMain, askMain, matrixMain, insideMain, testMain, numbersMain, testLangPick, testWhen,
       stamp, stampText, askAgain, slowBtn, answerNowBtn, slowCaption, prompt, results, attPrompt, practiceList, practiceHelp,
       playButtons: [play], learnings: [learning], cycles: [cycleA],
       lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,

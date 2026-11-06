@@ -35,16 +35,21 @@ async function shoot(page: Page, when: string) {
   await page.click('[data-test=tab-inside]');
   await page.waitForTimeout(800);
   await page.locator('[data-test=scan]').screenshot({ path: `${DIR}/${when}-inside-scan.png` });
-  // Plain mode folds the heatmaps away: open them.
-  if (await page.locator('[data-test=heatmaps]').isHidden()) await page.click('[data-test=numbers-toggle]');
-  await page.locator('.inside-head').last().screenshot({ path: `${DIR}/${when}-inside-head.png` });
   await page.locator('[data-test=explain]').screenshot({ path: `${DIR}/${when}-inside-explain.png` });
-  await page.locator('.group.letters').screenshot({ path: `${DIR}/${when}-inside-letters.png` });
-  await page.locator('.group.decoder').screenshot({ path: `${DIR}/${when}-inside-decoder.png` });
-  await page.click('[data-mode=weights]');
+  // The heatmaps are on the expert-only "The numbers" tab.
+  const expert = page.locator('[data-test=expert]');
+  const wasExpert = await expert.isChecked();
+  await expert.check();
+  await page.click('[data-test=tab-numbers]');
+  await page.click('.numbers [data-mode=delta]');
+  await page.waitForTimeout(800);
+  await page.locator('.numbers .heat-head').screenshot({ path: `${DIR}/${when}-inside-head.png` });
+  await page.locator('.numbers .group.letters').screenshot({ path: `${DIR}/${when}-inside-letters.png` });
+  await page.locator('.numbers .group.decoder').screenshot({ path: `${DIR}/${when}-inside-decoder.png` });
+  await page.click('.numbers [data-mode=weights]');
   await page.waitForTimeout(600);
-  await page.locator('.group.letters').screenshot({ path: `${DIR}/${when}-inside-letters-weights.png` });
-  await page.click('[data-mode=delta]');
+  await page.locator('.numbers .group.letters').screenshot({ path: `${DIR}/${when}-inside-letters-weights.png` });
+  if (!wasExpert) await expert.uncheck();
   await page.click('[data-test=tab-learn]');
 }
 
@@ -63,8 +68,42 @@ test('M3 panels at step 0 and after training', async ({ page }) => {
   await page.locator('[data-test=expert]').check();
   await page.click('[data-test=tab-ask]');
   await page.locator('.panel.attention').screenshot({ path: `${DIR}/expert-attention.png` });
-  await page.click('[data-test=tab-inside]');
+  await page.click('[data-test=tab-numbers]');
   await page.locator('[data-test=signal]').screenshot({ path: `${DIR}/expert-signal.png` });
+});
+
+const NDIR = 'docs/screenshots/numbers';
+
+test('the numbers tab (expert only)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => localStorage.setItem('wombatlm.uiLang', 'en'));
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto('/');
+  await page.click('[data-test=tab-learn]');
+  await page.fill('input.seed', '1');
+  await page.click('text=Reset');
+  await page.click('[data-test=play]');
+  await expect.poll(() => stepOf(page), { timeout: 90_000 }).toBeGreaterThanOrEqual(1500);
+  await page.click('[data-test=play]');
+  await page.screenshot({ path: `${NDIR}/1-plain-tabs.png`, clip: { x: 0, y: 0, width: 1400, height: 60 } });
+  await page.locator('[data-test=expert]').check();
+  await page.click('text=Step ×1');
+  await expect(page.locator('[data-test=cycle] .stage.lit')).toHaveCount(5, { timeout: 5_000 });
+  await page.screenshot({ path: `${NDIR}/2-expert-tabs.png`, clip: { x: 0, y: 0, width: 1400, height: 60 } });
+  await page.locator('.step-link').screenshot({ path: `${NDIR}/3-learning-link.png` });
+  await page.click('[data-test=tab-ask]');
+  await page.fill('[data-test=ask]', 'buvol');
+  await page.click('[data-test=answer-now]');
+  await expect(page.locator('[data-test=output] .from')).toContainText('buvol');
+  await page.click('[data-test=tab-numbers]');
+  await page.waitForTimeout(800);
+  await page.locator('.nums-intro').screenshot({ path: `${NDIR}/4-intro.png` });
+  await page.locator('[data-test=nums-matrices] summary').click();
+  await page.locator('[data-test=nums-model]').screenshot({ path: `${NDIR}/5-model-in-numbers.png` });
+  await page.locator('[data-test=overview]').screenshot({ path: `${NDIR}/6-how-fast.png` });
+  await page.locator('.numbers .group.decoder').screenshot({ path: `${NDIR}/7-heatmaps-decoder.png` });
+  await page.locator('[data-test=step-detail]').screenshot({ path: `${NDIR}/8-step-detail.png` });
+  await page.screenshot({ path: `${NDIR}/9-numbers-tab.png`, fullPage: true });
 });
 
 const LDIR = 'docs/screenshots/learn-vs-answer';
