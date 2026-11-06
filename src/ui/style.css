@@ -18,8 +18,6 @@ header .params { margin-left: auto; color: var(--muted); font-size: 13px; }
 h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
 main.learn-main { display: grid; grid-template-columns: 430px minmax(0, 1fr) 340px; gap: 14px; padding: 14px 20px; align-items: start; }
 main.ask-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding: 14px 20px; align-items: start; max-width: 1500px; }
-.ask-status { margin: -2px 0 10px; }
-.ask-status .link { padding: 0 2px; }
 header .expert-toggle { white-space: nowrap; }
 main[hidden] { display: none !important; }
 main.inside-main { padding: 14px 20px; }
@@ -47,7 +45,6 @@ input.seed { width: 80px; }
 .ask-field { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: start; gap: 10px; }
 .ask-label { font-weight: 600; font-size: 14px; color: var(--muted); padding-top: 7px; }
 .ask-control .picker { margin-bottom: 0; }
-.askbox .word-hint { margin-top: 4px; }
 .word-hint.known { color: #15803d; }
 .word-hint.other { color: #92400e; }
 .word-hint .link { padding: 0 2px; }
@@ -57,6 +54,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .ask-prompt { color: var(--muted); margin: 6px 0 10px; }
 .ask-prompt[hidden], .ask-results[hidden], .att-grids[hidden] { display: none; }
 .output { margin: 8px 0 10px; min-height: 48px; }
+.output:empty { min-height: 0; margin: 0; }
 .answer-line { display: flex; align-items: baseline; gap: 10px; }
 .answer-line .from { font-size: 20px; color: var(--muted); }
 .word { font-size: 32px; font-weight: 700; letter-spacing: 0.02em; }
@@ -71,6 +69,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .insights h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .insight-rows { display: contents; }
 .insight { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; align-items: center; padding: 3px 0; font-size: 14px; }
+.insight[hidden], .ask-status[hidden] { display: none; }
+.insight .link { padding: 0 2px; }
+.insights .word-hint { font-size: 14px; min-height: 0; }
 .insight-label { color: var(--muted); font-size: 13px; }
 .insight-value .muted { color: var(--muted); }
 .insight-value .real-word { font-size: 15px; }
@@ -78,7 +79,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .verdict.correct { color: var(--correct); }
 .verdict.close { color: var(--close); }
 .verdict.wrong { color: var(--wrong); }
-.insights .stamp { padding: 1px 6px; margin-left: -6px; background: none; color: var(--ink); }
+.insights .stamp { display: inline-block; padding: 1px 6px; margin-left: -6px; background: none; color: var(--ink); }
 .insights .stamp.stale { margin-left: 0; padding: 2px 8px; background: #f1f5f9; color: var(--muted); }
 .insights.stale .insight-rows .insight { opacity: 0.4; filter: grayscale(0.8); transition: opacity 0.3s; }
 .meter { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
