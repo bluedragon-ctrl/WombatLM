@@ -286,7 +286,7 @@ export class ExplainView {
       h('p', { class: 'small muted dboard-key' }, t(team ? 'explain.ffn.boardKeyTeam' : 'explain.ffn.boardKey', { tok })),
       h('p', { class: 'small' }, picked !== null ? t('explain.ffn.unitPicked', { n: picked + 1 }) : team ? t('explain.ffn.unitsTeam', { tok }) : t('explain.ffn.unitsNeeded', { tok })),
       h('div', { class: 'ucards' }, ...cards.map((k) => unitCard(u.units[k], this.langName, {
-        now: s.hidden[k], expert: this.expert, picked: k === picked,
+        now: s.hidden[k], expert: this.expert, picked: k === picked, compact: !this.expert,
         nowOff: m.unitsOff ? { letter: m.chosen, withP, withoutP: m.unitsOff[k] } : undefined,
       }))));
   }

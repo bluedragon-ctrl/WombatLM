@@ -13,6 +13,8 @@ import { pctText } from './format';
 
 /** How many of its strongest moments a card shows. */
 const SHOW = 5;
+/** …and a compact card (Think stage). */
+const COMPACT_SHOW = 3;
 /** A change of the right letter's chance smaller than this counts as "almost nothing". */
 const SMALL = 0.02;
 
@@ -53,9 +55,11 @@ export function momentChip(m: UnitMoment, langName: (code: string) => string, st
  * and without it, as two bars) and how often it is on at all. With `now` (its
  * value for the letter looked at in "picks one letter"), a bar shows how
  * strongly it is on now, compared with its strongest moment in the learning data.
+ * `compact` (the Think stage in plain mode): only its job, 3 moments without
+ * a label, and with/without bars for the letter looked at now.
  */
 export function unitCard(u: UnitInfo, langName: (code: string) => string,
-  opts: { now?: number; nowOff?: { letter: string; withP: number; withoutP: number }; expert?: boolean; picked?: boolean } = {}): HTMLElement {
+  opts: { now?: number; nowOff?: { letter: string; withP: number; withoutP: number }; expert?: boolean; picked?: boolean; compact?: boolean } = {}): HTMLElement {
   const head = h('div', { class: 'uhead' }, h('b', {}, t('unit.title', { n: u.unit + 1 })));
   const strongest = Math.max(1e-6, u.top[0]?.value ?? opts.now ?? 1);
   if (opts.now !== undefined) {
@@ -67,12 +71,25 @@ export function unitCard(u: UnitInfo, langName: (code: string) => string,
   const theme = u.theme
     ? h('p', { class: 'utheme' }, t('unit.themeLine', { theme: themeText(u.theme, langName) }), ' ', sureDots(u.theme.count, u.theme.of))
     : h('p', { class: 'utheme none' }, t('unit.noTheme'));
-  const moments = u.top.slice(0, SHOW);
+  const moments = u.top.slice(0, opts.compact ? COMPACT_SHOW : SHOW);
+  const chips = h('div', { class: 'umoments', title: t('unit.moments') }, ...moments.map((m) => momentChip(m, langName, m.value / strongest)));
+  const cls = `ucard k-${jobKind(u)}${u.theme ? '' : ' unclear'}${opts.picked ? ' picked' : ''}`;
+  if (opts.compact) {
+    const n = opts.nowOff;
+    const verdict = n ? (n.withoutP < n.withP - SMALL ? 'fall' : n.withoutP > n.withP + SMALL ? 'rise' : 'none') : '';
+    return h('div', { class: `${cls} compact`, 'data-unit': String(u.unit) },
+      head, theme, chips,
+      n ? h('div', { class: 'uoffbox', 'data-test': 'unit-off-now' },
+        h('p', { class: 'ulabel small' }, t('unit.offNowLabel', { tok: shortLabel(n.letter) })),
+        h('div', { class: 'ubars small' },
+          bar(t('unit.with'), n.withP, 'with'),
+          bar(t('unit.without'), n.withoutP, `without ${verdict}`))) : null);
+  }
   const parts: (HTMLElement | null)[] = [
     head,
     theme,
     h('p', { class: 'ulabel small' }, t('unit.moments')),
-    h('div', { class: 'umoments' }, ...moments.map((m) => momentChip(m, langName, m.value / strongest))),
+    chips,
   ];
   // What it really does: switched off at these moments (measured), and for the letter shown now.
   if (opts.nowOff) {
@@ -99,7 +116,7 @@ export function unitCard(u: UnitInfo, langName: (code: string) => string,
       opts.expert ? h('span', { class: 'muted' }, ` (${u.pushes.map((p) => p.score.toFixed(2)).join(', ')})`) : null));
   }
   parts.push(h('p', { class: 'ufoot small' }, t('unit.onShare', { pct: Math.round(u.on * 100) })));
-  return h('div', { class: `ucard k-${jobKind(u)}${u.theme ? '' : ' unclear'}${opts.picked ? ' picked' : ''}`, 'data-unit': String(u.unit) }, ...parts);
+  return h('div', { class: cls, 'data-unit': String(u.unit) }, ...parts);
 }
 
 /** One labelled bar: the right letter's chance (0..1). */

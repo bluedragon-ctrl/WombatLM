@@ -794,5 +794,6 @@
   "unit.verdict.none": "Skoro žádná změna: stejnou práci dělají i jiné detektory.",
   "explain.ffn.boardKey": "Oranžová = jak silně je detektor zapnutý. Orámované = ty, které „{tok}“ potřebuje nejvíc. Klikněte na čtvereček a uvidíte ten detektor.",
   "explain.ffn.boardKeyTeam": "Oranžová = jak silně je detektor zapnutý. Klikněte na čtvereček a uvidíte ten detektor.",
-  "explain.ffn.unitPicked": "Detektor {n}, jak jste ho vybrali (dalším kliknutím ho zavřete):"
+  "explain.ffn.unitPicked": "Detektor {n}, jak jste ho vybrali (dalším kliknutím ho zavřete):",
+  "unit.offNowLabel": "Bez něj by teď šance „{tok}“ byla:"
 }

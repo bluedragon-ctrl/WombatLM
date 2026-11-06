@@ -794,5 +794,6 @@
   "unit.verdict.none": "Almost no change: other detectors do the same job.",
   "explain.ffn.boardKey": "Orange = how strongly each detector is on. Outlined = the ones “{tok}” needs most. Click a square to see that detector.",
   "explain.ffn.boardKeyTeam": "Orange = how strongly each detector is on. Click a square to see that detector.",
-  "explain.ffn.unitPicked": "Detector {n}, as you picked it (click it again to close):"
+  "explain.ffn.unitPicked": "Detector {n}, as you picked it (click it again to close):",
+  "unit.offNowLabel": "Without it now, the chance of “{tok}”:"
 }
