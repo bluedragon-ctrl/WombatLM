@@ -4,6 +4,7 @@ import { Dataset } from '../../src/data/dataset';
 import { Engine, EngineHost } from '../../src/train/engine';
 import type { AnswerMsg, FromWorker } from '../../src/train/protocol';
 import { buildMatrixModel, meanAttention } from '../../src/ui/matrixModel';
+import { beatsFor } from '../../src/ui/matrixScript';
 
 const ds = new Dataset(baseBundle());
 
@@ -74,5 +75,29 @@ describe('matrix model', () => {
     const read = m.stations.filter((s) => s.lane === 'read');
     expect(tr).toEqual(read.map((s) => s.grid[1 * m.d + 4]));
     expect(m.trail('write', 0, 0).length).toBe(m.laneKinds.write.length);
+  });
+
+  it('every station has comments that play its animation in order, from start to end', () => {
+    const tokens = ds.vocab.tokens;
+    for (const st of m.stations) {
+      const beats = beatsFor(st, { m, tokens, full: (x) => x, word: a.text, output: a.output, pinned: null, focus: -1 });
+      expect(beats.length).toBeGreaterThan(0);
+      expect(beats[0].from).toBe(0);
+      expect(beats[beats.length - 1].to).toBe(1);
+      for (let i = 0; i < beats.length; i++) {
+        expect(beats[i].from).toBeLessThanOrEqual(beats[i].to);
+        if (i > 0) expect(beats[i].from).toBeCloseTo(beats[i - 1].to, 6);
+        expect(beats[i].text).not.toMatch(/\{|mx\.b\./); // every placeholder filled, every key found
+      }
+      if (st.guess) expect(beats.at(-1)!.anchor).toEqual({ area: 'side', row: st.guess.chosenId });
+    }
+    // Reading letters: one comment per input token, each flying in its own row.
+    const letters = beatsFor(m.stations[0], { m, tokens, full: (x) => x, word: a.text, output: a.output, pinned: null, focus: -1 });
+    expect(letters.length).toBe(a.input.length + 2);
+    // Adding the position: the example is exact.
+    const pos = m.stations[1];
+    const [, add] = beatsFor(pos, { m, tokens, full: (x) => x, word: a.text, output: a.output, pinned: { row: 1, col: 3 }, focus: -1 });
+    expect(add.anchor).toEqual({ area: 'grid', row: 1, col: 3 });
+    expect(add.text).toContain(pos.grid[1 * m.d + 3].toFixed(2));
   });
 });

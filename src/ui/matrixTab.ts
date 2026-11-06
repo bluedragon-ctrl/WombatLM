@@ -6,10 +6,16 @@
  * from its old to its new value, and one clicked number can be followed all
  * the way. It shows how the numbers move and change, not why.
  *
+ * It plays as an animation with comments: every station has a few comments
+ * (`matrixScript.ts`), each playing one part of the station's animation and
+ * pointing at what it is about. Next / Back go comment by comment; Play runs
+ * them all like a film.
+ *
  * The stations come from `matrixModel.ts`; the picture from `viz/matrixStage.ts`.
  */
 import type { AnswerMsg } from '../train/protocol';
 import { buildMatrixModel, meanAttention, MatrixModel, Station, StationKind } from './matrixModel';
+import { Beat, beatsFor } from './matrixScript';
 import { ColourMode, drawStage, sideKind, StageHit, stageHit, StageLayout } from '../viz/matrixStage';
 import { DIVERGING_ENDS } from '../viz/colors';
 import { h, showTip } from './dom';
@@ -17,9 +23,12 @@ import { t } from './i18n';
 import { shortLabel, tokenName } from './tokens';
 import { EOS } from '../nn/vocab';
 
-/** Animation: how long one station takes, and the pause before Play goes on. */
-const STATION_MS = 1100;
-const PAUSE_MS = 700;
+/** Animation: a whole station's movement takes this long (a comment plays its part of it). */
+const STATION_MS = 1800;
+/** Play: time to read a comment, per character and at least, at speed 1. */
+const READ_MS_PER_CHAR = 55;
+const READ_MS_MIN = 2200;
+const SPEEDS = [0.5, 1, 2];
 
 export class MatrixTab {
   readonly el: HTMLElement;
@@ -30,12 +39,15 @@ export class MatrixTab {
   private visible = false;
   private key = '';
   private idx = 0;
+  /** The comment told now (index into the station's beats). */
+  private beat = 0;
+  private beats: Beat[] = [];
   /** Animation time of the current station, 0..1. */
   private time = 1;
-  private animStart = 0;
   private raf = 0;
   private playing = false;
   private playTimer = 0;
+  private speed = 1;
   private mode: ColourMode = 'values';
   private pinned: { lane: 'read' | 'write'; row: number; col: number } | null = null;
   private hover: { row: number; col: number } | null = null;
@@ -51,6 +63,7 @@ export class MatrixTab {
   private caption: HTMLElement;
   private canvas: HTMLCanvasElement;
   private trail: HTMLElement;
+  private comments: HTMLElement;
   private back: HTMLButtonElement;
   private next: HTMLButtonElement;
   private play: HTMLButtonElement;
@@ -64,9 +77,12 @@ export class MatrixTab {
     this.back = h('button', { 'data-test': 'matrix-back' }, t('jr.back'));
     this.next = h('button', { class: 'primary', 'data-test': 'matrix-next' }, t('jr.next'));
     this.play = h('button', { 'data-test': 'matrix-play' }, t('mx.play'));
-    this.back.onclick = () => { this.stop(); this.go(this.idx - 1, false); };
-    this.next.onclick = () => { this.stop(); this.go(this.idx + 1, true); };
+    this.back.onclick = () => { this.stop(); this.stepBack(); };
+    this.next.onclick = () => { this.stop(); this.stepNext(); };
     this.play.onclick = () => (this.playing ? this.stop() : this.start());
+    const speed = h('select', { 'data-test': 'matrix-speed', 'aria-label': t('mx.speed') },
+      ...SPEEDS.map((v) => h('option', { value: String(v), selected: v === this.speed }, t(`mx.speed.${String(v).replace('.', '_')}` as 'mx.speed.1'))));
+    speed.onchange = () => { this.speed = Number(speed.value); };
     this.modeButtons = (['values', 'added'] as ColourMode[]).map((mode) => {
       const b = h('button', { class: `seg${mode === this.mode ? ' on' : ''}`, 'data-mode': mode, 'data-test': `matrix-mode-${mode}` }, t(`mx.mode.${mode}`));
       b.onclick = () => { this.mode = mode; for (const x of this.modeButtons) x.classList.toggle('on', x.dataset.mode === mode); this.draw(); };
@@ -77,6 +93,7 @@ export class MatrixTab {
     this.caption = h('div', { class: 'jr-caption mx-caption', 'data-test': 'matrix-caption', 'aria-live': 'polite' });
     this.canvas = h('canvas', { class: 'mx-canvas', 'data-test': 'matrix-canvas' });
     this.trail = h('div', { class: 'mx-trail', 'data-test': 'matrix-trail' });
+    this.comments = h('ol', { class: 'mx-comments', 'data-test': 'matrix-comments', 'aria-live': 'polite' });
     this.canvas.addEventListener('mousemove', (e) => this.onMove(e));
     this.canvas.addEventListener('mouseleave', (e) => { this.hover = null; showTip(e, null); this.draw(); });
     this.canvas.addEventListener('click', (e) => this.onClick(e));
@@ -89,11 +106,14 @@ export class MatrixTab {
     this.body = h('div', { class: 'mx-body', hidden: true },
       this.question,
       h('div', { class: 'row jr-controls' }, this.back, this.next, this.play,
+        h('label', { class: 'small mx-speed' }, t('mx.speed'), ' ', speed),
         h('span', { class: 'mx-mode small' }, t('mx.mode'), ...this.modeButtons)),
       h('div', { class: 'mx-pillrow' }, h('span', { class: 'small' }, t('mx.passes')), this.passes),
       h('div', { class: 'mx-pillrow' }, h('span', { class: 'small' }, t('mx.stations')), this.stationPills),
       this.caption,
       h('div', { class: 'mx-canvas-wrap' }, this.canvas),
+      h('div', { class: 'small mx-comments-head' }, t('mx.comments')),
+      this.comments,
       legend,
       this.trail);
     this.el = h('section', { class: 'panel matrix', 'data-test': 'matrix' },
@@ -116,12 +136,14 @@ export class MatrixTab {
 
   setAnswer(a: AnswerMsg | undefined): void {
     this.a = a;
+    this.beats = []; // rebuilt with this answer's numbers
     this.m = a && this.tokens.length ? buildMatrixModel(a, this.tokens) : undefined;
     const key = a ? `${a.text}|${a.lang}|${a.form}|${a.output}` : '';
     if (key !== this.key) {
       // Another question (or another answer): start from the beginning.
       this.key = key;
       this.idx = 0;
+      this.beat = 0;
       this.time = 0;
       this.pinned = null;
       this.focus = -1;
@@ -129,15 +151,15 @@ export class MatrixTab {
     }
     if (this.m) this.idx = Math.min(this.idx, this.m.stations.length - 1);
     this.render();
-    if (this.visible && this.time < 1) this.animate();
+    if (this.visible && this.time < this.target()) this.animate();
   }
 
   /** The tab became visible or hidden: draw only while visible. */
   setVisible(on: boolean): void {
     this.visible = on;
-    if (!on) { this.stop(); cancelAnimationFrame(this.raf); this.time = 1; return; }
+    if (!on) { this.stop(); cancelAnimationFrame(this.raf); this.time = this.target(); return; }
     this.render();
-    if (this.time < 1) this.animate();
+    if (this.time < this.target()) this.animate();
   }
 
   // -------------------------------------------------------------------------
@@ -146,25 +168,58 @@ export class MatrixTab {
     return this.m?.stations[this.idx];
   }
 
-  private go(idx: number, animate: boolean): void {
+  /** Where the current comment's animation ends. */
+  private target(): number {
+    return this.beats[this.beat]?.to ?? 1;
+  }
+
+  /**
+   * Show station `idx`, comment `beat` (-1 = its last comment). With
+   * `animate`, the comment's part of the animation plays; otherwise the
+   * picture shows the end of it.
+   */
+  private go(idx: number, beat: number, animate: boolean): void {
     if (!this.m) return;
     const to = Math.max(0, Math.min(this.m.stations.length - 1, idx));
-    if (to === this.idx && !animate) return;
     const lanePrev = this.station()?.lane;
     this.idx = to;
     if (this.station()?.lane !== lanePrev) this.focus = -1;
-    this.time = animate ? 0 : 1;
+    this.beats = this.scriptFor(this.station()!);
+    this.beat = beat < 0 ? this.beats.length - 1 : Math.min(beat, this.beats.length - 1);
+    const b = this.beats[this.beat];
+    this.time = animate ? b.from : b.to;
+    // A comment that starts where the station's movement starts: play from the very beginning.
+    if (animate && this.beat === 0) this.time = 0;
     this.render();
     if (animate) this.animate();
   }
 
+  private stepNext(): void {
+    if (!this.m) return;
+    if (this.beat < this.beats.length - 1) this.go(this.idx, this.beat + 1, true);
+    else if (this.idx < this.m.stations.length - 1) this.go(this.idx + 1, 0, true);
+  }
+
+  private stepBack(): void {
+    if (this.beat > 0) this.go(this.idx, this.beat - 1, false);
+    else if (this.idx > 0) this.go(this.idx - 1, -1, false);
+  }
+
+  private atEnd(): boolean {
+    return !this.m || (this.idx >= this.m.stations.length - 1 && this.beat >= this.beats.length - 1);
+  }
+
+  /** Play the current comment's part of the movement, then (when playing) wait for it to be read. */
   private animate(): void {
     cancelAnimationFrame(this.raf);
-    this.animStart = performance.now() - this.time * STATION_MS;
+    const from = this.time, to = this.target();
+    const ms = Math.max(1, (to - from) * STATION_MS / this.speed);
+    const start = performance.now();
     const frame = (now: number) => {
-      this.time = Math.min(1, (now - this.animStart) / STATION_MS);
+      const k = Math.min(1, (now - start) / ms);
+      this.time = from + (to - from) * k;
       this.draw();
-      if (this.time < 1) this.raf = requestAnimationFrame(frame);
+      if (k < 1) this.raf = requestAnimationFrame(frame);
       else this.renderTrail();
     };
     this.raf = requestAnimationFrame(frame);
@@ -172,22 +227,27 @@ export class MatrixTab {
 
   private start(): void {
     if (!this.m) return;
-    if (this.idx >= this.m.stations.length - 1) this.go(0, true);
-    else if (this.time >= 1) this.go(this.idx + 1, true);
     this.playing = true;
     this.play.textContent = t('mx.stop');
     this.play.classList.add('on');
-    const tick = () => {
-      if (!this.playing || !this.m) return;
-      if (this.time < 1) { this.playTimer = window.setTimeout(tick, 100); return; }
-      if (this.idx >= this.m.stations.length - 1) { this.stop(); return; }
-      this.playTimer = window.setTimeout(() => {
-        if (!this.playing) return;
-        this.go(this.idx + 1, true);
-        tick();
-      }, PAUSE_MS);
-    };
-    tick();
+    if (this.atEnd()) this.go(0, 0, true);
+    else if (this.time >= this.target()) this.stepNext();
+    else this.animate();
+    this.schedule();
+  }
+
+  /** Playing: once this comment's movement is done and it has been read, go on. */
+  private schedule(): void {
+    clearTimeout(this.playTimer);
+    const b = this.beats[this.beat];
+    const move = Math.max(0, (b.to - this.time) * STATION_MS);
+    const read = Math.max(READ_MS_MIN, b.text.length * READ_MS_PER_CHAR);
+    this.playTimer = window.setTimeout(() => {
+      if (!this.playing) return;
+      if (this.atEnd()) { this.stop(); return; }
+      this.stepNext();
+      this.schedule();
+    }, Math.max(move, read * 0.7) / this.speed + 0.3 * read / this.speed);
   }
 
   private stop(): void {
@@ -195,6 +255,15 @@ export class MatrixTab {
     clearTimeout(this.playTimer);
     this.play.textContent = t('mx.play');
     this.play.classList.remove('on');
+  }
+
+  private scriptFor(st: Station): Beat[] {
+    const a = this.a!;
+    const pin = this.pinned && this.pinned.lane === st.lane ? { row: this.pinned.row, col: this.pinned.col } : null;
+    return beatsFor(st, {
+      m: this.m!, tokens: this.tokens, full: (tok) => this.full(tok), word: a.text, output: a.output,
+      pinned: pin, focus: this.focus,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -207,15 +276,16 @@ export class MatrixTab {
     this.question.replaceChildren(
       h('b', {}, a.text), h('span', { class: 'op' }, '→'), h('b', {}, a.output || '∅'),
       h('span', { class: 'small' }, ` · ${this.full(a.input[0])} · ${t('mx.atStep', { n: a.step.toLocaleString() })}`));
-    this.back.disabled = this.idx === 0;
-    this.next.disabled = this.idx === m.stations.length - 1;
+    if (!this.beats.length || this.beat >= this.beats.length) { this.beats = this.scriptFor(st); this.beat = Math.min(this.beat, this.beats.length - 1); }
+    this.back.disabled = this.idx === 0 && this.beat === 0;
+    this.next.disabled = this.atEnd();
 
     // Passes: reading, then one per written token.
     const passNames = [t('mx.pass.read'), ...a.steps.map((s, k) => t('jr.p.write', { k: k + 1, tok: shortLabel(s.chosen) }))];
     const curPass = st.pass + 1;
     this.passes.replaceChildren(...passNames.map((n, i) => {
       const b = h('button', { class: `jr-pill${i === curPass ? ' on' : ''}${i < curPass ? ' done' : ''}${i > 0 ? ' write' : ''}`, 'data-pass': String(i) }, n);
-      b.onclick = () => { this.stop(); this.go(m.passStart[i], true); };
+      b.onclick = () => { this.stop(); this.go(m.passStart[i], 0, true); };
       return b;
     }));
     const start = m.passStart[curPass];
@@ -223,12 +293,22 @@ export class MatrixTab {
     this.stationPills.replaceChildren(...m.stations.slice(start, end).map((s, j) => {
       const i = start + j;
       const b = h('button', { class: `jr-pill${i === this.idx ? ' on' : ''}${i < this.idx ? ' done' : ''}`, 'data-station': s.kind }, `${j + 1}. ${this.stationName(s)}`);
-      b.onclick = () => { this.stop(); this.go(i, true); };
+      b.onclick = () => { this.stop(); this.go(i, 0, true); };
       return b;
     }));
     this.caption.replaceChildren(...this.captionFor(st));
+    this.renderComments();
     this.draw();
     this.renderTrail();
+  }
+
+  /** The comments of this station: the ones told so far, the current one highlighted. */
+  private renderComments(): void {
+    this.comments.replaceChildren(...this.beats.map((b, i) => {
+      const li = h('li', { class: i === this.beat ? 'on' : i < this.beat ? 'done' : 'later' }, b.text);
+      li.onclick = () => { this.stop(); this.go(this.idx, i, true); };
+      return li;
+    }));
   }
 
   private stationName(s: Station): string {
@@ -279,7 +359,9 @@ export class MatrixTab {
         break;
       }
     }
-    const parts: (HTMLElement | string)[] = [h('strong', {}, head), h('span', {}, body)];
+    const parts: (HTMLElement | string)[] = [h('strong', {}, head)];
+    // In short: the station's comments below tell it step by step.
+    if (this.expert) parts.push(h('span', { class: 'small' }, body));
     if (st.kind === 'think' || st.kind === 'knobs' || st.kind === 'position' || st.kind === 'self' || st.kind === 'cross') parts.push(h('span', { class: 'small' }, t('mx.c.marks')));
     return parts;
   }
@@ -319,6 +401,7 @@ export class MatrixTab {
       labels: st.tokens.map(shortLabel), tableLabels: this.tokens.map(shortLabel), tableTokens: this.tokens,
       letterTable: a.letterTable, posRows, memory: m.memory, memoryLabels: m.inputTokens.map(shortLabel),
       sideTitle: this.sideTitle(st), pinned: pin, hover: this.hover, focus: this.focusIndex(st),
+      callout: this.beats[this.beat] ? { text: this.beats[this.beat].text, anchor: this.beats[this.beat].anchor } : null,
     });
   }
 
@@ -367,13 +450,14 @@ export class MatrixTab {
     if (hit.area === 'grid') {
       const p = this.pinned;
       this.pinned = p && p.lane === st.lane && p.row === hit.row && p.col === hit.col ? null : { lane: st.lane, row: hit.row, col: hit.col };
+      this.beats = this.scriptFor(st);
+      this.renderComments();
       this.draw();
       this.renderTrail();
     } else if (hit.area === 'label' && st.kind === 'self' && st.active.length > 1) {
       this.focus = st.active.indexOf(hit.row);
-      this.caption.replaceChildren(...this.captionFor(st));
-      this.time = Math.max(this.time, 0.999);
-      this.draw();
+      this.stop();
+      this.go(this.idx, 0, true);
     }
   }
 
@@ -402,7 +486,7 @@ export class MatrixTab {
       b.onclick = () => {
         this.stop();
         const pass = p.lane === 'read' ? 0 : Math.max(p.row, st.pass) + 1;
-        this.go(m.passStart[pass] + i, true);
+        this.go(m.passStart[pass] + i, -1, false);
       };
       if (items.length) items.push(h('span', { class: 'op' }, '→'));
       items.push(b);

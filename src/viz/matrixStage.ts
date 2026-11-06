@@ -41,7 +41,21 @@ export interface StageFrame {
   hover: { row: number; col: number } | null;
   /** Index into `station.active` of the row whose arrows are drawn. */
   focus: number;
+  /** The comment being told now: a speech bubble below the matrix, pointing at what it talks about. */
+  callout?: Callout | null;
 }
+
+/** What a comment points at: one number of the matrix, a row of the matrix, or a row of the side panel. */
+export type Anchor = { area: 'grid'; row: number; col: number } | { area: 'row'; row: number } | { area: 'side'; row: number };
+
+export interface Callout {
+  text: string;
+  anchor?: Anchor;
+}
+
+/** Room kept below the matrix for the speech bubble. */
+const BUBBLE_ROOM = 120;
+const BUBBLE_W = 560;
 
 export interface StageLayout {
   width: number;
@@ -89,7 +103,7 @@ export function stageLayout(f: Pick<StageFrame, 'station' | 'tableLabels' | 'mem
   const width = gridX + st.d * CELL_W + 12;
   // Height: never shrink below the letter table, so the picture does not jump between stations.
   const tableH = f.tableLabels.length * TABLE_ROW_H;
-  const height = TOP + Math.max(rows * ROW_H, sideRows * sideRowH, tableH) + 14;
+  const height = TOP + Math.max(rows * ROW_H + BUBBLE_ROOM, sideRows * sideRowH, tableH) + 14;
   return { width, height, rows, d: st.d, top: TOP, sideX, sideCellW: SIDE_CELL_W, sideRowH, sideRows, labelX, gridX, cellW: CELL_W, rowH: ROW_H };
 }
 
@@ -205,8 +219,8 @@ export function drawStage(canvas: HTMLCanvasElement, f: StageFrame): StageLayout
   const marks = cellT >= 1 ? biggestChanges(st) : new Set<number>();
   for (let r = 0; r < L.rows; r++) {
     const isActive = active.has(r);
-    // Letters: the active rows are still on their way from the letter table.
-    if (st.kind === 'letters' && isActive && t < 1) continue;
+    // Letters: an active row still on its way from the letter table is drawn flying, below.
+    if (st.kind === 'letters' && isActive && flight(st, r, t) < 1) continue;
     const alpha = isActive ? 1 : 0.35;
     for (let c = 0; c < d; c++) {
       const i = r * d + c;
@@ -229,7 +243,7 @@ export function drawStage(canvas: HTMLCanvasElement, f: StageFrame): StageLayout
   }
   // Active rows framed.
   for (const r of st.active) {
-    if (st.kind === 'letters' && t < 1) continue;
+    if (st.kind === 'letters' && flight(st, r, t) < 1) continue;
     ctx.strokeStyle = ACCENT;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(L.gridX - 1.5, rowY(r) - 1.5, d * L.cellW + 2, L.rowH + 1);
@@ -237,8 +251,9 @@ export function drawStage(canvas: HTMLCanvasElement, f: StageFrame): StageLayout
 
   // --- flying rows ----------------------------------------------------------
   if (st.kind === 'letters' && t < 1) {
-    const e = ease(t);
     for (const r of st.active) {
+      const e = flight(st, r, t);
+      if (e <= 0 || e >= 1) continue;
       const from = { x: L.sideX, y: sideY(tableRowOf(st.tokens[r], f)), w: L.sideCellW, h: L.sideRowH };
       const to = { x: L.gridX, y: rowY(r), w: L.cellW, h: L.rowH - 2 };
       flyRow(ctx, st.grid.subarray(r * d, (r + 1) * d), from, to, e, f.scale, 1);
@@ -298,7 +313,8 @@ export function drawStage(canvas: HTMLCanvasElement, f: StageFrame): StageLayout
 
   // --- guess: the last row compared with every letter-table row -------------
   if (st.guess) {
-    const e = ease(t);
+    // First the comparison (lines), then the chances (bars).
+    const lines = phase(t, 0, 0.5), e = phase(t, 0.5, 1);
     const q = st.active[0];
     const yq = rowY(q) + L.rowH / 2;
     const top = topK(st.guess.probs, 5);
@@ -307,7 +323,7 @@ export function drawStage(canvas: HTMLCanvasElement, f: StageFrame): StageLayout
       const p = st.guess.probs[i];
       const yk = sideY(i) + L.sideRowH / 2;
       const chosen = i === st.guess.chosenId;
-      ctx.strokeStyle = chosen ? `rgba(21,128,61,${0.3 + 0.7 * e})` : `rgba(37,99,235,${(0.15 + 0.6 * p) * e})`;
+      ctx.strokeStyle = chosen && e > 0 ? `rgba(21,128,61,${0.3 + 0.7 * e})` : `rgba(37,99,235,${(0.15 + 0.6 * Math.max(p, 0.3)) * lines})`;
       ctx.lineWidth = 1 + 6 * p;
       ctx.beginPath();
       ctx.moveTo(L.labelX + 4, yq);
@@ -316,11 +332,11 @@ export function drawStage(canvas: HTMLCanvasElement, f: StageFrame): StageLayout
       // Chance bar and label.
       const bw = 56 * p * e;
       ctx.fillStyle = chosen ? '#15803d' : ACCENT;
-      ctx.fillRect(x0, yk - 4, Math.max(1, bw), 8);
+      if (e > 0) ctx.fillRect(x0, yk - 4, Math.max(1, bw), 8);
       ctx.font = chosen ? 'bold 11px system-ui, sans-serif' : '11px system-ui, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillStyle = chosen ? '#15803d' : INK;
-      ctx.fillText(`${f.tableLabels[i] ?? '?'} ${(p * 100).toFixed(p < 0.1 ? 1 : 0)} %`, x0 + 66, yk);
+      ctx.fillStyle = chosen && e > 0 ? '#15803d' : INK;
+      ctx.fillText(e > 0 ? `${f.tableLabels[i] ?? '?'} ${(p * 100).toFixed(p < 0.1 ? 1 : 0)} %` : (f.tableLabels[i] ?? '?'), x0 + 66, yk);
     }
   }
 
@@ -338,7 +354,68 @@ export function drawStage(canvas: HTMLCanvasElement, f: StageFrame): StageLayout
     ctx.fillStyle = '#111827';
     ctx.fillRect(L.gridX + f.pinned.col * L.cellW + 2, L.top - 3, L.cellW - 5, 2);
   }
+  if (f.callout) drawCallout(ctx, L, f.callout);
   return L;
+}
+
+/** How far active row `r` has flown in from the letter table (0..1): one after another. */
+function flight(st: Station, r: number, t: number): number {
+  const n = st.active.length, j = st.active.indexOf(r);
+  if (j < 0) return 1;
+  return phase(t, j / n, (j + 1) / n);
+}
+
+/** Where an anchor is on the canvas. */
+function anchorPoint(L: StageLayout, a: Anchor): { x: number; y: number } {
+  if (a.area === 'grid') return { x: L.gridX + a.col * L.cellW + L.cellW / 2, y: L.top + (a.row + 1) * L.rowH - 2 };
+  if (a.area === 'row') return { x: L.gridX - 20, y: L.top + (a.row + 1) * L.rowH - 4 };
+  return { x: L.sideX + L.d * L.sideCellW + 2, y: L.top + a.row * L.sideRowH + L.sideRowH / 2 };
+}
+
+/** The comment told now: a speech bubble under the matrix with a pointer to what it is about. */
+function drawCallout(ctx: CanvasRenderingContext2D, L: StageLayout, c: Callout): void {
+  ctx.font = '14px system-ui, sans-serif';
+  const words = c.text.split(/\s+/);
+  const lines: string[] = [];
+  let line = '';
+  for (const w of words) {
+    const next = line ? `${line} ${w}` : w;
+    if (ctx.measureText(next).width > BUBBLE_W - 24 && line) { lines.push(line); line = w; } else line = next;
+  }
+  if (line) lines.push(line);
+  const bh = lines.length * 19 + 16;
+  const bx = L.labelX - 30, by = L.top + L.rows * L.rowH + 26;
+  if (c.anchor) {
+    // A highlighted target and a pointer from the bubble to it.
+    const p = anchorPoint(L, c.anchor);
+    if (c.anchor.area === 'grid') {
+      ctx.strokeStyle = '#15803d';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(L.gridX + c.anchor.col * L.cellW - 1.5, L.top + c.anchor.row * L.rowH - 1.5, L.cellW + 2, L.rowH + 1);
+    }
+    const sx = Math.max(bx + 16, Math.min(bx + BUBBLE_W - 16, p.x));
+    ctx.strokeStyle = '#15803d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx, by);
+    if (c.anchor.area === 'side') ctx.bezierCurveTo(sx, by - 40, p.x + 60, p.y, p.x, p.y);
+    else ctx.lineTo(p.x, p.y + 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y + (c.anchor.area === 'side' ? 0 : 2), 3, 0, 2 * Math.PI);
+    ctx.fillStyle = '#15803d';
+    ctx.fill();
+  }
+  ctx.fillStyle = '#f0fdf4';
+  ctx.strokeStyle = '#15803d';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, BUBBLE_W, bh, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#14532d';
+  ctx.textAlign = 'left';
+  lines.forEach((l, i) => ctx.fillText(l, bx + 12, by + 17 + i * 19));
 }
 
 /** Row of the letter table for a token label (its id = its index in the table). */

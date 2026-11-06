@@ -203,13 +203,19 @@ test('the matrix tab shows the answer station by station and follows one number'
   // The answer asked at start: reading first, all input rows come in from the letter table.
   await expect(page.locator('[data-test=matrix-caption]')).toContainText(/Reading the animal, station 1 of 5: letters/, { timeout: 15_000 });
   await expect(page.locator('.mx-stations button')).toHaveCount(5);
+  // Comments: one per token flying in, Next goes comment by comment.
+  await expect(page.locator('[data-test=matrix-comments] li.on')).toContainText(/becomes \d+ tokens/);
   await page.click('[data-test=matrix-next]');
+  await expect(page.locator('[data-test=matrix-comments] li.on')).toContainText(/is token number \d+/);
+  await page.locator('.mx-stations [data-station=position]').click();
   await expect(page.locator('[data-test=matrix-caption]')).toContainText(/\+ position/);
+  await page.click('[data-test=matrix-next]');
+  await expect(page.locator('[data-test=matrix-comments] li.on')).toContainText(/number by number/);
   // The first writing pass: seven stations, ending with the guess.
   await page.locator('.mx-passes [data-pass="1"]').click();
   await expect(page.locator('.mx-stations button')).toHaveCount(7);
   await page.locator('.mx-stations [data-station=guess]').click();
-  await expect(page.locator('[data-test=matrix-caption]')).toContainText(/compared with every row of the letter table/);
+  await expect(page.locator('[data-test=matrix-comments] li.on')).toContainText(/compared with each of the \d+ rows of the letter table/);
   // Follow one number: click a square of the matrix.
   await expect(page.locator('[data-test=matrix-trail]')).toContainText(/click any square/);
   const box = (await page.locator('[data-test=matrix-canvas]').boundingBox())!;
