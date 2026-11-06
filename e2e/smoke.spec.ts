@@ -5,6 +5,18 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
 
+  // A start-up window introduces the app and each tab; Start closes it.
+  const intro = page.locator('[data-test=intro]');
+  await expect(intro).toBeVisible();
+  await expect(intro.locator('.intro-steps li')).toHaveCount(8);
+  await page.click('[data-test=intro-start]');
+  await expect(intro).toBeHidden();
+  // "About" opens it again; a tab name in it opens that tab.
+  await page.click('[data-test=about]');
+  await expect(intro).toBeVisible();
+  await page.click('[data-test=intro-data]');
+  await expect(intro).toBeHidden();
+
   // The story starts with the Learning data tab: everything it learns from.
   await expect(page.locator('[data-test=tab-data]')).toHaveClass(/on/);
   await expect(page.locator('[data-test=data-summary]')).toContainText(/Learning examples/, { timeout: 15_000 });
@@ -243,7 +255,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
 test('the matrix tab shows the answer station by station and follows one number', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.addInitScript(() => localStorage.setItem('wombatlm.uiLang', 'en'));
+  await page.addInitScript(() => { localStorage.setItem('wombatlm.uiLang', 'en'); localStorage.setItem('wombatlm.introHidden', '1'); });
   await page.goto('/');
   await page.click('[data-test=tab-matrix]');
   // The answer asked at start: reading first, all input rows come in from the letter table.

@@ -57,6 +57,7 @@ async function shoot(page: Page, when: string) {
 
 test('M3 panels at step 0 and after training', async ({ page }) => {
   test.setTimeout(STEPS * 60 + 120_000);
+  await page.addInitScript(() => { localStorage.setItem('wombatlm.uiLang', 'en'); localStorage.setItem('wombatlm.introHidden', '1'); });
   await page.goto('/');
   await page.click('[data-test=tab-learn]');
   await page.fill('input.seed', '1');
@@ -78,8 +79,8 @@ const NDIR = 'docs/screenshots/numbers';
 
 test('the numbers tab (expert only)', async ({ page }) => {
   test.setTimeout(120_000);
-  await page.addInitScript(() => localStorage.setItem('wombatlm.uiLang', 'en'));
   await page.setViewportSize({ width: 1400, height: 900 });
+  await page.addInitScript(() => { localStorage.setItem('wombatlm.uiLang', 'en'); localStorage.setItem('wombatlm.introHidden', '1'); });
   await page.goto('/');
   await page.click('[data-test=tab-learn]');
   await page.fill('input.seed', '1');
@@ -112,6 +113,7 @@ const LDIR = 'docs/screenshots/learn-vs-answer';
 
 test('learning vs answering', async ({ page }) => {
   test.setTimeout(180_000);
+  await page.addInitScript(() => { localStorage.setItem('wombatlm.uiLang', 'en'); localStorage.setItem('wombatlm.introHidden', '1'); });
   await page.goto('/');
   // The Learning data tab: everything it learns from (the app opens on it).
   await expect(page.locator('[data-test=data-summary]')).toContainText(/Learning examples/, { timeout: 15_000 });

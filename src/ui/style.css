@@ -739,3 +739,15 @@ main.matrix-main { padding: 14px 20px; }
 .dcell.sym { font-size: 17px; }
 .ucard.compact .umoments { margin-top: 2px; }
 .ucard.compact .uoffbox .ulabel { margin-top: 6px; }
+
+/* Start-up window: a short introduction and one line per tab (intro.ts). */
+dialog.intro { max-width: 640px; width: calc(100% - 40px); border: 1px solid var(--line); border-radius: 12px; padding: 20px 24px; color: var(--ink); background: var(--panel); box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25); }
+dialog.intro::backdrop { background: rgba(15, 23, 42, 0.45); }
+dialog.intro h2 { font-size: 20px; text-transform: none; letter-spacing: 0; color: var(--ink); margin-bottom: 10px; }
+dialog.intro p { line-height: 1.45; margin: 0 0 10px; }
+.intro-steps { margin: 0 0 12px; padding-left: 22px; }
+.intro-steps li { margin-bottom: 7px; line-height: 1.4; }
+.intro-steps .intro-tab { padding: 0; font-weight: 600; font-size: inherit; }
+.intro-steps .intro-expert { margin-left: 6px; font-size: 11px; padding: 0 6px; border-radius: 8px; background: #fef3c7; color: #92400e; }
+.intro-steps .intro-text { display: block; color: var(--muted); }
+.intro-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
