@@ -232,27 +232,37 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 
 /* Learning data tab: everything the model learns from */
 main.data-main { padding: 14px 20px; max-width: 1600px; }
-.data-summary { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; align-items: baseline; margin-bottom: 10px; font-size: 14px; color: var(--muted); }
-.data-summary .sum-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-.data-summary b { font-size: 17px; color: var(--ink); font-variant-numeric: tabular-nums; }
+/* Learning data: the counts, in an Insights block at the top right. */
+.data-insights { margin: 0 0 14px; background: var(--panel); }
+.data-insights b { font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.data-insights .insight-value { color: var(--muted); }
 .data-controls .picker { margin-bottom: 0; }
 .data-controls .data-search { width: 180px; }
 .data-legend { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 6px; }
 .data-legend .count { color: var(--muted); padding-left: 0; }
-.data-legend span, .data-table td.cell { padding: 2px 8px; border-radius: 4px; }
-.data-legend .learned, .data-table td.learned { background: #fffbeb; box-shadow: inset 0 0 0 1px #fde68a; color: var(--ink); }
-.data-legend .missing, .data-table td.missing { color: #cbd5e1; }
+.data-legend span, .data-table .w { padding: 1px 6px; border-radius: 4px; }
+.data-legend .learned, .data-table .w.learned { background: #fffbeb; box-shadow: inset 0 0 0 1px #fde68a; color: var(--ink); }
+.data-legend .missing, .data-table .w.missing { color: #cbd5e1; }
 .data-legend .kept { border: 1px dashed var(--muted); }
 /* The page scrolls (no inner scroll box); column headings stick to the top of the window. */
 .data-table table { border-collapse: separate; border-spacing: 4px 3px; font-size: 15px; }
 .data-table th { position: sticky; top: 0; background: var(--panel); text-align: left; color: var(--muted); font-weight: 500; font-size: 13px; padding: 2px 8px; }
-.data-table td.cell { cursor: pointer; white-space: nowrap; min-width: 90px; }
-.data-table td.missing, .data-table td.hidden { cursor: default; }
-.data-table td.name { font-weight: 600; }
-.data-table td.learned:hover { background: #fef3c7; }
-.data-table tr.kept td.cell:not(.missing) { color: var(--muted); }
-.data-table tr.kept td.kept:not(.hidden):hover { background: #f1f5f9; }
-.data-table .never { margin-left: 6px; font-size: 11px; font-weight: 500; padding: 0 5px; border: 1px dashed var(--muted); border-radius: 8px; color: var(--muted); }
+/* One row per animal: every language on its own line inside a cell. */
+.data-table table.animals-table { border-spacing: 0; font-size: 14px; }
+.data-table table.animals-table th { padding: 2px 6px; }
+.data-table table.animals-table td { vertical-align: top; padding: 5px 6px; border-top: 1px solid var(--line); }
+.data-table td.id code { font-size: 13px; }
+.data-table td.pack { color: var(--muted); white-space: nowrap; }
+.data-table .lang-line { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; line-height: 1.7; }
+.data-table .lang-code { width: 16px; font-size: 11px; color: var(--muted); text-transform: uppercase; }
+.data-table .w { cursor: pointer; }
+.data-table .w.missing, .data-table .w.hidden { cursor: default; }
+.data-table .w.name { font-weight: 600; }
+.data-table .w.learned:hover { background: #fef3c7; }
+.data-table tr.kept .w:not(.missing) { color: var(--muted); }
+.data-table tr.kept .w.kept:not(.hidden):hover { background: #f1f5f9; }
+.data-table td.unseen { color: #cbd5e1; }
+.data-table .never { font-size: 11px; font-weight: 500; padding: 0 5px; border: 1px dashed var(--muted); border-radius: 8px; color: var(--muted); white-space: nowrap; }
 
 /* Test tab (expert): every animal tested, scoreboard */
 main.test-main { padding: 14px 20px; max-width: 1240px; }
@@ -287,9 +297,8 @@ header .params { text-align: right; }
 .tok-warn { color: var(--wrong, #dc2626); font-size: 13px; margin: 2px 0 0; }
 
 /* Learning data: the table and one learning example as tokens. */
-.data-layout { display: grid; grid-template-columns: minmax(0, 1fr) 460px; gap: 14px; align-items: start; }
+.data-layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 14px; align-items: start; }
 .data-layout > .panel { margin-bottom: 0; }
-.example { position: sticky; top: 14px; }
 .example-question { font-size: 17px; margin: 0 0 10px; }
 .example-grid { border-collapse: separate; border-spacing: 4px 2px; margin: 10px 0 4px; }
 .example-grid th { text-align: left; font-weight: 500; padding: 4px 0 2px; }
@@ -306,7 +315,7 @@ header .params { text-align: right; }
 .example-grid td.arrow.hl { color: var(--accent); font-weight: 700; }
 .example-caption { min-height: 18px; margin: 0 0 6px; }
 .kept-note { border-left: 3px dashed var(--muted); padding-left: 8px; }
-.data-table td.cell.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.data-table .w.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* Quiet learning: the pictures wait while the model learns. */
 .quiet-toggle { gap: 6px; }
@@ -371,7 +380,10 @@ header .params { text-align: right; }
 .data-controls .picker[hidden] { display: none; }
 
 /* The example panel stays in view while the data scrolls. */
-.data-layout > .example { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow-y: auto; }
+.data-side { align-self: stretch; }
+.data-side > .example { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow-y: auto; margin-bottom: 0; }
+/* Ask tab: the Insights block above "Where it looks" on the right. */
+.ask-side > .insights { padding: 12px 14px; background: var(--panel); border-radius: 10px; }
 
 /* Inside the model: "where is it learning?" */
 .legend .shared { margin-left: 18px; color: var(--ink); }

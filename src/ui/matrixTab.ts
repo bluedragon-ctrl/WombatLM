@@ -29,6 +29,11 @@ const STATION_MS = 1800;
 const READ_MS_PER_CHAR = 55;
 const READ_MS_MIN = 2200;
 const SPEEDS = [0.5, 1, 2];
+/**
+ * Play runs this many times faster than going comment by comment: it is for
+ * a quick look; to read every detail, use Next.
+ */
+const PLAY_PACE = 2;
 
 export class MatrixTab {
   readonly el: HTMLElement;
@@ -213,7 +218,7 @@ export class MatrixTab {
   private animate(): void {
     cancelAnimationFrame(this.raf);
     const from = this.time, to = this.target();
-    const ms = Math.max(1, (to - from) * STATION_MS / this.speed);
+    const ms = Math.max(1, (to - from) * STATION_MS / this.pace());
     const start = performance.now();
     const frame = (now: number) => {
       const k = Math.min(1, (now - start) / ms);
@@ -247,7 +252,12 @@ export class MatrixTab {
       if (this.atEnd()) { this.stop(); return; }
       this.stepNext();
       this.schedule();
-    }, Math.max(move, read * 0.7) / this.speed + 0.3 * read / this.speed);
+    }, (Math.max(move, read * 0.7) + 0.3 * read) / this.pace());
+  }
+
+  /** How fast it moves now: the chosen speed, faster while playing. */
+  private pace(): number {
+    return this.speed * (this.playing ? PLAY_PACE : 1);
   }
 
   private stop(): void {

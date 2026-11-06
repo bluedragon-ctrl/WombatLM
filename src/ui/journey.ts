@@ -62,12 +62,14 @@ export class JourneyView {
 
   setExpert(on: boolean): void {
     this.expert = on;
+    this.el.hidden = !this.a || !on;
     this.render();
   }
 
+  /** Shown only in expert mode, once there is an answer to follow. */
   setAnswer(a: AnswerMsg | undefined): void {
     this.a = a;
-    this.el.hidden = !a;
+    this.el.hidden = !a || !this.expert;
     const key = a ? `${a.text}|${a.lang}|${a.form}` : '';
     if (key !== this.key) { this.key = key; this.stage = 0; }
     this.stage = Math.min(this.stage, this.last());
