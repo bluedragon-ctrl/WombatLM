@@ -16,6 +16,7 @@
 import { EOS } from '../nn/vocab';
 import type { AnswerMsg, ExplainLens, ExplainMsg, ExplainStage, UnitsMsg } from '../train/protocol';
 import { unitCard } from './unitCard';
+import { detectorBoard } from './detectorBoard';
 import { pctText } from './format';
 import { sequential, symmetricScale } from '../viz/colors';
 import { drawStrip, stripCellAt, stripLayout, topIndices } from '../viz/vectorStrip';
@@ -66,6 +67,8 @@ export class ExplainView {
   private picked = false;
   /** What each thinking unit has learned (for the Think stage). */
   private units?: UnitsMsg;
+  /** The detector clicked on the Think stage's board (its card is shown first). */
+  private pickedUnit: number | null = null;
 
   constructor(
     private request: (q: Question, position: number) => void,
@@ -145,7 +148,7 @@ export class ExplainView {
   onExplain(msg: ExplainMsg): void {
     const same = this.msg && this.msg.position === msg.position && this.msg.text === msg.text && this.msg.form === msg.form && this.msg.lang === msg.lang;
     this.msg = msg;
-    if (!same) this.pick = null;
+    if (!same) { this.pick = null; this.pickedUnit = null; }
     this.render();
   }
 
@@ -201,7 +204,7 @@ export class ExplainView {
       const strips: HTMLElement[] = [];
       if (s.kind === 'attend') strips.push(ex ? this.attention(s, kind === 'self' ? m.decIn : m.input) : this.attentionPlain(s, kind === 'self' ? m.decIn : m.input));
       else if (ex) strips.push(this.strip(s.name, 'hidden', t('explain.strip.units', { on: unitsOn(s), n: s.sources }), s.hidden, symmetricScale(s.hidden)));
-      else strips.push(h('p', { class: 'small xunits' }, t('explain.unitsOn', { on: unitsOn(s), n: s.sources })));
+      else if (!this.units) strips.push(h('p', { class: 'small xunits' }, t('explain.unitsOn', { on: unitsOn(s), n: s.sources })));
       if (s.kind === 'think') strips.push(this.strongUnits(s));
       if (ex) {
         strips.push(
@@ -269,13 +272,22 @@ export class ExplainView {
     const on = Array.from(s.hidden, (v, k) => ({ v, k, drop: m.unitsOff ? withP - m.unitsOff[k] : 0 })).filter((x) => x.v > 0.05);
     const needed = on.filter((x) => x.drop >= NEEDED).sort((a, b) => b.drop - a.drop);
     const team = needed.length === 0;
-    const strongest = (team ? on.sort((a, b) => b.v - a.v) : needed).slice(0, STRONG_UNITS);
+    const strongest = (team ? on.sort((a, b) => b.v - a.v) : needed).slice(0, STRONG_UNITS).map((x) => x.k);
     const tok = shortLabel(m.chosen);
+    const picked = this.pickedUnit;
+    const cards = picked === null ? strongest : [picked, ...strongest.filter((k) => k !== picked)].slice(0, STRONG_UNITS);
+    const board = detectorBoard(u.units, {
+      now: s.hidden, needed: new Set(needed.slice(0, STRONG_UNITS).map((x) => x.k)), selected: picked, langName: this.langName,
+      onPick: (k) => { this.pickedUnit = this.pickedUnit === k ? null : k; this.render(); },
+    });
     return h('div', { class: 'xunitcards', 'data-test': 'explain-units' },
-      h('p', { class: 'small' }, team ? t('explain.ffn.unitsTeam', { tok }) : t('explain.ffn.unitsNeeded', { tok })),
-      h('div', { class: 'ucards' }, ...strongest.map((x) => unitCard(u.units[x.k], this.langName, {
-        now: x.v, expert: this.expert,
-        nowOff: this.msg?.unitsOff ? { letter: this.msg.chosen, withP: this.msg.lens.at(-1)?.chosen ?? 0, withoutP: this.msg.unitsOff[x.k] } : undefined,
+      h('p', { class: 'small' }, t('explain.unitsOn', { on: on.length, n: s.sources })),
+      board,
+      h('p', { class: 'small muted dboard-key' }, t(team ? 'explain.ffn.boardKeyTeam' : 'explain.ffn.boardKey', { tok })),
+      h('p', { class: 'small' }, picked !== null ? t('explain.ffn.unitPicked', { n: picked + 1 }) : team ? t('explain.ffn.unitsTeam', { tok }) : t('explain.ffn.unitsNeeded', { tok })),
+      h('div', { class: 'ucards' }, ...cards.map((k) => unitCard(u.units[k], this.langName, {
+        now: s.hidden[k], expert: this.expert, picked: k === picked,
+        nowOff: m.unitsOff ? { letter: m.chosen, withP, withoutP: m.unitsOff[k] } : undefined,
       }))));
   }
 
