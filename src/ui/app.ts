@@ -120,15 +120,29 @@ function letterSpan(l: { char: string; p: number }): HTMLElement {
   }, l.char === '' ? '⏎' : l.char === ' ' ? '␣' : l.char);
 }
 
-/** A line's mistake: the number and a short bar. */
 /** Letters seen fewer times than this in the learning data get a "rare" note on the letter map. */
 const RARE_LETTER = 30;
 
+/** A chance as a percent: one decimal near 0 % and near 100 %, else whole. */
+function surePct(p: number): string {
+  const v = p * 100;
+  if (v < 0.05) return '< 0.1';
+  const digits = v < 1 || (v > 99 && v < 99.95) ? 1 : 0;
+  return v.toLocaleString(uiLang(), { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+/**
+ * A line's mistake: the number, a short bar and, below, how sure the model was
+ * of the right answer: e^(−mistake), the average (geometric mean) of the
+ * chances it gave each right letter. It always agrees with the mistake.
+ */
 function lossBar(loss: number): HTMLElement {
   const w = Math.round(Math.min(1, loss / LOSS_FULL) * 100);
-  return h('span', { class: 'loss-val', title: t('practice.lossTip') },
-    h('span', { class: 'num' }, loss.toFixed(2)),
-    h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${w}%` })));
+  return h('span', { class: 'loss-cell', title: t('practice.lossTip') },
+    h('span', { class: 'loss-val' },
+      h('span', { class: 'num' }, loss.toFixed(2)),
+      h('span', { class: 'track' }, h('span', { class: 'fill', style: `width:${w}%` }))),
+    h('span', { class: 'sure', 'data-test': 'sure' }, t('practice.sure', { p: surePct(Math.exp(-loss)) })));
 }
 
 /**
