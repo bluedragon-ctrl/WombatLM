@@ -12,7 +12,8 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 1240px; }
 header { display: flex; align-items: baseline; gap: 16px; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
-header h1 { margin: 0; font-size: 22px; }
+header h1 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 8px; align-self: center; }
+header h1 .logo { width: 36px; height: 36px; }
 header .sub { color: var(--muted); }
 header .params { margin-left: auto; color: var(--muted); font-size: 13px; }
 h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
@@ -743,7 +744,7 @@ main.matrix-main { padding: 14px 20px; }
 /* Start-up window: a short introduction and one line per tab (intro.ts). */
 dialog.intro { max-width: 640px; width: calc(100% - 40px); border: 1px solid var(--line); border-radius: 12px; padding: 20px 24px; color: var(--ink); background: var(--panel); box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25); }
 dialog.intro::backdrop { background: rgba(15, 23, 42, 0.45); }
-dialog.intro h2 { font-size: 20px; text-transform: none; letter-spacing: 0; color: var(--ink); margin-bottom: 10px; }
+dialog.intro h2 { display: flex; align-items: center; gap: 10px; font-size: 20px; text-transform: none; letter-spacing: 0; color: var(--ink); margin-bottom: 10px; }
 dialog.intro p { line-height: 1.45; margin: 0 0 10px; }
 .intro-steps { margin: 0 0 12px; padding-left: 22px; }
 .intro-steps li { margin-bottom: 7px; line-height: 1.4; }
@@ -751,3 +752,4 @@ dialog.intro p { line-height: 1.45; margin: 0 0 10px; }
 .intro-steps .intro-expert { margin-left: 6px; font-size: 11px; padding: 0 6px; border-radius: 8px; background: #fef3c7; color: #92400e; }
 .intro-steps .intro-text { display: block; color: var(--muted); }
 .intro-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+dialog.intro h2 .logo { width: 48px; height: 48px; }
