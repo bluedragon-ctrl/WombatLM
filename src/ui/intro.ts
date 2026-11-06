@@ -45,7 +45,7 @@ export class IntroDialog {
         h('span', { class: 'intro-text' }, t(`intro.${tab}`)));
     }));
     this.el = h('dialog', { class: 'intro', 'data-test': 'intro', 'aria-labelledby': 'intro-title' },
-      h('h2', { id: 'intro-title' }, t('intro.title')),
+      h('h2', { id: 'intro-title' }, h('img', { class: 'logo', src: `${import.meta.env.BASE_URL}wombat.svg`, alt: '' }), t('intro.title')),
       h('p', {}, t('intro.text')),
       h('p', {}, t('intro.stepsLead')),
       steps,

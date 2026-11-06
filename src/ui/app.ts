@@ -893,7 +893,7 @@ export class App {
           h('div', { class: 'chart' }, scoreCanvas), scoreTable)));
 
     this.root.replaceChildren(
-      h('header', {}, h('h1', {}, t('title')), h('span', { class: 'sub' }, t('subtitle')), tabs, params,
+      h('header', {}, h('h1', {}, h('img', { class: 'logo', src: `${import.meta.env.BASE_URL}wombat.svg`, alt: '', 'data-test': 'logo' }), t('title')), h('span', { class: 'sub' }, t('subtitle')), tabs, params,
         h('label', { class: 'small expert-toggle' }, expertBox, ' ', t('expert')), about, uiSwitch),
       error,
       dataMain,
