@@ -686,7 +686,7 @@ export class App {
     const tokenNumbers = h('input', { type: 'checkbox', 'data-test': 'token-numbers' });
     tokenNumbers.onchange = () => { this.tokenNumbers = tokenNumbers.checked; this.invalidate('answer'); };
     const tokenNote = h('p', { class: 'small' });
-    const tokensPanel = h('div', { class: 'tokens-panel' },
+    const tokensPanel = h('section', { class: 'panel tokens-panel' },
       h('div', { class: 'row guess-head' }, h('h2', {}, t('tokens.title')), help(t('tokens.help'))),
       tokenRows,
       h('div', { class: 'row small' }, h('label', {}, tokenNumbers, ' ', t('tokens.numbers'))),
@@ -711,12 +711,13 @@ export class App {
       this.inside.scrollToExplain();
     };
     const barsWrap = h('div', { class: 'bars-wrap' }, bars);
-    // Everything about one answer: hidden until there is an answer to the question on screen.
-    const results = h('div', { class: 'ask-results' },
-      tokensPanel,
+    // Guesses by letter, in its own block under the tokens: hidden until there is an answer.
+    const guessPanel = h('section', { class: 'panel guess-panel' },
       h('div', { class: 'row guess-head' }, h('h2', {}, t('guessBars'))),
       barsWrap,
       h('p', { class: 'small', 'data-test': 'bars-hint' }, t('ask.lookInside')));
+    // Everything about one answer (tokens, guesses): hidden until there is an answer on screen.
+    const results = [tokensPanel, guessPanel];
     const slowCaption = h('div', { class: 'slow-caption', 'data-test': 'slow-caption', 'aria-live': 'polite' });
     const learning = h('div', { class: 'learning off', 'data-test': 'learning' });
     const makeCycle = (test: string) => {
@@ -818,16 +819,17 @@ export class App {
         askForm,
         slowCaption,
         prompt,
-        output,
-        results),
-      // Right side: the Insights block above "Where it looks".
-      h('aside', { class: 'ask-side' },
-        insights,
-        h('section', { class: 'panel attention' },
-          h('h2', {}, t('att.title')),
-          h('p', { class: 'small' }, t('att.help')),
-          attPrompt,
-          attention)),
+        output),
+      // Row 1: asking and Insights. Row 2: tokens, and "Where it looks" (going on
+      // down beside row 3). Row 3: guesses by letter.
+      insights,
+      tokensPanel,
+      h('section', { class: 'panel attention' },
+        h('h2', {}, t('att.title')),
+        h('p', { class: 'small' }, t('att.help')),
+        attPrompt,
+        attention),
+      guessPanel,
       this.journey.el);
     const matrixMain = h('main', { class: 'matrix-main', hidden: this.tab !== 'matrix' }, this.matrix.el);
     const insideMain = h('main', { class: 'inside-main', hidden: this.tab !== 'inside' }, this.inside.el);
@@ -988,7 +990,7 @@ export class App {
     const waiting = !a && ((this.askInFlight && this.sentId === this.askId) || this.askDirty);
     this.els.prompt.hidden = !!a;
     this.els.prompt.textContent = waiting ? t('ask.thinking') : t('ask.prompt');
-    this.els.results.hidden = !a;
+    for (const el of this.els.results) el.hidden = !a;
     this.els.attPrompt.hidden = !!a;
     this.els.attention.hidden = !a;
     if (!a || !this.ready) {
