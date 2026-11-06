@@ -274,6 +274,10 @@ main.test-main { padding: 14px 20px; max-width: 1240px; }
 /* Five tabs in the header: keep each name on one line; the subtitle and the parameter count give way. */
 .tabs { flex-shrink: 0; }
 .tabs button { white-space: nowrap; }
+/* Eight tabs: they get a row of their own under the title, so the subtitle
+   is never squeezed; on a narrow window the tabs wrap. */
+header { flex-wrap: wrap; row-gap: 6px; padding-bottom: 0; }
+header .tabs { order: 1; flex: 1 1 100%; flex-wrap: wrap; margin-left: -10px; }
 header .sub, header .params { min-width: 0; }
 header .params { text-align: right; }
 

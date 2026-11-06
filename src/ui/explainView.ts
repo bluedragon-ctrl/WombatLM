@@ -1,5 +1,5 @@
 /**
- * "How the model picks one letter" (Inside the model tab), for one letter of
+ * "How the model picks one letter" ("How it picks a letter" tab), for one letter of
  * the answer, stage by stage.
  *
  * Plain mode tells it without rows of numbers: after each stage, which letter

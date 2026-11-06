@@ -32,9 +32,11 @@ async function shoot(page: Page, when: string) {
   await page.click('[data-test=tab-learn]');
   await page.waitForTimeout(1200); // letter map glides into place
   await page.locator('.panel.map').screenshot({ path: `${DIR}/${when}-letter-map.png` });
-  await page.click('[data-test=tab-inside]');
+  await page.click('[data-test=tab-scan]');
   await page.waitForTimeout(800);
   await page.locator('[data-test=scan]').screenshot({ path: `${DIR}/${when}-inside-scan.png` });
+  await page.click('[data-test=tab-letter]');
+  await page.waitForTimeout(800);
   await page.locator('[data-test=explain]').screenshot({ path: `${DIR}/${when}-inside-explain.png` });
   // The heatmaps are on the expert-only "The numbers" tab.
   const expert = page.locator('[data-test=expert]');

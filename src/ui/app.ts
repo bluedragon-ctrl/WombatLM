@@ -1,16 +1,18 @@
 /**
- * The app: six tabs, in the order of the story.
+ * The app: seven tabs, in the order of the story.
  * - Learning data: everything the model learns from (see dataTab.ts).
  * - Model learning: everything that changes the model: Play / Step / speed /
  *   seed, the learning badge, the one-step cycle, the latest batch (learning
  *   data and what it answered before learning from it), the loss chart and
  *   the letter map.
+ * - Where it learns: the brain scan of all the model's numbers (see inside.ts).
  * - Ask the model: everything that only reads the model: the question box
  *   with form and language pickers, the answer with its Insights block (the word, kind of
  *   answer, real answer, how sure, which model), guess bars, attention grids.
  * - The matrix: the answer as the matrix of numbers it is inside the model,
  *   station by station (see matrixTab.ts).
- * - Inside the model: the brain scan, one letter in detail, the detectors (see inside.ts).
+ * - How it picks a letter: one letter of the answer in detail, and the
+ *   detectors (see letterTab.ts).
  * - Test: every animal tested, scoreboard. The model is tested only while
  *   this tab is open (or on request).
  * - The numbers (expert only): the real numbers behind the other tabs:
@@ -33,15 +35,16 @@ import { drawLineChart } from '../viz/lineChart';
 import { parentWidth, prepare } from '../viz/canvas';
 import { setUiLang, t, uiLang, UI_LANGUAGES } from './i18n';
 import { h } from './dom';
-import { InsideTab } from './inside';
+import { ScanTab } from './inside';
+import { LetterTab } from './letterTab';
 import { NumbersTab } from './numbersTab';
 import { DataTab } from './dataTab';
 import { shortLabel, tokenChip, tokenIndex, tokenName, toTok } from './tokens';
 import { EOS, Vocab } from '../nn/vocab';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
-type Tab = 'data' | 'learn' | 'ask' | 'matrix' | 'inside' | 'test' | 'numbers';
-const TABS: Tab[] = ['data', 'learn', 'ask', 'matrix', 'inside', 'test', 'numbers'];
+type Tab = 'data' | 'learn' | 'scan' | 'ask' | 'matrix' | 'letter' | 'test' | 'numbers';
+const TABS: Tab[] = ['data', 'learn', 'scan', 'ask', 'matrix', 'letter', 'test', 'numbers'];
 /** Tabs shown only in expert mode. */
 const EXPERT_TABS: Tab[] = ['numbers'];
 /** Look-inside requests: at most one in flight, at most this often. */
@@ -199,7 +202,10 @@ export class App {
   private hoverStep: number | null = null;
   private attGrids: AttGrid[] = [];
   private attKeys = '';
-  private inside: InsideTab;
+  /** Where it learns: the brain scan. */
+  private inside: ScanTab;
+  /** How it picks a letter: one letter in detail, and the detectors. */
+  private letter: LetterTab;
   /** The real numbers (expert only). */
   private numbers: NumbersTab;
   private dataTab: DataTab;
@@ -226,20 +232,19 @@ export class App {
     this.worker = new Worker(new URL('../train/worker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => this.onMessage(e.data);
     this.worker.onerror = (e) => this.showError(e.message);
-    this.inside = new InsideTab(() => this.requestInspect(true), (q, position) => {
+    this.inside = new ScanTab(() => this.requestInspect(true));
+    this.letter = new LetterTab((q, position) => {
       this.send({ type: 'explain', id: ++this.explainId, ...q, position });
     });
     this.dataTab = new DataTab((text, lang, form) => this.askOnAskTab({ text, lang, form }));
     this.stepView = new StepView((name, index) => this.send({ type: 'why', id: ++this.whyId, name, index }), (c) => this.langName(c));
     this.journey = new JourneyView((c) => this.langName(c), (position) => {
-      this.inside.explainAt(position);
-      this.setTab('inside');
-      this.inside.scrollToExplain();
+      this.lookAtLetter(position);
     });
     this.matrix = new MatrixTab((c) => this.langName(c), () => this.setTab('ask'));
-    this.inside.requestUnits = () => this.send({ type: 'units', id: ++this.unitsId });
+    this.letter.requestUnits = () => this.send({ type: 'units', id: ++this.unitsId });
     this.numbers = new NumbersTab(() => this.requestInspect(true), this.stepView);
-    this.inside.onMarks = (marks) => this.numbers.setMarks(marks);
+    this.letter.onMarks = (marks) => this.numbers.setMarks(marks);
     // Expert: a part of the brain scan opens its heatmaps on "The numbers".
     this.inside.onOpenPart = (selector) => {
       if (!this.expert) return;
@@ -285,6 +290,7 @@ export class App {
         this.els.seed.value = String(msg.seed);
         this.letterMap.reset();
         this.inside.setReady(msg);
+        this.letter.setReady(msg);
         this.numbers.setReady(msg);
         this.dataTab.setReady(msg);
         this.stepView.setReady(msg);
@@ -311,6 +317,7 @@ export class App {
         if (this.losses.length > 40000) this.losses = this.losses.filter((_, i) => i % 2 === 0);
         if (msg.practice) this.onPractice(msg.practice, msg);
         this.stepView.setStep(msg.step, msg.running, this.practice);
+        if (this.tab === 'letter') this.letter.onStep(msg.step);
         this.numbers.canWhy = this.stepView.current();
         if (this.tab === 'numbers') this.numbers.setTick(msg);
         {
@@ -340,11 +347,11 @@ export class App {
           this.answer = msg;
           if (this.slowWanted) { this.slowWanted = false; this.startSlow(msg); }
           this.invalidate('answer', 'stamp');
-          this.inside.setAnswer(msg);
+          this.letter.setAnswer(msg);
           this.numbers.setAnswer(msg);
           this.journey.setAnswer(msg);
           this.matrix.setAnswer(msg);
-          if (this.tab === 'inside') this.inside.shown();
+          if (this.tab === 'letter') this.letter.shown();
         }
         if (this.askDirty) this.ask();
         break;
@@ -354,10 +361,10 @@ export class App {
         this.numbers.onWeights(msg);
         break;
       case 'explain':
-        if (msg.id === this.explainId) this.inside.onExplain(msg);
+        if (msg.id === this.explainId) this.letter.onExplain(msg);
         break;
       case 'units':
-        if (msg.id === this.unitsId) this.inside.onUnits(msg);
+        if (msg.id === this.unitsId) this.letter.onUnits(msg);
         break;
       case 'letterMap':
         this.inspectDone(msg.id);
@@ -509,8 +516,8 @@ export class App {
     }
     this.inspectDirty = false;
     this.lastInspect = performance.now();
-    if (this.tab !== 'learn' && this.tab !== 'inside' && this.tab !== 'numbers') return; // nothing inside the model to show there
-    const view = this.tab === 'inside' ? this.inside : this.tab === 'numbers' ? this.numbers : null;
+    if (this.tab !== 'learn' && this.tab !== 'scan' && this.tab !== 'numbers') return; // nothing inside the model to show there
+    const view = this.tab === 'scan' ? this.inside : this.tab === 'numbers' ? this.numbers : null;
     const matrixIds = view ? view.wanted() : [];
     if (view && !matrixIds.length) return;
     this.inspectPending = ++this.inspectId;
@@ -549,8 +556,15 @@ export class App {
       ...(count >= 0 && count < RARE_LETTER ? [h('p', { class: 'map-rare', 'data-test': 'map-rare' }, t('map.rare', { letter: sel.point.label, n: count }))] : []));
   }
 
+  /** Look inside letter `position` of the answer, on the "How it picks a letter" tab. */
+  private lookAtLetter(position: number): void {
+    this.letter.explainAt(position);
+    this.setTab('letter');
+    this.letter.scrollToExplain();
+  }
+
   private setTab(tab: Tab): void {
-    if (EXPERT_TABS.includes(tab) && !this.expert) tab = 'inside';
+    if (EXPERT_TABS.includes(tab) && !this.expert) tab = 'scan';
     this.tab = tab;
     for (const b of this.els.tabs.querySelectorAll('button')) {
       b.classList.toggle('on', b.dataset.tab === tab);
@@ -560,7 +574,8 @@ export class App {
     this.els.learnMain.hidden = tab !== 'learn';
     this.els.askMain.hidden = tab !== 'ask';
     this.els.matrixMain.hidden = tab !== 'matrix';
-    this.els.insideMain.hidden = tab !== 'inside';
+    this.els.insideMain.hidden = tab !== 'scan';
+    this.els.letterMain.hidden = tab !== 'letter';
     this.matrix.setVisible(tab === 'matrix');
     this.els.testMain.hidden = tab !== 'test';
     this.els.numbersMain.hidden = tab !== 'numbers';
@@ -570,7 +585,7 @@ export class App {
     if (tab === 'test') this.invalidate('scores', 'animals');
     if (tab === 'learn') { this.invalidate('practice', 'loss'); this.letterMap.draw(); }
     if (tab === 'ask') this.invalidate('answer', 'stamp');
-    if (tab === 'inside') this.inside.shown();
+    if (tab === 'letter') this.letter.shown();
     this.requestInspect(true);
   }
 
@@ -621,8 +636,9 @@ export class App {
         if (EXPERT_TABS.includes(b.dataset.tab as Tab)) b.hidden = !this.expert;
       }
       // Leaving expert mode on an expert tab: go to the nearest plain one.
-      if (!this.expert && EXPERT_TABS.includes(this.tab)) this.setTab('inside');
+      if (!this.expert && EXPERT_TABS.includes(this.tab)) this.setTab('scan');
       this.inside.setExpert(this.expert);
+      this.letter.setExpert(this.expert);
       this.dataTab.setExpert(this.expert);
       this.journey.setExpert(this.expert);
       this.matrix.setExpert(this.expert);
@@ -706,9 +722,7 @@ export class App {
       const steps = this.shown()?.steps ?? [];
       const col = guessColumnAt(e.offsetX, steps.length);
       if (col === null || this.slow) return;
-      this.inside.explainAt(col);
-      this.setTab('inside');
-      this.inside.scrollToExplain();
+      this.lookAtLetter(col);
     };
     const barsWrap = h('div', { class: 'bars-wrap' }, bars);
     // Guesses by letter, in its own block under the tokens: hidden until there is an answer.
@@ -726,7 +740,7 @@ export class App {
         h('span', { class: 'what' }),
         h('span', { class: 'val' })));
       const seeChange = h('button', { class: 'link see-change' }, t('cycle.seeChange'));
-      seeChange.onclick = () => { this.inside.setMode('delta'); this.setTab('inside'); };
+      seeChange.onclick = () => { this.inside.setMode('delta'); this.setTab('scan'); };
       stages[3].append(seeChange);
       return { el: h('ol', { class: 'cycle', 'data-test': test, 'aria-label': t('cycle.title') }, ...stages), stages, note: h('p', { class: 'small cycle-note' }) };
     };
@@ -832,7 +846,8 @@ export class App {
       guessPanel,
       this.journey.el);
     const matrixMain = h('main', { class: 'matrix-main', hidden: this.tab !== 'matrix' }, this.matrix.el);
-    const insideMain = h('main', { class: 'inside-main', hidden: this.tab !== 'inside' }, this.inside.el);
+    const insideMain = h('main', { class: 'inside-main', hidden: this.tab !== 'scan' }, this.inside.el);
+    const letterMain = h('main', { class: 'inside-main', hidden: this.tab !== 'letter' }, this.letter.el);
     const dataMain = h('main', { class: 'data-main', hidden: this.tab !== 'data' }, this.dataTab.el);
     const numbersMain = h('main', { class: 'inside-main numbers-main', hidden: this.tab !== 'numbers' }, this.numbers.el);
     const testMain = h('main', { class: 'test-main', hidden: this.tab !== 'test' },
@@ -854,12 +869,13 @@ export class App {
       askMain,
       matrixMain,
       insideMain,
+      letterMain,
       testMain,
       numbersMain,
     );
     return {
       play, speed, seed, status, goalBar, goalNote, askStatusText, input, langPick, formPick, hint, output, bars, barsWrap, tokenRows, tokenNote, attention, mapCanvas, mapNote, mapPick, tabs,
-      dataMain, learnMain, askMain, matrixMain, insideMain, testMain, numbersMain, testLangPick, testWhen,
+      dataMain, learnMain, askMain, matrixMain, insideMain, letterMain, testMain, numbersMain, testLangPick, testWhen,
       stamp, stampText, askAgain, insights, insightRows, wordRow, slowBtn, answerNowBtn, slowCaption, prompt, results, attPrompt, practiceList, practiceHelp,
       playButtons: [play], learnings: [learning], cycles: [cycleA],
       lossCanvas, scoreCanvas, scoreTable, filters, animals, params, error,
@@ -905,9 +921,9 @@ export class App {
     this.askDirty = false;
     if (answer) this.ask();
     else if (this.answer) {
-      // The answer on screen was for another question: take it away (on the Inside tab too).
+      // The answer on screen was for another question: take it away (on the letter tab too).
       this.answer = undefined;
-      this.inside.setAnswer(undefined);
+      this.letter.setAnswer(undefined);
       this.journey.setAnswer(undefined);
       this.matrix.setAnswer(undefined);
     }
