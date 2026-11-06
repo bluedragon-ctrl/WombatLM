@@ -191,6 +191,7 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 .cycle .stage.current { border-width: 2px; padding: 3px 5px; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25); }
 .cycle .see-change { display: none; font-size: 12px; padding: 0; }
 .cycle .stage.lit .see-change { display: inline; }
+.cycle .stage.lit .see-change[hidden] { display: none; }
 .cycle-note { margin: 4px 0 6px; }
 
 /* Answer: which model answered */

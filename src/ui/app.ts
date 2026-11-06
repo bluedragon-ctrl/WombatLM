@@ -1,21 +1,21 @@
 /**
- * The app: seven tabs, in the order of the story.
+ * The app: eight tabs, in the order of the story (two of them expert only).
  * - Learning data: everything the model learns from (see dataTab.ts).
- * - Model learning: everything that changes the model: Play / Step / speed /
+ * - Learn: everything that changes the model: Play / Step / speed /
  *   seed, the learning badge, the one-step cycle, the latest batch (learning
  *   data and what it answered before learning from it), the loss chart and
  *   the letter map.
- * - Where it learns: the brain scan of all the model's numbers (see inside.ts).
- * - Ask the model: everything that only reads the model: the question box
+ * - Ask: everything that only reads the model: the question box
  *   with form and language pickers, the answer with its Insights block (the word, kind of
  *   answer, real answer, how sure, which model), guess bars, attention grids.
- * - The matrix: the answer as the matrix of numbers it is inside the model,
- *   station by station (see matrixTab.ts).
- * - How it picks a letter: one letter of the answer in detail, and the
- *   detectors (see letterTab.ts).
  * - Test: every animal tested, scoreboard. The model is tested only while
  *   this tab is open (or on request).
- * - The numbers (expert only): the real numbers behind the other tabs:
+ * - Letter selection: one letter of the answer in detail, and the
+ *   detectors (see letterTab.ts).
+ * - Where it learns (expert only): the brain scan of all the model's numbers (see inside.ts).
+ * - The matrix: the answer as the matrix of numbers it is inside the model,
+ *   station by station (see matrixTab.ts).
+ * - Numbers (expert only): the real numbers behind the other tabs:
  *   sizes, every weight matrix, gradients, the hidden numbers of an answer
  *   and the full calculation of one learning step (see numbersTab.ts).
  *
@@ -44,9 +44,9 @@ import { EOS, Vocab } from '../nn/vocab';
 
 type Filter = 'all' | 'known' | 'unseen' | 'wrong';
 type Tab = 'data' | 'learn' | 'scan' | 'ask' | 'matrix' | 'letter' | 'test' | 'numbers';
-const TABS: Tab[] = ['data', 'learn', 'scan', 'ask', 'matrix', 'letter', 'test', 'numbers'];
+const TABS: Tab[] = ['data', 'learn', 'ask', 'test', 'letter', 'scan', 'matrix', 'numbers'];
 /** Tabs shown only in expert mode. */
-const EXPERT_TABS: Tab[] = ['numbers'];
+const EXPERT_TABS: Tab[] = ['scan', 'numbers'];
 /** Look-inside requests: at most one in flight, at most this often. */
 const INSPECT_MS = 250;
 /** "Write it slowly": time per letter, and the "reading the animal" pause before the first one. */
@@ -564,7 +564,7 @@ export class App {
   }
 
   private setTab(tab: Tab): void {
-    if (EXPERT_TABS.includes(tab) && !this.expert) tab = 'scan';
+    if (EXPERT_TABS.includes(tab) && !this.expert) tab = 'learn';
     this.tab = tab;
     for (const b of this.els.tabs.querySelectorAll('button')) {
       b.classList.toggle('on', b.dataset.tab === tab);
@@ -632,11 +632,12 @@ export class App {
       this.expert = expertBox.checked;
       expertPanel.hidden = !this.expert;
       stepLink.hidden = !this.expert;
+      for (const b of learnMain.querySelectorAll<HTMLElement>('.see-change')) b.hidden = !this.expert;
       for (const b of this.els.tabs.querySelectorAll<HTMLElement>('button')) {
         if (EXPERT_TABS.includes(b.dataset.tab as Tab)) b.hidden = !this.expert;
       }
       // Leaving expert mode on an expert tab: go to the nearest plain one.
-      if (!this.expert && EXPERT_TABS.includes(this.tab)) this.setTab('scan');
+      if (!this.expert && EXPERT_TABS.includes(this.tab)) this.setTab('learn');
       this.inside.setExpert(this.expert);
       this.letter.setExpert(this.expert);
       this.dataTab.setExpert(this.expert);
@@ -739,7 +740,8 @@ export class App {
         h('span', { class: 'num' }, String(i + 1)),
         h('span', { class: 'what' }),
         h('span', { class: 'val' })));
-      const seeChange = h('button', { class: 'link see-change' }, t('cycle.seeChange'));
+      // Expert only: the scan ("Where it learns") is an expert tab.
+      const seeChange = h('button', { class: 'link see-change', hidden: !this.expert }, t('cycle.seeChange'));
       seeChange.onclick = () => { this.inside.setMode('delta'); this.setTab('scan'); };
       stages[3].append(seeChange);
       return { el: h('ol', { class: 'cycle', 'data-test': test, 'aria-label': t('cycle.title') }, ...stages), stages, note: h('p', { class: 'small cycle-note' }) };

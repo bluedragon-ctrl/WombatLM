@@ -28,7 +28,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await guess.nth(1).hover();
   await expect(page.locator('[data-test=example-caption]')).toContainText(/must guess/);
 
-  // Model learning: nothing is practised before a step.
+  // Learn: nothing is practised before a step.
   await page.click('[data-test=tab-learn]');
   await expect(page.locator('[data-test=learning]')).toContainText(/not learning/);
   await page.click('text=Step ×1');
@@ -40,6 +40,8 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=step-detail]')).toBeHidden();
   await expect(page.locator('[data-test=step-link]')).toBeHidden();
   await expect(page.locator('[data-test=tab-numbers]')).toBeHidden();
+  await expect(page.locator('[data-test=tab-scan]')).toBeHidden();
+  await expect(page.locator('[data-test=cycle] .see-change')).toBeHidden();
   // Expert: the tab appears; what this step changed: the numbers that moved, and why the first one moved, to the last digit.
   await page.locator('[data-test=expert]').check();
   await expect(page.locator('[data-test=tab-numbers]')).toBeVisible();
@@ -62,8 +64,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   // Leaving expert mode on this tab goes back to a plain tab.
   await page.locator('[data-test=expert]').uncheck();
   await expect(page.locator('[data-test=tab-numbers]')).toBeHidden();
-  await expect(page.locator('[data-test=tab-scan]')).toHaveClass(/on/);
-  await page.click('[data-test=tab-learn]');
+  await expect(page.locator('[data-test=tab-learn]')).toHaveClass(/on/);
   // The whole batch: learning data with the right answers, and what it answered before learning from them.
   await expect(page.locator('[data-test=practice] tr.ex')).toHaveCount(16);
   await expect(page.locator('[data-test=practice] td.answer .word-own')).toHaveCount(16);
@@ -80,7 +81,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-test=map-pick]')).toContainText(/Click a letter/);
 
-  // Ask the model: the answer comes from the model at step 1; no training controls here.
+  // Ask: the answer comes from the model at step 1; no training controls here.
   await page.click('[data-test=tab-ask]');
   await expect(page.locator('[data-test=output] .word')).toBeVisible();
   await expect(page.locator('[data-test=stamp]')).toContainText(/step 1\b/);
@@ -162,21 +163,23 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=slow-caption]')).toHaveText('');
   await expect(page.locator('[data-test=attention] canvas')).toHaveCount(2);
 
-  // Where it learns: the brain scan, one tile per part of the model.
+  // Where it learns (expert only): the brain scan, one tile per part of the model.
+  await expect(page.locator('[data-test=tab-scan]')).toBeHidden();
+  await page.locator('[data-test=expert]').check();
   await page.click('[data-test=tab-scan]');
   await expect(page.locator('[data-test=explain]')).toBeHidden();
   await expect(page.locator('[data-test=scan] .scan-tile')).toHaveCount(7);
   await expect(page.locator('[data-test=scan] .scan-tile').first()).toContainText(/2,343 numbers/);
   await expect(page.locator('[data-test=scan-verdict]')).not.toBeEmpty();
-  // Plain mode: no heatmaps; a click on the scan stays here.
   await expect(page.locator('[data-test=heatmaps]')).toBeHidden();
-  await page.locator('[data-test=scan] .scan-tile[data-box=letters]').click();
-  await expect(page.locator('[data-test=tab-scan]')).toHaveClass(/on/);
   await expect(page.locator('[data-test=scan-note]')).toContainText(/moved/);
   await page.click('.scan [data-mode=grad]');
   await expect(page.locator('[data-test=scan-note]')).toContainText(/batch/);
   await expect(page.locator('[data-test=scan] .scan-tile').first()).toContainText(/of the push/);
   await expect(page.locator('[data-test=overview]')).toBeHidden();
+  // Leaving expert mode on this tab goes to Learn.
+  await page.locator('[data-test=expert]').uncheck();
+  await expect(page.locator('[data-test=tab-learn]')).toHaveClass(/on/);
 
   // Look inside one letter: from a click on a guess-bar column.
   await page.click('[data-test=tab-ask]');
