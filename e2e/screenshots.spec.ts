@@ -112,7 +112,7 @@ test('learning vs answering', async ({ page }) => {
   test.setTimeout(180_000);
   await page.goto('/');
   // The Learning data tab: everything it learns from (the app opens on it).
-  await expect(page.locator('[data-test=data-summary]')).toContainText(/learning examples/, { timeout: 15_000 });
+  await expect(page.locator('[data-test=data-summary]')).toContainText(/Learning examples/, { timeout: 15_000 });
   await page.locator('main.data-main').screenshot({ path: `${LDIR}/12-learning-data-tab.png` });
   // One learning example as tokens, a guess pointed at.
   await page.locator('[data-test=example-grid] td.guess').nth(2).hover();

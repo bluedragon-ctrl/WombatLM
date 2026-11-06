@@ -819,13 +819,15 @@ export class App {
         slowCaption,
         prompt,
         output,
-        insights,
         results),
-      h('section', { class: 'panel attention' },
-        h('h2', {}, t('att.title')),
-        h('p', { class: 'small' }, t('att.help')),
-        attPrompt,
-        attention),
+      // Right side: the Insights block above "Where it looks".
+      h('aside', { class: 'ask-side' },
+        insights,
+        h('section', { class: 'panel attention' },
+          h('h2', {}, t('att.title')),
+          h('p', { class: 'small' }, t('att.help')),
+          attPrompt,
+          attention)),
       this.journey.el);
     const matrixMain = h('main', { class: 'matrix-main', hidden: this.tab !== 'matrix' }, this.matrix.el);
     const insideMain = h('main', { class: 'inside-main', hidden: this.tab !== 'inside' }, this.inside.el);

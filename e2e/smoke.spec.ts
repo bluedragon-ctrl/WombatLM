@@ -7,10 +7,10 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
 
   // The story starts with the Learning data tab: everything it learns from.
   await expect(page.locator('[data-test=tab-data]')).toHaveClass(/on/);
-  await expect(page.locator('[data-test=data-summary]')).toContainText(/learning examples/, { timeout: 15_000 });
-  await expect(page.locator('[data-test=data-table] tr.kept td.hidden').first()).toBeVisible();
+  await expect(page.locator('[data-test=data-summary]')).toContainText(/Learning examples/, { timeout: 15_000 });
+  await expect(page.locator('[data-test=data-table] tr.kept .w.hidden').first()).toBeVisible();
   await page.click('[data-test=data-reveal]');
-  await expect(page.locator('[data-test=data-table] tr.kept td.hidden')).toHaveCount(0);
+  await expect(page.locator('[data-test=data-table] tr.kept .w.hidden')).toHaveCount(0);
   // The same data exactly as it is: every question, and the data records with every field.
   await page.click('[data-view=questions]');
   await expect(page.locator('[data-test=data-questions] tbody tr').first()).toBeVisible();
@@ -19,8 +19,8 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-view=table]');
   // A learning example as tokens: shown so far and guess next, shifted by one, ending with "end".
   await expect(page.locator('[data-test=example-grid]')).toBeVisible();
-  await page.locator('[data-test=data-table] td.learned:not(.name)').first().click();
-  await expect(page.locator('[data-test=data-table] td.sel')).toHaveCount(1);
+  await page.locator('[data-test=data-table] .w.learned:not(.name)').first().click();
+  await expect(page.locator('[data-test=data-table] .w.sel')).toHaveCount(1);
   const shown = page.locator('[data-test=example-grid] td.shown');
   const guess = page.locator('[data-test=example-grid] td.guess');
   await expect(guess.last()).toContainText('end');
@@ -139,7 +139,9 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await expect(page.locator('[data-test=insights]')).toContainText(/Real answer\s*kotě/);
   await expect(page.locator('[data-test=insights] [data-test=stamp]')).toBeVisible();
   await expect(page.locator('canvas.bars')).toBeVisible();
-  // Follow the tokens: tokens, letter table, reading once, then one writing pass per token.
+  // Follow the tokens (expert only): tokens, letter table, reading once, then one writing pass per token.
+  await expect(page.locator('[data-test=journey]')).toBeHidden();
+  await page.locator('[data-test=expert]').check();
   await expect(page.locator('[data-test=journey-caption]')).toContainText(/becomes tokens/);
   await page.click('[data-test=journey-next]');
   await page.click('[data-test=journey-next]');
@@ -149,6 +151,8 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.click('[data-test=journey-next]');
   await expect(page.locator('[data-test=journey-diagram] [data-pass]')).toHaveCount(2);
   await expect(page.locator('[data-test=journey-caption]')).toContainText(/goes in at position 2/);
+  await page.locator('[data-test=expert]').uncheck();
+  await expect(page.locator('[data-test=journey]')).toBeHidden();
   // Answer slowly: what the model is doing, letter by letter; the same button stops it.
   await page.click('[data-test=answer-slow]');
   await expect(page.locator('[data-test=slow-caption]')).toContainText(/Reading the animal/, { timeout: 3_000 });
@@ -212,7 +216,7 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
 
   // A learning example can be asked on the Ask tab.
   await page.click('[data-test=tab-data]');
-  await page.locator('[data-test=data-table] td.learned:not(.name)').first().click();
+  await page.locator('[data-test=data-table] .w.learned:not(.name)').first().click();
   await page.click('[data-test=example-ask]');
   await expect(page.locator('[data-test=tab-ask]')).toHaveClass(/on/);
   await expect(page.locator('[data-test=bars]')).toBeVisible();
