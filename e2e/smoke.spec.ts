@@ -129,6 +129,10 @@ test('loads, trains in the worker and answers a question', async ({ page }) => {
   await page.locator('[data-form=young]').click();
   await page.click('[data-test=answer-now]');
   await expect(page.locator('[data-test=output] .from')).toContainText('kočka');
+  // The details of the answer are gathered in the Insights block under it.
+  await expect(page.locator('[data-test=insights]')).toContainText(/real word/);
+  await expect(page.locator('[data-test=insights]')).toContainText(/Real answer\s*kotě/);
+  await expect(page.locator('[data-test=insights] [data-test=stamp]')).toBeVisible();
   await expect(page.locator('canvas.bars')).toBeVisible();
   // Follow the tokens: tokens, letter table, reading once, then one writing pass per token.
   await expect(page.locator('[data-test=journey-caption]')).toContainText(/becomes tokens/);

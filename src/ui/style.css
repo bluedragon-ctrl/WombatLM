@@ -56,7 +56,7 @@ button.big { font-size: 16px; padding: 8px 18px; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 .ask-prompt { color: var(--muted); margin: 6px 0 10px; }
 .ask-prompt[hidden], .ask-results[hidden], .att-grids[hidden] { display: none; }
-.output { margin: 8px 0 12px; min-height: 90px; }
+.output { margin: 8px 0 10px; min-height: 48px; }
 .answer-line { display: flex; align-items: baseline; gap: 10px; }
 .answer-line .from { font-size: 20px; color: var(--muted); }
 .word { font-size: 32px; font-weight: 700; letter-spacing: 0.02em; }
@@ -65,8 +65,23 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .word.wrong { color: var(--wrong); }
 .word.invented { color: var(--invented); }
 .word.unrevealed { color: var(--ink); }
-.badge { margin: 4px 0; font-size: 14px; }
-.meter { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+/* Insights: what is known about the answer, in one block under it */
+.insights { margin: 0 0 14px; padding: 10px 12px; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; }
+.insights[hidden] { display: none; }
+.insights h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.insight-rows { display: contents; }
+.insight { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; align-items: center; padding: 3px 0; font-size: 14px; }
+.insight-label { color: var(--muted); font-size: 13px; }
+.insight-value .muted { color: var(--muted); }
+.insight-value .real-word { font-size: 15px; }
+.verdict { display: inline-block; margin-left: 4px; padding: 0 7px; border-radius: 10px; font-size: 13px; font-weight: 600; background: #fff; border: 1px solid currentColor; }
+.verdict.correct { color: var(--correct); }
+.verdict.close { color: var(--close); }
+.verdict.wrong { color: var(--wrong); }
+.insights .stamp { padding: 1px 6px; margin-left: -6px; background: none; color: var(--ink); }
+.insights .stamp.stale { margin-left: 0; padding: 2px 8px; background: #f1f5f9; color: var(--muted); }
+.insights.stale .insight-rows .insight { opacity: 0.4; filter: grayscale(0.8); transition: opacity 0.3s; }
+.meter { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 .meter .track { width: 180px; height: 10px; background: #e5e7eb; border-radius: 5px; overflow: hidden; }
 .meter .fill { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
 .bars-wrap { overflow-x: auto; }
@@ -178,13 +193,12 @@ button.small-btn { font-size: 13px; padding: 2px 8px; }
 .cycle-note { margin: 4px 0 6px; }
 
 /* Answer: which model answered */
-.stamp-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: -4px 0 10px; }
 .stamp { font-size: 13px; padding: 3px 8px; border-radius: 6px; background: #eff6ff; color: #1e3a8a; }
 .stamp[hidden] { display: none; }
 .stamp.stale { background: #f1f5f9; color: var(--muted); border: 1px dashed #94a3b8; }
 .stamp.flash { animation: stamp-flash 1.2s ease-out; }
 @keyframes stamp-flash { 0% { background: #bfdbfe; box-shadow: 0 0 0 3px #93c5fd; } 100% { background: #eff6ff; box-shadow: 0 0 0 0 transparent; } }
-.output.stale .word, .output.stale .meter, .bars-wrap.stale, .att-grids.stale { opacity: 0.4; filter: grayscale(0.8); transition: opacity 0.3s; }
+.output.stale .word, .bars-wrap.stale, .att-grids.stale { opacity: 0.4; filter: grayscale(0.8); transition: opacity 0.3s; }
 .guess-head h2 { margin: 0; }
 .guess-head { margin: 4px 0 6px; }
 .slow-caption { display: none; }
