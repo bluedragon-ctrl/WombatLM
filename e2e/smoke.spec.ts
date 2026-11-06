@@ -219,7 +219,8 @@ test('the matrix tab shows the answer station by station and follows one number'
   // Follow one number: click a square of the matrix.
   await expect(page.locator('[data-test=matrix-trail]')).toContainText(/click any square/);
   const box = (await page.locator('[data-test=matrix-canvas]').boundingBox())!;
-  await page.mouse.click(box.x + box.width - 30, box.y + 34 + 10);
+  // A square of the matrix (its last column; the learned numbers panel is further right).
+  await page.mouse.click(box.x + 990, box.y + 34 + 10);
   await expect(page.locator('[data-test=matrix-trail] .mx-trail-step')).toHaveCount(6);
   await page.click('[data-test=matrix-mode-added]');
   await page.click('[data-test=matrix-play]');
