@@ -18,10 +18,12 @@ import { nearestRows, pca2 } from '../nn/pca';
 import { FormTrainer, PracticeBatch, TRAINER_DEFAULTS, confidence, judge } from './trainer';
 import { Translator } from '../nn/translator';
 import type {
-  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, ExplainGuess, ExplainMsg, FromWorker, InspectMode, LossPoint, MatrixChange, MatrixInfo, NumberRef, Speed,
-  StepGuess, ToWorker,
+  Activation, AnimalInfo, AnswerMsg, AttentionMap, Badge, ExplainGuess, ExplainLens, ExplainMsg, FromWorker, InspectMode, LossPoint, MatrixChange, MatrixInfo, NumberRef, Speed,
+  StepGuess, ToWorker, UnitInfo,
 } from './protocol';
 import { changeStats, explainNumber, topNumbers } from './stepDetail';
+import { profileUnits } from './units';
+import { lensLogits } from '../nn/explain';
 import { rowSoftmax } from '../nn/transformer';
 
 export interface EngineHost {
@@ -89,6 +91,8 @@ export class Engine {
   private lastOwnAt = -Infinity;
   /** The latest batch the model answered before learning from it. */
   private answered: PracticeBatch | undefined;
+  /** "What have the thinking units learned?" for the model at `step` (reading every example takes a moment). */
+  private unitsCache: { step: number; units: UnitInfo[]; moments: number } | null = null;
   /**
    * The Test tab is open: test every animal on the EVAL schedule. Off by
    * default (beginners only learn and ask); `evaluate` still tests on request.
@@ -215,6 +219,9 @@ export class Engine {
       case 'why':
         this.why(msg.id, msg.name, msg.index);
         break;
+      case 'units':
+        this.sendUnits(msg.id);
+        break;
     }
   }
 
@@ -234,6 +241,7 @@ export class Engine {
     this.beforeStep = null;
     this.lastPracticeStep = -1;
     this.answered = undefined;
+    this.unitsCache = null;
   }
 
   /** The step goal is reached (Play does nothing until the goal is raised). */
@@ -598,6 +606,24 @@ export class Engine {
       contrib: ex.final.map((v, i) => v * model.tokEmb.data[tok * d + i]), bias: model.outBias.data[tok],
     }));
     const p = ex.position;
+    const chosenTok = p < ex.output.length ? ex.output[p] : vocab.eos;
+    const lens: ExplainLens[] = ex.lens.map((logits) => {
+      const pr = rowSoftmax(logits, 0, logits.length);
+      const top = cands.slice().sort((a, b) => pr[b] - pr[a]).slice(0, 3).map((tok) => ({ char: charOf(tok), p: pr[tok] }));
+      return { top, chosen: pr[chosenTok] };
+    });
+    // Switching each thinking unit off for this letter (last stage only: nothing comes after it but the guess).
+    const lastStage = ex.stages[ex.stages.length - 1];
+    let unitsOff: Float32Array | null = null;
+    if (lastStage?.kind === 'think') {
+      const d = lastStage.x.length;
+      unitsOff = new Float32Array(lastStage.sources);
+      for (let k = 0; k < lastStage.sources; k++) {
+        const xo = lastStage.x.map((v, j) => v - lastStage.contrib[k * d + j]);
+        const pr = rowSoftmax(lensLogits(model, xo), 0, ex.logits.length);
+        unitsOff[k] = pr[chosenTok];
+      }
+    }
     const input = [this.dataset.targetId(lang, form), ...vocab.encodeWord(word).slice(0, model.config.maxLen - 2)];
     const msg: ExplainMsg = {
       type: 'explain', id, step: this.trainer.step, text: word, lang, form, output: vocab.decode(ex.output),
@@ -605,9 +631,20 @@ export class Engine {
       chosen: p < ex.output.length ? charOf(ex.output[p]) : '',
       input: input.map((i) => tokens[i]), inputIds: input,
       decIn: ex.decIn.map((i) => tokens[i]), decInIds: ex.decIn,
-      start: ex.start, stages: ex.stages, final: ex.final, guesses,
+      start: ex.start, stages: ex.stages, final: ex.final, guesses, lens, unitsOff,
     };
     this.host.post(msg);
+  }
+
+  /** What the writer's thinking units have learned (see units.ts); cached per step. */
+  private sendUnits(id: number): void {
+    const step = this.trainer.step;
+    if (this.unitsCache?.step !== step) {
+      const { units, moments } = profileUnits(this.trainer.model, this.dataset, this.dataset.formTasks(), this.trainer.ids);
+      this.unitsCache = { step, units, moments };
+    }
+    const { units, moments } = this.unitsCache;
+    this.host.post({ type: 'units', id, step, layer: 'dec0', moments, units });
   }
 
   /** PCA of the letter table: characters, end of word and the task tokens. */

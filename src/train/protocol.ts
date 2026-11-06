@@ -72,7 +72,12 @@ export type ToWorker =
    * Only for a step recorded in detail (Step ×1 while paused). Answered with
    * `why`; `id` is echoed back.
    */
-  | { type: 'why'; id: number; name: string; index: number };
+  | { type: 'why'; id: number; name: string; index: number }
+  /**
+   * What have the writer's thinking units learned? Reads every learning
+   * example (see train/units.ts). Answered with `units`; `id` is echoed back.
+   */
+  | { type: 'units'; id: number };
 
 /**
  * What a weight heatmap shows:
@@ -300,6 +305,14 @@ export interface ExplainGuess {
   bias: number;
 }
 
+/** "What would it write now?" after one stage of "look inside one letter" (logit lens). */
+export interface ExplainLens {
+  /** Its 3 most likely letters at this point ('' = end of word). */
+  top: { char: string; p: number }[];
+  /** The chance of the letter it finally writes, at this point. */
+  chosen: number;
+}
+
 export interface ExplainMsg {
   type: 'explain';
   id: number;
@@ -328,6 +341,69 @@ export interface ExplainMsg {
   final: Float32Array;
   /** Top 5 guesses, most likely first. */
   guesses: ExplainGuess[];
+  /** "What would it write now?" after the start and after each stage (1 + stages.length). */
+  lens: ExplainLens[];
+  /**
+   * For the last thinking stage: the chance of the written letter if thinking
+   * unit k were switched off for this letter (exact: it only removes the
+   * unit's part of what thinking adds). Null if thinking is not the last stage.
+   */
+  unitsOff: Float32Array | null;
+}
+
+/** One of a thinking unit's strongest moments in the learning data. */
+export interface UnitMoment {
+  /** The question (animal name, language, form) and its right answer. */
+  source: string;
+  answer: string;
+  lang: string;
+  form: string;
+  /** Letters of the answer already written; the unit is measured while writing letter `at` (= answer.length: the end). */
+  at: number;
+  /** The letter written next ('' = end of word). */
+  next: string;
+  value: number;
+}
+
+/**
+ * What a unit's strongest moments share, far more often than by chance:
+ * the next letter, the letter just written ('<start>' = nothing yet), the
+ * language and form ("cs:female"), the form, or the language.
+ */
+export interface UnitTheme {
+  kind: 'next' | 'prev' | 'task' | 'form' | 'lang';
+  value: string;
+  count: number;
+  of: number;
+}
+
+export interface UnitInfo {
+  unit: number;
+  /** Share of all moments (letters written) where it is on. */
+  on: number;
+  /** Its strongest moments, strongest first. */
+  top: UnitMoment[];
+  theme: UnitTheme | null;
+  /** The 3 letters its pattern pushes towards most when it is on (direct effect, a hint). */
+  pushes: { char: string; score: number }[];
+  /**
+   * Measured at its strongest moments by switching it off (null if it is not
+   * in the last writing layer, where this is exact): the right letter's
+   * average chance with and without it, and the letters whose chance falls
+   * the most without it (average fall, 0..1).
+   */
+  off: { withP: number; withoutP: number; helps: { char: string; drop: number }[] } | null;
+}
+
+export interface UnitsMsg {
+  type: 'units';
+  id: number;
+  step: number;
+  /** Which feed-forward step, e.g. "dec0". */
+  layer: string;
+  /** How many moments (letters of learning examples) were read. */
+  moments: number;
+  units: UnitInfo[];
 }
 
 export interface LetterMapMsg {
@@ -417,4 +493,4 @@ export interface WhyMsg {
   shares?: PushShare[];
 }
 
-export type FromWorker = ReadyMsg | TickMsg | EvalMsg | AnswerMsg | WeightsMsg | ExplainMsg | LetterMapMsg | StepDetailMsg | WhyMsg | ErrorMsg;
+export type FromWorker = ReadyMsg | TickMsg | EvalMsg | AnswerMsg | WeightsMsg | ExplainMsg | LetterMapMsg | StepDetailMsg | WhyMsg | UnitsMsg | ErrorMsg;

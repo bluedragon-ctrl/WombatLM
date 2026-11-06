@@ -15,6 +15,12 @@
  * so each added list can be split exactly into contributions: per earlier
  * letter (attention), per thinking unit (feed-forward) or per number (the
  * guess scores), plus a fixed bias.
+ *
+ * "What would it write now?" (the logit lens): the guess scores the model
+ * would give if the letter's numbers went straight to the last volume knobs
+ * and the letter table after any stage, not only the last one. It turns each
+ * stage's list of numbers into letters a beginner can read, and shows which
+ * stage makes the decision.
  */
 import type { Translator } from './translator';
 import type { Trace } from './transformer';
@@ -58,6 +64,12 @@ export interface LetterExplain {
   final: Float32Array;
   /** Guess scores for every token [V]; score(t) = Σ final[i] · tokEmb[t, i] + outBias[t]. */
   logits: Float32Array;
+  /**
+   * "What would it write now?": guess scores [V] from the letter's numbers
+   * after the start and after each stage (1 + stages.length lists). The last
+   * one equals `logits`.
+   */
+  lens: Float32Array[];
 }
 
 function row(t: Tensor, r: number): Float32Array {
@@ -126,6 +138,28 @@ function thinkStage(model: Translator, trace: Trace, name: string, p: number, be
   return { kind: 'think', name, heads: 0, sources: units, weights: new Float32Array(0), hidden, add, contrib, bias: block.ffn.down.b.data.slice(), x };
 }
 
+/** Guess scores from one list of numbers: last volume knobs, then the letter table and favourite letters (logit lens). */
+export function lensLogits(model: Translator, x: Float32Array): Float32Array {
+  const d = x.length;
+  const { gamma, beta } = model.decNorm;
+  let mean = 0;
+  for (let i = 0; i < d; i++) mean += x[i];
+  mean /= d;
+  let v = 0;
+  for (let i = 0; i < d; i++) v += (x[i] - mean) ** 2;
+  const rs = 1 / Math.sqrt(v / d + 1e-5);
+  const y = new Float32Array(d);
+  for (let i = 0; i < d; i++) y[i] = (x[i] - mean) * rs * gamma.data[i] + beta.data[i];
+  const V = model.tokEmb.shape[0];
+  const out = model.outBias.data.slice(0, V);
+  for (let t = 0; t < V; t++) {
+    let s = 0;
+    for (let i = 0; i < d; i++) s += y[i] * model.tokEmb.data[t * d + i];
+    out[t] += s;
+  }
+  return out;
+}
+
 /** Build the explanation from a traced teacher-forced pass of one word (batch of 1). */
 export function explainLetter(model: Translator, trace: Trace, decIn: number[], p: number, logits: Float32Array, output: number[]): LetterExplain {
   const token = row(model.tokEmb, decIn[p]);
@@ -142,5 +176,6 @@ export function explainLetter(model: Translator, trace: Trace, decIn: number[], 
     s = thinkStage(model, trace, `${n}.ffn`, p, x);
     stages.push(s); x = s.x;
   }
-  return { position: p, decIn: decIn.slice(0, p + 1), output, start, stages, final: row(need(trace, 'dec.final'), p), logits: logits.slice() };
+  const lens = [lensLogits(model, start.x), ...stages.map((s) => lensLogits(model, s.x))];
+  return { position: p, decIn: decIn.slice(0, p + 1), output, start, stages, final: row(need(trace, 'dec.final'), p), logits: logits.slice(), lens };
 }

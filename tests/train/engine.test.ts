@@ -313,6 +313,38 @@ describe('Engine', () => {
     ex.guesses.forEach((g, i) => { expect(g.char).toBe(ans.steps[1].top[i].char); expect(g.p).toBeCloseTo(ans.steps[1].top[i].p, 5); });
     const g = ex.guesses[0];
     expect(g.contrib.reduce((a, b) => a + b, g.bias)).toBeCloseTo(g.score, 4);
+    // Switching each thinking unit off for this letter: a unit that is (almost) off changes (almost) nothing.
+    const think = ex.stages.at(-1)!;
+    expect(ex.unitsOff).toHaveLength(think.sources);
+    const quiet = Array.from(think.hidden, Math.abs).indexOf(Math.min(...Array.from(think.hidden, Math.abs)));
+    expect(ex.unitsOff![quiet]).toBeCloseTo(ex.lens.at(-1)!.chosen, 3);
+    // "What would it write now": one per stage plus the start; the last one is the real guess.
+    expect(ex.lens).toHaveLength(1 + ex.stages.length);
+    const last = ex.lens.at(-1)!;
+    expect(last.top[0].char).toBe(ex.guesses[0].char);
+    expect(last.top[0].p).toBeCloseTo(ex.guesses[0].p, 4);
+    // (After 2 steps the chosen letter may be outside the top 5 candidates.)
+    const cg = ex.guesses.find((x) => x.char === ex.chosen);
+    if (cg) expect(last.chosen).toBeCloseTo(cg.p, 4);
+    expect(last.chosen).toBeGreaterThan(0);
+  });
+
+  it('units: what each thinking unit has learned, read again only after a new step', () => {
+    const h = fakeHost();
+    const e = new Engine(h.host, ds);
+    e.handle({ type: 'init', seed: 3 });
+    e.handle({ type: 'step', n: 2 });
+    e.handle({ type: 'units', id: 7 });
+    const u = h.of('units').at(-1)!;
+    expect(u.id).toBe(7);
+    expect(u.layer).toBe('dec0');
+    expect(u.units.length).toBeGreaterThan(0);
+    expect(u.moments).toBeGreaterThan(u.units.length);
+    e.handle({ type: 'units', id: 8 });
+    expect(h.of('units').at(-1)!.units).toBe(u.units); // same step: from the cache
+    e.handle({ type: 'step', n: 1 });
+    e.handle({ type: 'units', id: 9 });
+    expect(h.of('units').at(-1)!.units).not.toBe(u.units);
   });
 
   it('inspect sends the letter map: characters, end of word and task tokens', () => {
